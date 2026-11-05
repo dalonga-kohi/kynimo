@@ -38,19 +38,21 @@ Agent ──MCP──▶ Kynimo Cloud
 ## v1 scope
 
 - Short-form motion graphics: **5–60 seconds**.
+- **After Effects-grade 2D engine** (beta subset): precomps, parenting, shape operators, text animators, bezier/spring keyframes, masks, mattes, blend modes, core effects, seeded behaviors. Full list: [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (ADR-0008).
+- Every engine capability reachable over MCP through batched, intent-aware tools.
 - Remote MCP server usable from any MCP client, with OAuth sign-in.
 - Built-in guideline packs + component library v1.
 - Preview frames, quality report, MP4 / WebM / GIF export, shareable preview links.
 - Music track with beat markers (motion timed to the beat).
-- Thin web app: sign in, project list, preview player with timeline scrubbing, share links.
+- Simple web editor on the same operations: sign in, project list, viewer, timeline, layers, inspector, basic keyframe editing, share links. Usable on its own; most users will work through their assistant.
 
 ## Non-goals (for now)
 
 - Component/template marketplace.
 - Multi-agent orchestration.
-- A full After Effects-style timeline editor.
+- A full After Effects-style editor UI (the engine is AE-grade; the editor stays simple).
 - Long-form "motion movies" (the format supports chaining scenes; we prove quality on short pieces first).
-- Voiceover generation, 3D, live/interactive runtime output.
+- Voiceover generation, 3D layers and cameras, live/interactive runtime output.
 
 ## Business model (direction)
 

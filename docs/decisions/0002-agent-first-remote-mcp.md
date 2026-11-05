@@ -1,6 +1,6 @@
 # 0002 — Agent-first through a remote MCP server
 
-- Status: accepted
+- Status: accepted (amended by ADR-0008: tool groups and web app scope)
 - Date: 2026-11-05
 
 ## Context
