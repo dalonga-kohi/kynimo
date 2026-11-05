@@ -20,8 +20,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 - [ ] Drawing backend decision (ADR): blend modes, mattes, masks and the effect list, deterministic in workers (see CAPABILITIES.md, "Determinism")
 - [ ] Draw shapes (fill, stroke, gradients, dashes), images, solids
-- [ ] Text: bundled fonts, shaping, layout (point/box, auto-fit)
-- [ ] Font loading strategy
+- [ ] Text: font loading strategy (bundled fonts), shaping, layout (point/box, auto-fit)
 - [ ] Masks, track mattes, blend modes
 - [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)
 
@@ -40,7 +39,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Shape operators: trim paths, repeater, round corners; path morphing (equal vertex counts)
 - [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
-- [ ] Intent tools: `animate`, `apply_preset` (preset catalog), `stagger`, `retime`; `add_effect`, `add_behavior`
+- [ ] Intent tools: `animate`, `apply_preset` (preset catalog), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens
 - [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
 - [ ] SVG import → shape layer
 

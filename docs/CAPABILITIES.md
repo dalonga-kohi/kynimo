@@ -120,7 +120,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 
 Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant).
 
-Spring note: a spring segment starts at its keyframe and moves toward the next keyframe's value. If it hasn't settled when the next keyframe arrives, the next segment starts from the spring's current value and velocity, so there's no jump. The `animate` intent tool can also let the spring set the duration, placing the next keyframe at its settle time.
+Spring note: a spring segment runs from its keyframe toward the next keyframe's value, and its length is set by the spring's settle time. The next keyframe must sit at or after that settle frame. Placing it earlier is a validation error, and the error suggests a fix op: move the keyframe to the settle frame, or switch the segment to bezier. Every stored keyframe value is therefore the value rendered at its frame, and no velocity carries into the next segment. `animate` places keyframes at settle frames automatically.
 
 ## 7. Effects
 

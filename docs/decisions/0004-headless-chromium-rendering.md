@@ -1,6 +1,6 @@
 # 0004 — Headless Chromium rendering for v1
 
-- Status: accepted
+- Status: accepted (amended by ADR-0008: bit-identical output is guaranteed in render workers; the live browser preview is visually equivalent)
 - Date: 2026-11-05
 
 ## Context
