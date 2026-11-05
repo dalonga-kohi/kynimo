@@ -13,6 +13,18 @@ export interface FrameRate {
 /** A spring is "settled" once it stays within this fraction of the full travel. */
 export const SPRING_SETTLE_THRESHOLD = 0.001;
 
+/** The x where (1 + x) * e^(-x) falls to the settle threshold, found by bisection (monotone for x > 0). */
+const LINEAR_BOUND_X = (() => {
+  let lo = 0;
+  let hi = 64;
+  for (let i = 0; i < 80; i++) {
+    const mid = (lo + hi) / 2;
+    if ((1 + mid) * Math.exp(-mid) > SPRING_SETTLE_THRESHOLD) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+})();
+
 /**
  * Number of frames a spring segment lasts: the first frame at which the motion's decay
  * envelope is within {@link SPRING_SETTLE_THRESHOLD} of the target and stays there.
@@ -28,8 +40,13 @@ export function springSettleFrames(spring: SpringParams, fps: FrameRate): number
 
   let seconds: number;
   if (zeta < 1) {
-    // Underdamped: deviation <= e^(-zeta*omega*t) / sqrt(1 - zeta^2).
-    seconds = Math.log(1 / (eps * Math.sqrt(1 - zeta * zeta))) / (zeta * omega);
+    // Underdamped. Two valid upper bounds on the deviation; settle at the earlier of the times
+    // where either drops below eps (the true motion is below both, so this is never too early):
+    //   envelope:  e^(-zeta*omega*t) / sqrt(1 - zeta^2)   (blows up as zeta -> 1)
+    //   linear:    (1 + zeta*omega*t) * e^(-zeta*omega*t) (from |sin x| <= x; equals the critical case)
+    // Taking the smaller keeps settle time continuous and non-increasing as damping approaches 1.
+    const envelope = Math.log(1 / (eps * Math.sqrt(1 - zeta * zeta))) / (zeta * omega);
+    seconds = Math.min(envelope, LINEAR_BOUND_X / (zeta * omega));
   } else {
     // Critically and over-damped: the deviation decays monotonically; find where it crosses eps.
     const deviation =

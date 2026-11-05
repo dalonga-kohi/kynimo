@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AssetSchema } from "./asset.js";
-import { CompositionSchema } from "./composition.js";
+import { CompositionSchema, isValidFrameRate } from "./composition.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
 import type { Keyframe } from "./keyframes.js";
 import type { Layer } from "./layer.js";
@@ -127,17 +127,20 @@ function checkPrecompCycles(project: Project, issue: Issue): void {
   });
 
   const state = new Map<string, 1 | 2>(); // 1 = on the current path, 2 = finished
+  const position = new Map<string, number>(); // index of each on-path composition, for O(1) cycle lookup
   for (const root of known) {
     if (state.has(root)) continue;
     const path: string[] = [root];
     const cursor: number[] = [0];
     state.set(root, 1);
+    position.set(root, 0);
     while (path.length > 0) {
       const node = path[path.length - 1] as string;
       const index = cursor[cursor.length - 1] as number;
       const out = edges.get(node) ?? [];
       if (index >= out.length) {
         state.set(node, 2);
+        position.delete(node);
         path.pop();
         cursor.pop();
         continue;
@@ -146,18 +149,18 @@ function checkPrecompCycles(project: Project, issue: Issue): void {
       const edge = out[index] as Edge;
       const seen = state.get(edge.target);
       if (seen === 1) {
-        const loop = [...path.slice(path.indexOf(edge.target)), edge.target];
+        const start = position.get(edge.target) ?? 0;
+        const size = path.length - start;
         // Bounded message: listing the whole loop for every closing layer would grow faster than the input.
-        const shown =
-          loop.length > 7
-            ? `${loop.slice(0, 6).join(" -> ")} -> ... -> ${edge.target}`
-            : loop.join(" -> ");
+        const ids = path.slice(start, start + 6).join(" -> ");
+        const shown = size > 6 ? `${ids} -> ... -> ${edge.target}` : `${ids} -> ${edge.target}`;
         issue(
           edge.path,
-          `precomp cycle (${loop.length - 1} compositions): ${shown}; point this layer at a different composition or delete it`,
+          `precomp cycle (${size} ${size === 1 ? "composition" : "compositions"}): ${shown}; point this layer at a different composition or delete it`,
         );
       } else if (seen === undefined) {
         state.set(edge.target, 1);
+        position.set(edge.target, path.length);
         path.push(edge.target);
         cursor.push(0);
       }
@@ -210,7 +213,7 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
     comp.layers.forEach((layer, li) => {
       const at = (...rest: (string | number)[]) => ["compositions", ci, "layers", li, ...rest];
 
-      checkSprings(layer, comp.fps, at(), issue);
+      if (isValidFrameRate(comp.fps)) checkSprings(layer, comp.fps, at(), issue);
 
       if (seenLayerIds.has(layer.id))
         issue(

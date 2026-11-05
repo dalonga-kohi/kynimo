@@ -192,6 +192,24 @@ describe("hostile and out-of-range springs", () => {
   });
 });
 
+describe("out-of-range frame rate", () => {
+  it("reports only the fps issue, not derived spring timing issues", () => {
+    for (const fps of [
+      { num: 1_000_000, den: 1 },
+      { num: 30.5, den: 1 },
+      { num: 0, den: 1 },
+    ]) {
+      const layer = {
+        ...nullLayer("a"),
+        transform: { ...transform(), rotation: { keyframes: [kf(0, 0, SPRING), kf(1, 1)] } },
+      };
+      const input = project({ compositions: [{ ...composition("main", [layer]), fps }] });
+      expect(paths(input).every((p) => p.startsWith("compositions.0.fps"))).toBe(true);
+      expect(paths(input).length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("position", () => {
   it("accepts spatial motion path handles on position keyframes", () => {
     const position = {

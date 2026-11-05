@@ -62,15 +62,25 @@ describe("springSettleFrames", () => {
       springSettleFrames({ damping, response }, fps);
     expect(at(0.5, 0.5)).toBe(34);
     expect(at(1, 0.5)).toBe(23);
+    expect(at(0.999, 0.5)).toBe(23);
+    expect(at(0.9, 0.5)).toBe(21);
     expect(at(0.1, 10, { num: 240, den: 1 })).toBe(26405);
     expect(at(10, 10, { num: 240, den: 1 })).toBe(52659);
     expect(at(0.6, 0.5, { num: 30000, den: 1001 })).toBe(29);
   });
 
-  it("is continuous around critical damping", () => {
+  it("is continuous at critical damping: within one frame of the critical case, equal at the limit", () => {
     const at = (damping: number) => springSettleFrames({ damping, response: 0.5 }, fps30);
-    expect(at(0.999)).toBe(24);
-    expect(at(0.9999999999999999)).toBe(60);
-    expect(at(1)).toBe(23);
+    for (const damping of [0.99, 0.999, 0.9999, 0.99999, 0.9999999999])
+      expect(Math.abs(at(damping) - at(1))).toBeLessThanOrEqual(1);
+    expect(at(0.9999999999999999)).toBe(at(1));
+  });
+
+  it("stays above the true motion near critical damping", () => {
+    for (const damping of [0.9, 0.99, 0.999, 0.99999]) {
+      const frames = springSettleFrames({ damping, response: 0.5 }, fps30);
+      for (let t = frames / 30; t < frames / 30 + 5; t += 0.01)
+        expect(deviation(damping, 0.5, t)).toBeLessThanOrEqual(SPRING_SETTLE_THRESHOLD);
+    }
   });
 });
