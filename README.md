@@ -6,6 +6,7 @@ Kynimo is an agent-first, cloud-hosted motion engine. Any MCP-compatible assista
 
 - Product: [PRODUCT.md](PRODUCT.md)
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Capabilities (engine + MCP surface): [docs/CAPABILITIES.md](docs/CAPABILITIES.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Decisions: [docs/decisions/](docs/decisions/)
 - Working agreement for AI-assisted development: [CLAUDE.md](CLAUDE.md)

@@ -40,9 +40,11 @@ Every write — from an agent, the web app or code — goes through the same **s
 
 ## The four pillars
 
+Capability target: the 2D core of After Effects, all of it reachable over MCP; the editor stays simple (ADR-0008, [CAPABILITIES.md](CAPABILITIES.md)).
+
 ### 1. Scene format — `@kynimo/scene`
 
-- Versioned JSON scene graph: `Project → Composition → Scene[] → Layer[]` (shape, text, image, video, group, component instance), each with animatable properties and keyframe tracks, plus a style (guideline pack) reference and audio track with beat markers.
+- Versioned JSON scene graph: `Project → Composition[] → Layer[]` (shape, text, image, video, solid, null, precomp, adjustment, audio, component instance; parenting and masks/mattes between layers), each with animatable properties and keyframe tracks, plus a guideline pack reference pinned by version. A scene is a composition placed in the main composition's sequence; precomp layers reference compositions by id, with no cycles. Audio is audio layers; beat markers live on them. See [CAPABILITIES.md](CAPABILITIES.md#document-model).
 - Schema-validated (runtime schemas + inferred TS types). `SCENE_FORMAT_VERSION` + migrations for every change.
 - **Typed operations** (`addLayer`, `setKeyframes`, `applyPreset`, `retimeScene`, …) are the only way to mutate a document. They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
 - Time model: integer frames at the composition frame rate; seconds only at the API edge.
@@ -69,28 +71,25 @@ Every write — from an agent, the web app or code — goes through the same **s
 ## Agent layer — `apps/mcp`
 
 - Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
-- Tools in three groups:
-  - **Intent:** `build_from_brief`, `apply_style`, `add_component`.
-  - **Precise:** `create_project`, `add_layer`, `update_props`, `set_keyframes`, `retime_scene`, `get_scene`.
-  - **Feedback:** `render_frames` (returns images), `check_quality` (returns the report), `export`, `get_preview_link`.
+- Tool groups (project, read, precise, intent, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
 
 ## Web app — `apps/web`
 
-Thin in v1: sign in, project list, preview player with timeline scrubbing, share links. Later: frame-pinned comments that feed back to the agent; a light editor on top of the same scene operations.
+Simple editor in v1: sign in, project list, viewer with timeline scrubbing, layer list, inspector, basic keyframe editing and share links, all on the same scene operations. It shows agent edits live. Later: frame-pinned comments that feed back to the agent.
 
 ## Package map (target)
 
-| Path                  | Package                                                     | Created in       |
-| --------------------- | ----------------------------------------------------------- | ---------------- |
-| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations     | M1 (stub exists) |
-| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, easing, springs | M1               |
-| `packages/renderer`   | `@kynimo/renderer` — frame drawing + headless capture       | M2               |
-| `apps/mcp`            | MCP server                                                  | M3               |
-| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules         | M4               |
-| `packages/components` | `@kynimo/components` — built-in library + SDK               | M5               |
-| `apps/worker`         | render/export workers                                       | M6               |
-| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists  | M7               |
+| Path                  | Package                                                                                         | Created in       |
+| --------------------- | ----------------------------------------------------------------------------------------------- | ---------------- |
+| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                         | M1 (stub exists) |
+| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators | M1               |
+| `packages/renderer`   | `@kynimo/renderer` — frame drawing + headless capture                                           | M2               |
+| `apps/mcp`            | MCP server                                                                                      | M3               |
+| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                             | M5               |
+| `packages/components` | `@kynimo/components` — built-in library + SDK                                                   | M6               |
+| `apps/worker`         | render/export workers                                                                           | M7               |
+| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                      | M8               |
 
 ## Invariants
 
@@ -98,13 +97,13 @@ See [CLAUDE.md](../CLAUDE.md#architecture-invariants-the-reviewer-blocks-on-thes
 
 ## Open questions (settled in the feature that needs them)
 
-| Question                                           | Decide in |
-| -------------------------------------------------- | --------- |
-| Runtime schema library (Zod vs Valibot vs TypeBox) | M1        |
-| Drawing backend for v1 (Canvas 2D vs SVG vs DOM)   | M2        |
-| Hosting for API/MCP and workers                    | M3 / M6   |
-| Database for project store (Postgres flavor)       | M3        |
-| Auth / OAuth provider                              | M3        |
-| Job queue                                          | M6        |
-| Object storage + CDN for previews                  | M6        |
-| ~~Web framework~~ → Next.js on Vercel (ADR-0007)   | done      |
+| Question                                                                            | Decide in |
+| ----------------------------------------------------------------------------------- | --------- |
+| Runtime schema library (Zod vs Valibot vs TypeBox)                                  | M1        |
+| Drawing backend for v1 (must handle mattes, blend modes, effects deterministically) | M2        |
+| Hosting for API/MCP and workers                                                     | M3 / M7   |
+| Database for project store (Postgres flavor)                                        | M3        |
+| Auth / OAuth provider                                                               | M3        |
+| Job queue                                                                           | M7        |
+| Object storage (M3, assets) + CDN for previews (M7)                                 | M3 / M7   |
+| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                    | done      |

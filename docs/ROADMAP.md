@@ -1,59 +1,76 @@
 # Kynimo — Roadmap
 
-Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge.
+Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
 ## M0 — Foundation
 
 - [x] Repo, working agreement (CLAUDE.md), reviewer agent, design skills, docs, monorepo skeleton, CI
+- [x] Capability map + ADR-0008 (AE-grade engine, simple editor)
 
 ## M1 — Scene format + engine core
 
-- [ ] Scene schema v1 (project, composition, scene, layers, keyframe tracks) + types
-- [ ] Scene operations (pure `(doc, op) → doc'`) + change records + undo
+- [ ] Scene schema v1, part 1: project, assets, compositions, layer union, transform + parenting, in/out, markers, render switches, pinned style reference. Schema library decided here. Designed to leave room for every `v1.x` item.
+- [ ] Scene schema v1, part 2: keyframe tracks (linear, bezier, hold, spring), spatial paths, precomp references with cycle validation
 - [ ] Migration framework + first migration test
-- [ ] Engine: frame-based timeline, interpolation, easing curves, springs (damping + response)
-- [ ] Engine: evaluate a document at frame N → resolved layer tree (deterministic, tested)
+- [ ] Scene operations: pure `(doc, op) → doc'` + change records (concrete ids), batches, per-actor undo/redo, typed selectors
+- [ ] Engine: interpolation (scalars, vectors, colors), cubic-bezier easing, springs (damping + response), spatial motion paths
+- [ ] Engine: evaluate a document at frame N → resolved layer tree (parenting, precomps; deterministic, tested)
 
 ## M2 — Renderer (frames)
 
-- [ ] Draw a resolved layer tree in the browser (shapes, text, images)
-- [ ] Headless capture: document + frame → PNG
-- [ ] Determinism test: same doc + frame → identical pixels
+- [ ] Drawing backend decision (ADR): blend modes, mattes, masks and the effect list, deterministic in workers (see CAPABILITIES.md, "Determinism")
+- [ ] Draw shapes (fill, stroke, gradients, dashes), images, solids
+- [ ] Text: bundled fonts, shaping, layout (point/box, auto-fit)
 - [ ] Font loading strategy
+- [ ] Masks, track mattes, blend modes
+- [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)
 
-## M3 — MCP server
+## M3 — MCP server v1
 
-- [ ] Local stdio MCP server with precise tools (`create_project`, `get_scene`, `add_layer`, `set_keyframes`, …)
-- [ ] `render_frames` tool returning images
-- [ ] Project store (database) + versioned documents
+- [ ] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops`
+- [ ] `render_frames` + `render_contact_sheet` returning images; `describe_motion` timeline summary
+- [ ] MCP resources: scene schema, preset/component/token catalogs
+- [ ] Project store (database) + versioned documents + optimistic concurrency
+- [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets`
 - [ ] Remote transport (Streamable HTTP) + OAuth
 - [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT
 
-## M4 — Guidelines + quality checks
+## M4 — Motion depth
 
-- [ ] Token model (visual + motion) and guideline pack format
+- [ ] Shape operators: trim paths, repeater, round corners; path morphing (equal vertex counts)
+- [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
+- [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
+- [ ] Intent tools: `animate`, `apply_preset` (preset catalog), `stagger`, `retime`; `add_effect`, `add_behavior`
+- [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
+- [ ] SVG import → shape layer
+
+## M5 — Guidelines + quality checks
+
+- [ ] Token model (visual + motion) and guideline pack format; easing/spring tokens referenced by name, resolved against the pack version pinned in the document
 - [ ] First pack, authored with a motion designer
-- [ ] Quality rules engine + report format
-- [ ] `apply_style` and `check_quality` tools
+- [ ] Quality rules engine + report format (location, frame range, suggested fix op)
+- [ ] `list_styles`, `apply_style`, `get_tokens` and `check_quality` tools
 
-## M5 — Component library v1
+## M6 — Component library v1
 
 - [ ] Component model (props schema, evaluate, style-aware)
 - [ ] First components: kinetic type, logo reveal, lower third, transition set, background
-- [ ] `add_component` + intent-level tools
+- [ ] `add_component` + `build_from_brief`
 - [ ] Sandbox for custom components (spike → decision ADR)
 
-## M6 — Export pipeline + preview links
+## M7 — Export pipeline + preview links
 
 - [ ] Render workers + job queue
-- [ ] MP4 / WebM / GIF export
-- [ ] Music track + beat markers
-- [ ] Shareable preview links
+- [ ] MP4 / WebM / GIF export with audio layers mixed in; `render_preview_clip`, `export`, `get_export_status`
+- [ ] Beat markers on audio layers (detection + manual); `sync_to_beats`
+- [ ] Shareable preview links; `get_preview_link`
 
-## M7 — Web app
+## M8 — Editor (simple)
 
 - [ ] Design language in Paper → `DESIGN.md`
-- [ ] Sign in, project list, preview player with scrubbing, share links
+- [ ] Sign in, project list
+- [ ] Viewer + timeline scrubbing, layer list, inspector, basic keyframe editing, all on scene operations
+- [ ] Live view of agent edits (same document versions as MCP)
 
 ## Private beta
 
