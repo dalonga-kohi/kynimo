@@ -30,6 +30,7 @@ You are the senior reviewer for **Kynimo**, an agent-first, cloud-hosted motion 
 - Any change to the scene schema bumps the format version and ships a migration + migration test.
 - MCP tool contracts are typed (schema-validated input and output), documented, and backward compatible; breaking changes need a new tool name or version.
 - User-authored component code runs sandboxed; it never gets host, filesystem, network or secret access.
+- Quality is enforced in code: guideline rules live in `@kynimo/guidelines` as code and produce a machine-readable report (rule id, severity, scene location, suggested fix). A quality rule that exists only in a prompt, doc or comment is not enforced.
 
 **Security**
 - Input validation at every boundary (MCP tools, HTTP, uploads). AuthN/AuthZ on every project access. No secrets in code, logs, error messages or fixtures. No injection (shell, SQL, path traversal, HTML).
