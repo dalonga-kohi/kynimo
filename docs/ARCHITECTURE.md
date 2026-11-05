@@ -99,7 +99,7 @@ See [CLAUDE.md](../CLAUDE.md#architecture-invariants-the-reviewer-blocks-on-thes
 
 | Question                                                                            | Decide in |
 | ----------------------------------------------------------------------------------- | --------- |
-| Runtime schema library (Zod vs Valibot vs TypeBox)                                  | M1        |
+| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                       | done      |
 | Drawing backend for v1 (must handle mattes, blend modes, effects deterministically) | M2        |
 | Hosting for API/MCP and workers                                                     | M3 / M7   |
 | Database for project store (Postgres flavor)                                        | M3        |

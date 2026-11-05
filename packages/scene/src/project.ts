@@ -2,9 +2,11 @@ import { z } from "zod";
 import { AssetSchema } from "./asset.js";
 import { CompositionSchema } from "./composition.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
+import type { Keyframe } from "./keyframes.js";
 import type { Layer } from "./layer.js";
 import { NameSchema, SemverSchema } from "./primitives.js";
 import type { ShapeItem } from "./shape.js";
+import { type FrameRate, springSettleFrames } from "./spring.js";
 import { SCENE_FORMAT_VERSION } from "./version.js";
 
 /**
@@ -44,6 +46,92 @@ function* shapeItemIds(
 
 function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> {
   return layer.type !== "audio";
+}
+
+type Issue = (path: Path, message: string) => void;
+
+/**
+ * Spring rule: a spring segment lasts `springSettleFrames` frames, so the next keyframe must sit at or
+ * after that frame. Tracks are found structurally (any object with a `keyframes` array), so properties
+ * added later are checked automatically. Component `props` are free-form data and are skipped.
+ */
+function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): void {
+  const stack: { node: unknown; path: Path }[] = [{ node: layer, path: base }];
+  while (stack.length > 0) {
+    const item = stack.pop();
+    if (item === undefined || typeof item.node !== "object" || item.node === null) continue;
+    const node = item.node as Record<string, unknown>;
+    if (Array.isArray(node.keyframes)) {
+      const keyframes = node.keyframes as Keyframe<unknown>[];
+      keyframes.forEach((kf, i) => {
+        const next = keyframes[i + 1];
+        if (kf.interpolation.type !== "spring" || next === undefined) return;
+        const settle = kf.frame + springSettleFrames(kf.interpolation, fps);
+        if (next.frame < settle)
+          issue(
+            [...item.path, "keyframes", i + 1, "frame"],
+            `keyframe at frame ${next.frame} follows a spring that settles at frame ${settle}; move it to frame ${settle} or later, or change the previous keyframe's interpolation to bezier`,
+          );
+      });
+      continue; // keyframe values hold no further tracks
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (item.path.length === base.length && layer.type === "component" && key === "props")
+        continue;
+      stack.push({ node: child, path: [...item.path, Array.isArray(node) ? Number(key) : key] });
+    }
+  }
+}
+
+/** Precomps may not reference themselves, directly or through other compositions. Iterative, linear time. */
+function checkPrecompCycles(project: Project, issue: Issue): void {
+  type Edge = { target: string; path: Path };
+  const edges = new Map<string, Edge[]>();
+  const known = new Set(project.compositions.map((c) => c.id as string));
+  project.compositions.forEach((comp, ci) => {
+    const list: Edge[] = [];
+    comp.layers.forEach((layer, li) => {
+      if (layer.type === "precomp" && known.has(layer.compositionId))
+        list.push({
+          target: layer.compositionId,
+          path: ["compositions", ci, "layers", li, "compositionId"],
+        });
+    });
+    edges.set(comp.id, list);
+  });
+
+  const state = new Map<string, 1 | 2>(); // 1 = on the current path, 2 = finished
+  for (const root of known) {
+    if (state.has(root)) continue;
+    const path: string[] = [root];
+    const cursor: number[] = [0];
+    state.set(root, 1);
+    while (path.length > 0) {
+      const node = path[path.length - 1] as string;
+      const index = cursor[cursor.length - 1] as number;
+      const out = edges.get(node) ?? [];
+      if (index >= out.length) {
+        state.set(node, 2);
+        path.pop();
+        cursor.pop();
+        continue;
+      }
+      cursor[cursor.length - 1] = index + 1;
+      const edge = out[index] as Edge;
+      const seen = state.get(edge.target);
+      if (seen === 1) {
+        const loop = [...path.slice(path.indexOf(edge.target)), edge.target];
+        issue(
+          edge.path,
+          `precomp cycle: ${loop.join(" -> ")}; point this layer at a different composition or delete it`,
+        );
+      } else if (seen === undefined) {
+        state.set(edge.target, 1);
+        path.push(edge.target);
+        cursor.push(0);
+      }
+    }
+  }
 }
 
 /**
@@ -90,6 +178,8 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
 
     comp.layers.forEach((layer, li) => {
       const at = (...rest: (string | number)[]) => ["compositions", ci, "layers", li, ...rest];
+
+      checkSprings(layer, comp.fps, at(), issue);
 
       if (seenLayerIds.has(layer.id))
         issue(
@@ -204,6 +294,8 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       for (const id of walk) state.set(id, 2);
     }
   });
+
+  checkPrecompCycles(project, issue);
 }
 
 export const ProjectSchema = ProjectShape.superRefine(checkIntegrity);
