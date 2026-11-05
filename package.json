@@ -1,0 +1,25 @@
+{
+  "name": "kynimo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "biome check . && turbo run build typecheck test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.5",
+    "@types/node": "^26.6.6",
+    "turbo": "^2.11.10",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
