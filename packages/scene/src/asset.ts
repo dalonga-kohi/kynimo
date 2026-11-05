@@ -5,8 +5,15 @@ import { NameSchema } from "./primitives.js";
 const base = {
   id: AssetIdSchema,
   name: NameSchema,
-  /** Opaque storage location; the asset store resolves it. */
-  uri: z.string().min(1),
+  /**
+   * Store-relative key (no scheme, no `..`), resolved by the asset store. Never a URL or
+   * filesystem path, so a renderer or worker cannot be pointed at arbitrary hosts or files.
+   */
+  uri: z
+    .string()
+    .max(512)
+    .regex(/^assets\/[a-z0-9][a-z0-9/_.-]*$/, "must be a store key like 'assets/logo.png'")
+    .refine((u) => !u.includes("..") && !u.includes("//"), "must not contain '..' or '//'"),
   /** Content hash pins the exact bytes, so the same document renders the same pixels. */
   sha256: z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256"),
 };

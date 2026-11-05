@@ -21,6 +21,10 @@ export type CompositionId = z.infer<typeof CompositionIdSchema>;
 export const LayerIdSchema = id("LayerId");
 export type LayerId = z.infer<typeof LayerIdSchema>;
 
+/** Id of a marker. Unique across the whole project. */
+export const MarkerIdSchema = id("MarkerId");
+export type MarkerId = z.infer<typeof MarkerIdSchema>;
+
 /** Id of an item inside a shape layer's contents tree. Unique within its layer. */
 export const ShapeItemIdSchema = id("ShapeItemId");
 export type ShapeItemId = z.infer<typeof ShapeItemIdSchema>;

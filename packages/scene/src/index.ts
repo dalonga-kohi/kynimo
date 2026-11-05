@@ -2,6 +2,7 @@ export * from "./asset.js";
 export * from "./composition.js";
 export * from "./ids.js";
 export * from "./layer.js";
+export * from "./limits.js";
 export * from "./primitives.js";
 export * from "./project.js";
 export * from "./shape.js";

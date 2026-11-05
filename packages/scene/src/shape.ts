@@ -43,7 +43,8 @@ export const BezierPathSchema = z.strictObject({
   closed: z.boolean(),
   vertices: z
     .array(z.strictObject({ point: Vec2Schema, inTangent: Vec2Schema, outTangent: Vec2Schema }))
-    .min(2),
+    .min(2)
+    .max(1000),
 });
 export type BezierPath = z.infer<typeof BezierPathSchema>;
 
@@ -101,7 +102,7 @@ const StrokeSchema = z.strictObject({
   join: z.enum(["miter", "round", "bevel"]),
   miterLimit: z.number().min(1),
   /** Alternating dash and gap lengths; empty means solid. */
-  dashes: z.array(NonNegativeSchema),
+  dashes: z.array(NonNegativeSchema).max(16),
   dashOffset: animatable(NumberSchema),
 });
 
@@ -119,19 +120,11 @@ type LeafShapeItem =
 export type GroupShapeItem = z.infer<typeof GroupBaseSchema> & { items: ShapeItem[] };
 export type ShapeItem = LeafShapeItem | GroupShapeItem;
 
-/**
- * A group with its own transform. Recursive: groups contain further shape items.
- * The recursive type is written out by hand because Zod cannot infer a self-reference.
- */
-const GroupSchema = z.strictObject({
-  ...GroupBaseSchema.shape,
-  get items(): z.ZodArray<z.ZodType<ShapeItem>> {
-    return z.array(ShapeItemSchema);
-  },
-});
+/** Groups may nest this deep. Deeper input is a validation error, never a stack overflow. */
+export const MAX_GROUP_DEPTH = 32;
+export const MAX_SHAPE_ITEMS = 500;
 
-/** Items are listed top-first, like layers. How fills and strokes bind to geometry is defined with the renderer (M2). */
-export const ShapeItemSchema: z.ZodType<ShapeItem> = z.discriminatedUnion("type", [
+const leafItems = [
   RectSchema,
   EllipseSchema,
   PolygonSchema,
@@ -139,5 +132,19 @@ export const ShapeItemSchema: z.ZodType<ShapeItem> = z.discriminatedUnion("type"
   PathSchema,
   FillSchema,
   StrokeSchema,
-  GroupSchema,
-]);
+] as const;
+
+/**
+ * Items are listed top-first, like layers. How fills and strokes bind to geometry is defined with the renderer (M2).
+ * Recursion is unrolled to a fixed depth instead of using a lazy self-reference, so parsing
+ * hostile input cannot exhaust the stack. The recursive type is written out by hand for the same reason.
+ */
+const shapeItemAtDepth = (depth: number): z.ZodType<ShapeItem> => {
+  if (depth === 0) return z.discriminatedUnion("type", [...leafItems]);
+  const group = z.strictObject({
+    ...GroupBaseSchema.shape,
+    items: z.array(shapeItemAtDepth(depth - 1)).max(MAX_SHAPE_ITEMS),
+  });
+  return z.discriminatedUnion("type", [...leafItems, group]) as unknown as z.ZodType<ShapeItem>;
+};
+export const ShapeItemSchema: z.ZodType<ShapeItem> = shapeItemAtDepth(MAX_GROUP_DEPTH);

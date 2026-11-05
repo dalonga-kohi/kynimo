@@ -1,16 +1,20 @@
 import { z } from "zod";
-import { AssetIdSchema, CompositionIdSchema, LayerIdSchema } from "./ids.js";
+import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
+import { MAX_COMPOSITION_SIZE } from "./limits.js";
 import {
   ColorSchema,
   FrameSchema,
   JsonSchema,
+  MAX_MARKERS,
+  MAX_PROPS,
   MarkerSchema,
   NameSchema,
   NonNegativeSchema,
   NumberSchema,
   PositiveSchema,
+  SemverSchema,
 } from "./primitives.js";
-import { ShapeItemSchema } from "./shape.js";
+import { MAX_SHAPE_ITEMS, ShapeItemSchema } from "./shape.js";
 import { animatable, TransformSchema } from "./transform.js";
 
 /**
@@ -39,7 +43,7 @@ const common = {
   hidden: z.boolean(),
   solo: z.boolean(),
   editor: EditorMetaSchema,
-  markers: z.array(MarkerSchema),
+  markers: z.array(MarkerSchema).max(MAX_MARKERS),
 };
 
 /** Layers that draw: they have a transform and may be parented to another visual layer. */
@@ -52,7 +56,7 @@ const visual = {
 export const ShapeLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("shape"),
-  contents: z.array(ShapeItemSchema),
+  contents: z.array(ShapeItemSchema).max(MAX_SHAPE_ITEMS),
 });
 
 const TextBoxSchema = z.discriminatedUnion("mode", [
@@ -69,7 +73,8 @@ const TextBoxSchema = z.discriminatedUnion("mode", [
 export const TextLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("text"),
-  content: z.string().max(10_000),
+  /** Wrapped because keyframed source text is `v1.x`. */
+  content: animatable(z.string().max(10_000)),
   box: TextBoxSchema,
   font: z.strictObject({
     family: z.string().min(1).max(100),
@@ -94,8 +99,8 @@ export const ImageLayerSchema = z.strictObject({
 export const SolidLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("solid"),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
+  width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
+  height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   color: ColorSchema,
 });
 
@@ -115,8 +120,12 @@ export const AdjustmentLayerSchema = z.strictObject({ ...visual, type: z.literal
 export const ComponentLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("component"),
-  componentId: z.string().min(1).max(100),
-  props: z.record(z.string(), JsonSchema),
+  componentId: z.string().regex(ID_PATTERN),
+  /** Pinned like the style pack: a new component version never changes an existing document. */
+  componentVersion: SemverSchema,
+  props: z
+    .record(z.string(), JsonSchema)
+    .refine((p) => Object.keys(p).length <= MAX_PROPS, `at most ${MAX_PROPS} props`),
 });
 
 /** Audio has no transform and no parent. Beat markers are markers on this layer. */

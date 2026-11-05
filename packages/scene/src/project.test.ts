@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { ProjectSchema, SCENE_FORMAT_VERSION } from "./index.js";
+import { MAX_GROUP_DEPTH, MAX_LAYERS, ProjectSchema, SCENE_FORMAT_VERSION } from "./index.js";
 
 type Obj = Record<string, unknown>;
 
@@ -43,7 +43,7 @@ const composition = (id: string, layers: Obj[]): Obj => ({
   name: id,
   width: 1920,
   height: 1080,
-  fps: 30,
+  fps: { num: 30, den: 1 },
   durationFrames: 90,
   background: "#000000",
   layers,
@@ -101,7 +101,7 @@ describe("ProjectSchema: valid documents", () => {
           {
             ...visual("title", "controller"),
             type: "text",
-            content: "Hello",
+            content: prop("Hello"),
             box: { mode: "point" },
             font: { family: "inter", weight: 700, size: prop(96) },
             tracking: prop(0),
@@ -149,6 +149,7 @@ describe("ProjectSchema: valid documents", () => {
             ...visual("lower-third"),
             type: "component",
             componentId: "lower-third",
+            componentVersion: "1.0.0",
             props: { name: "Ada", nested: { n: [1, 2] } },
           },
           {
@@ -156,7 +157,7 @@ describe("ProjectSchema: valid documents", () => {
             type: "audio",
             assetId: "music",
             volume: prop(1),
-            markers: [{ frame: 15, durationFrames: 0, name: "beat" }],
+            markers: [{ id: "beat-1", frame: 15, durationFrames: 0, name: "beat" }],
           },
         ]),
         composition("intro", []),
@@ -172,7 +173,11 @@ describe("ProjectSchema: field validation", () => {
   });
 
   it("rejects unknown keys so typos surface instead of being dropped", () => {
-    expect(issues(project({ nmae: "x" }))).not.toEqual([]);
+    expect(issues(project({ nmae: "x" })).map((i) => i.path)).toEqual([""]);
+    const typo = { ...nullLayer("a"), transform: { ...transform(), rotaton: prop(0) } };
+    expect(
+      issues(project({ compositions: [composition("main", [typo])] })).map((i) => i.path),
+    ).toEqual(["compositions.0.layers.0.transform"]);
   });
 
   it("rejects non-finite numbers and fractional frames", () => {
@@ -182,15 +187,19 @@ describe("ProjectSchema: field validation", () => {
     );
     const nan = { ...transform(), rotation: prop(Number.NaN) };
     const comp2 = composition("main", [{ ...nullLayer("a"), transform: nan }]);
-    expect(issues(project({ compositions: [comp2] })).length).toBeGreaterThan(0);
+    expect(issues(project({ compositions: [comp2] })).map((i) => i.path)).toContain(
+      "compositions.0.layers.0.transform.rotation.value",
+    );
   });
 
   it("rejects ids that are not lowercase slugs and non-canonical colors", () => {
-    expect(issues(project({ mainCompositionId: "Main Comp" })).length).toBeGreaterThan(0);
+    expect(issues(project({ mainCompositionId: "Main Comp" })).map((i) => i.path)).toContain(
+      "mainCompositionId",
+    );
     const comp = composition("main", []);
     expect(
-      issues(project({ compositions: [{ ...comp, background: "#FFF" }] })).length,
-    ).toBeGreaterThan(0);
+      issues(project({ compositions: [{ ...comp, background: "#FFF" }] })).map((i) => i.path),
+    ).toEqual(["compositions.0.background"]);
   });
 
   it("rejects out-of-order gradient stops", () => {
@@ -217,10 +226,45 @@ describe("ProjectSchema: field validation", () => {
       ],
     };
     expect(
-      issues(project({ compositions: [composition("main", [shape])] })).length,
-    ).toBeGreaterThan(0);
+      issues(project({ compositions: [composition("main", [shape])] })).map((i) => i.path),
+    ).toEqual(["compositions.0.layers.0.contents.0.paint.stops.value"]);
   });
-
+  it("accepts NTSC frame rates exactly and rejects absurd ones", () => {
+    const ntsc = { ...composition("main", []), fps: { num: 30000, den: 1001 } };
+    expect(issues(project({ compositions: [ntsc] }))).toEqual([]);
+    const fast = { ...composition("main", []), fps: { num: 1000, den: 1 } };
+    expect(issues(project({ compositions: [fast] })).map((i) => i.path)).toEqual([
+      "compositions.0.fps",
+    ]);
+  });
+  it("rejects asset uris that are URLs, absolute paths or traverse out of the store", () => {
+    for (const uri of [
+      "https://example.com/a.png",
+      "file:///etc/passwd",
+      "/etc/passwd",
+      "assets/../../x",
+      "assets//x",
+    ]) {
+      const asset = {
+        id: "x",
+        type: "image",
+        name: "X",
+        uri,
+        sha256: "a".repeat(64),
+        width: 1,
+        height: 1,
+      };
+      expect([...new Set(issues(project({ assets: [asset] })).map((i) => i.path))], uri).toEqual([
+        "assets.0.uri",
+      ]);
+    }
+  });
+  it("requires a pinned component version", () => {
+    const layer = { ...visual("c"), type: "component", componentId: "x", props: {} };
+    expect(
+      issues(project({ compositions: [composition("main", [layer])] })).map((i) => i.path),
+    ).toEqual(["compositions.0.layers.0.componentVersion"]);
+  });
   it("accepts deeply nested shape groups", () => {
     let items: Obj[] = [
       { type: "ellipse", id: "leaf", name: "Leaf", position: prop([0, 0]), size: prop([1, 1]) },
@@ -229,6 +273,58 @@ describe("ProjectSchema: field validation", () => {
       items = [{ type: "group", id: `g${i}`, name: "G", transform: transform(), items }];
     const shape = { ...visual("s"), type: "shape", contents: items };
     expect(issues(project({ compositions: [composition("main", [shape])] }))).toEqual([]);
+  });
+});
+
+describe("ProjectSchema: hostile input", () => {
+  const nest = (depth: number): Obj[] => {
+    let items: Obj[] = [
+      { type: "ellipse", id: "leaf", name: "Leaf", position: prop([0, 0]), size: prop([1, 1]) },
+    ];
+    for (let i = 0; i < depth; i++)
+      items = [{ type: "group", id: `g${i}`, name: "G", transform: transform(), items }];
+    return items;
+  };
+  const withContents = (contents: Obj[]) =>
+    project({ compositions: [composition("main", [{ ...visual("s"), type: "shape", contents }])] });
+
+  it("accepts shape groups nested to the limit and rejects one level deeper with a pathed issue", () => {
+    expect(issues(withContents(nest(MAX_GROUP_DEPTH)))).toEqual([]);
+    const found = issues(withContents(nest(MAX_GROUP_DEPTH + 1)));
+    expect(found.length).toBeGreaterThan(0);
+    expect(found[0]?.path).toMatch(/^compositions\.0\.layers\.0\.contents\.0/);
+  });
+
+  it("returns errors instead of overflowing the stack on extreme nesting", () => {
+    expect(issues(withContents(nest(5000))).length).toBeGreaterThan(0);
+    let props: unknown = 1;
+    for (let i = 0; i < 5000; i++) props = { a: props };
+    const layer = {
+      ...visual("c"),
+      type: "component",
+      componentId: "x",
+      componentVersion: "1.0.0",
+      props,
+    };
+    expect(
+      issues(project({ compositions: [composition("main", [layer])] })).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("checks parent cycles in linear time at the layer limit", () => {
+    const layers = Array.from({ length: MAX_LAYERS }, (_, i) =>
+      nullLayer(`l${i}`, i === MAX_LAYERS - 1 ? null : `l${i + 1}`),
+    );
+    const started = Date.now();
+    expect(issues(project({ compositions: [composition("main", layers)] }))).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  it("rejects more layers than the limit", () => {
+    const layers = Array.from({ length: MAX_LAYERS + 1 }, (_, i) => nullLayer(`l${i}`));
+    expect(
+      issues(project({ compositions: [composition("main", layers)] })).map((i) => i.path),
+    ).toEqual(["compositions.0.layers"]);
   });
 });
 
@@ -250,7 +346,7 @@ describe("ProjectSchema: integrity", () => {
       id: "x",
       type: "image",
       name: "X",
-      uri: "u",
+      uri: "assets/u.bin",
       sha256: "a".repeat(64),
       width: 1,
       height: 1,
@@ -282,7 +378,14 @@ describe("ProjectSchema: integrity", () => {
   it("rejects a parent that is missing, in another composition, or an audio layer", () => {
     const doc = project({
       assets: [
-        { id: "m", type: "audio", name: "M", uri: "u", sha256: "a".repeat(64), durationMs: 1000 },
+        {
+          id: "m",
+          type: "audio",
+          name: "M",
+          uri: "assets/u.bin",
+          sha256: "a".repeat(64),
+          durationMs: 1000,
+        },
       ],
       compositions: [
         composition("main", [
@@ -324,7 +427,14 @@ describe("ProjectSchema: integrity", () => {
   it("checks asset references exist and match the layer kind", () => {
     const doc = project({
       assets: [
-        { id: "m", type: "audio", name: "M", uri: "u", sha256: "a".repeat(64), durationMs: 1000 },
+        {
+          id: "m",
+          type: "audio",
+          name: "M",
+          uri: "assets/u.bin",
+          sha256: "a".repeat(64),
+          durationMs: 1000,
+        },
       ],
       compositions: [
         composition("main", [
@@ -348,6 +458,27 @@ describe("ProjectSchema: integrity", () => {
     expect(issues(doc).map((i) => i.path)).toEqual(["compositions.0.layers.0.compositionId"]);
   });
 
+  it("rejects duplicate marker ids across layers and compositions", () => {
+    const marker = { id: "m1", frame: 0, durationFrames: 0, name: "" };
+    const doc = project({
+      compositions: [
+        { ...composition("main", [{ ...nullLayer("a"), markers: [marker] }]), markers: [marker] },
+      ],
+    });
+    expect(issues(doc).map((i) => i.path)).toEqual(["compositions.0.layers.0.markers.0.id"]);
+  });
+
+  it("reports a cycle once and not for chains that merely feed into it", () => {
+    const doc = project({
+      compositions: [
+        composition("main", [nullLayer("x", "a"), nullLayer("a", "b"), nullLayer("b", "a")]),
+      ],
+    });
+    const found = issues(doc);
+    expect(found.map((i) => i.path)).toEqual(["compositions.0.layers.1.parent"]);
+    expect(found[0]?.message).toContain("a -> b -> a");
+  });
+
   it("rejects duplicate shape item ids within a layer, including inside groups", () => {
     const leaf = {
       type: "ellipse",
@@ -364,9 +495,12 @@ describe("ProjectSchema: integrity", () => {
         { type: "group", id: "g", name: "G", transform: transform(), items: [leaf] },
       ],
     };
-    expect(
-      issues(project({ compositions: [composition("main", [shape])] })).map((i) => i.message),
-    ).toEqual([expect.stringContaining("duplicate shape item id 'same'")]);
+    expect(issues(project({ compositions: [composition("main", [shape])] }))).toEqual([
+      {
+        path: "compositions.0.layers.0.contents.1.items.0.id",
+        message: expect.stringContaining("duplicate shape item id 'same'"),
+      },
+    ]);
   });
 });
 

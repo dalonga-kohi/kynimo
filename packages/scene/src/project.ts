@@ -3,7 +3,7 @@ import { AssetSchema } from "./asset.js";
 import { CompositionSchema } from "./composition.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
 import type { Layer } from "./layer.js";
-import { NameSchema } from "./primitives.js";
+import { NameSchema, SemverSchema } from "./primitives.js";
 import type { ShapeItem } from "./shape.js";
 import { SCENE_FORMAT_VERSION } from "./version.js";
 
@@ -13,7 +13,7 @@ import { SCENE_FORMAT_VERSION } from "./version.js";
  */
 export const StyleRefSchema = z.strictObject({
   packId: z.string().regex(ID_PATTERN),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/, "must be a semantic version like 1.0.0"),
+  version: SemverSchema,
 });
 export type StyleRef = z.infer<typeof StyleRefSchema>;
 
@@ -23,16 +23,22 @@ const ProjectShape = z.strictObject({
   /** The composition that is exported; scenes are compositions placed in it as precomp layers. */
   mainCompositionId: CompositionIdSchema,
   style: StyleRefSchema.nullable(),
-  assets: z.array(AssetSchema),
-  compositions: z.array(CompositionSchema).min(1),
+  assets: z.array(AssetSchema).max(1000),
+  compositions: z.array(CompositionSchema).min(1).max(200),
 });
 
 type Project = z.infer<typeof ProjectShape>;
 
-function* shapeItemIds(items: readonly ShapeItem[]): Generator<string> {
-  for (const it of items) {
-    yield it.id;
-    if (it.type === "group") yield* shapeItemIds(it.items);
+type Path = (string | number)[];
+
+/** Yields every shape item id with its path relative to the layer, e.g. ["contents", 1, "items", 0, "id"]. */
+function* shapeItemIds(
+  items: readonly ShapeItem[],
+  base: Path,
+): Generator<{ id: string; path: Path }> {
+  for (const [i, it] of items.entries()) {
+    yield { id: it.id, path: [...base, i, "id"] };
+    if (it.type === "group") yield* shapeItemIds(it.items, [...base, i, "items"]);
   }
 }
 
@@ -51,12 +57,14 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
   const assetsById = new Map(project.assets.map((a) => [a.id as string, a]));
   const compositionIds = new Set<string>();
 
+  const seenAssets = new Set<string>();
   project.assets.forEach((asset, i) => {
-    if (project.assets.findIndex((a) => a.id === asset.id) !== i)
+    if (seenAssets.has(asset.id))
       issue(
         ["assets", i, "id"],
         `duplicate asset id '${asset.id}'; asset ids must be unique, rename one`,
       );
+    seenAssets.add(asset.id);
   });
 
   project.compositions.forEach((comp, i) => {
@@ -75,6 +83,7 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
     );
 
   const seenLayerIds = new Set<string>();
+  const seenMarkerIds = new Set<string>();
 
   project.compositions.forEach((comp, ci) => {
     const layerById = new Map(comp.layers.map((l) => [l.id as string, l]));
@@ -134,10 +143,10 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
           break;
         case "shape": {
           const seenItems = new Set<string>();
-          for (const itemId of shapeItemIds(layer.contents)) {
+          for (const { id: itemId, path } of shapeItemIds(layer.contents, ["contents"])) {
             if (seenItems.has(itemId))
               issue(
-                at("contents"),
+                at(...path),
                 `duplicate shape item id '${itemId}' in layer '${layer.id}'; item ids are unique within a layer, rename one`,
               );
             seenItems.add(itemId);
@@ -149,28 +158,51 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       }
     });
 
-    // Parent cycles: report each cycle once, on its first member in layer order.
-    const reported = new Set<string>();
-    comp.layers.forEach((layer, li) => {
-      if (!hasTransform(layer) || reported.has(layer.id)) return;
-      const chain: string[] = [layer.id];
-      let current: Layer | undefined = layer;
-      while (current !== undefined && hasTransform(current) && current.parent !== null) {
-        const next: Layer | undefined = layerById.get(current.parent);
-        if (next === undefined) break;
-        if (next.id === layer.id) {
-          for (const id of chain) reported.add(id);
+    // Marker ids are unique across the project.
+    const checkMarkers = (markers: readonly { id: string }[], path: Path) =>
+      markers.forEach((m, mi) => {
+        if (seenMarkerIds.has(m.id))
           issue(
-            ["compositions", ci, "layers", li, "parent"],
-            `parenting cycle: ${[...chain, layer.id].join(" -> ")}; set parent to null on one of these layers`,
+            [...path, mi, "id"],
+            `duplicate marker id '${m.id}'; marker ids are unique across the whole project, rename one`,
+          );
+        seenMarkerIds.add(m.id);
+      });
+    checkMarkers(comp.markers, ["compositions", ci, "markers"]);
+    for (const [li, layer] of comp.layers.entries())
+      checkMarkers(layer.markers, ["compositions", ci, "layers", li, "markers"]);
+
+    // Parent cycles, linear time. Each layer has at most one parent, so walk each unvisited chain once:
+    // reaching a layer that is on the current walk closes a cycle. Reported once, on its first member in layer order.
+    const indexOf = new Map(comp.layers.map((l, i) => [l.id as string, i]));
+    const state = new Map<string, 1 | 2>(); // 1 = on the current walk, 2 = finished
+    for (const start of comp.layers) {
+      if (state.has(start.id)) continue;
+      const walk: string[] = [];
+      let current: string | null = start.id;
+      while (current !== null) {
+        const seen = state.get(current);
+        if (seen === 2) break;
+        if (seen === 1) {
+          const cycle = walk.slice(walk.indexOf(current));
+          const first = cycle.reduce((a, b) =>
+            (indexOf.get(b) ?? 0) < (indexOf.get(a) ?? 0) ? b : a,
+          );
+          const at = cycle.indexOf(first);
+          const ordered = [...cycle.slice(at), ...cycle.slice(0, at)];
+          issue(
+            ["compositions", ci, "layers", indexOf.get(first) ?? 0, "parent"],
+            `parenting cycle: ${[...ordered, first].join(" -> ")}; set parent to null on one of these layers`,
           );
           break;
         }
-        if (chain.includes(next.id)) break; // cycle not involving this layer; reported from its own member
-        chain.push(next.id);
-        current = next;
+        state.set(current, 1);
+        walk.push(current);
+        const layer = layerById.get(current);
+        current = layer !== undefined && hasTransform(layer) ? layer.parent : null;
       }
-    });
+      for (const id of walk) state.set(id, 2);
+    }
   });
 }
 
