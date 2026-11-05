@@ -1,6 +1,6 @@
 # 0006 — Source-visible first, open core later
 
-- Status: accepted (amended 2026-11-05: repository is public)
+- Status: accepted (amended in place 2026-11-05: repository is public; originally "private first", hence the filename)
 - Date: 2026-11-05
 
 ## Context
