@@ -57,10 +57,20 @@ describe("springSettleFrames", () => {
     );
   });
 
-  it("is deterministic and exact for NTSC rates", () => {
-    const ntsc = { num: 30000, den: 1001 };
-    expect(springSettleFrames({ damping: 0.6, response: 0.5 }, ntsc)).toBe(
-      springSettleFrames({ damping: 0.6, response: 0.5 }, ntsc),
-    );
+  it("pins golden values, so a formula change cannot silently invalidate stored documents", () => {
+    const at = (damping: number, response: number, fps = fps30) =>
+      springSettleFrames({ damping, response }, fps);
+    expect(at(0.5, 0.5)).toBe(34);
+    expect(at(1, 0.5)).toBe(23);
+    expect(at(0.1, 10, { num: 240, den: 1 })).toBe(26405);
+    expect(at(10, 10, { num: 240, den: 1 })).toBe(52659);
+    expect(at(0.6, 0.5, { num: 30000, den: 1001 })).toBe(29);
+  });
+
+  it("is continuous around critical damping", () => {
+    const at = (damping: number) => springSettleFrames({ damping, response: 0.5 }, fps30);
+    expect(at(0.999)).toBe(24);
+    expect(at(0.9999999999999999)).toBe(60);
+    expect(at(1)).toBe(23);
   });
 });

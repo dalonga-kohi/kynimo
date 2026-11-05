@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SPRING_DAMPING, SPRING_RESPONSE } from "./limits.js";
 import type { Vec2 } from "./primitives.js";
 import { FrameSchema, NumberSchema, Vec2Schema } from "./primitives.js";
 
@@ -23,8 +24,8 @@ export const InterpolationSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("spring"),
-    damping: z.number().min(0.1).max(10),
-    response: z.number().min(0.05).max(10),
+    damping: z.number().min(SPRING_DAMPING.min).max(SPRING_DAMPING.max),
+    response: z.number().min(SPRING_RESPONSE.min).max(SPRING_RESPONSE.max),
   }),
 ]);
 export type Interpolation = z.infer<typeof InterpolationSchema>;

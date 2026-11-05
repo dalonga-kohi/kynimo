@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ShapeItemIdSchema } from "./ids.js";
 import type { Keyframe } from "./keyframes.js";
+import { MAX_GRADIENT_STOPS } from "./limits.js";
 import {
   ColorSchema,
   NameSchema,
@@ -15,6 +16,7 @@ import { animatable, TransformSchema } from "./transform.js";
 const GradientStopsSchema = z
   .array(z.strictObject({ offset: UnitIntervalSchema, color: ColorSchema }))
   .min(2)
+  .max(MAX_GRADIENT_STOPS)
   .refine(
     (stops) => stops.every((stop, i) => i === 0 || stop.offset >= (stops[i - 1]?.offset ?? 0)),
     {

@@ -78,7 +78,8 @@ Video note: frame-accurate decoding through `<video>` in Chromium isn't determin
 | Groups with their own transform                               | Group                           | beta   |
 | Fill: solid, linear and radial gradient; fill rule            | Fill / gradient fill            | beta   |
 | Stroke: width, caps, joins, dashes + offset                   | Stroke                          | beta   |
-| Gradient stroke, taper                                        | Gradient stroke, taper          | v1.x   |
+| Gradient stroke                                               | Gradient stroke                 | beta   |
+| Taper                                                         | Taper                           | v1.x   |
 | Operators: trim paths, repeater, round corners                | Path operators                  | beta   |
 | Operators: offset paths, merge paths                          | Path operators                  | v1.x   |
 | Operators: wiggle paths, zig-zag, pucker & bloat, twist       | Path operators                  | later  |
@@ -110,7 +111,8 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 | Interpolation: linear, cubic bezier (temporal handles), hold                                                                                                 | Keyframe interpolation | beta   |
 | Springs (damping + response) as a keyframe interpolation, see note                                                                                           | —                      | beta   |
 | Spatial interpolation: bezier motion paths with handles                                                                                                      | Motion path            | beta   |
-| Separate dimensions per track                                                                                                                                | Separate dimensions    | beta   |
+| Separate X/Y tracks for position                                                                                                                             | Separate dimensions    | beta   |
+| Separate dimensions on other properties (scale, anchor)                                                                                                      | Separate dimensions    | v1.x   |
 | Roving keyframes (constant speed through a path)                                                                                                             | Rove across time       | later  |
 | Easing and spring **tokens** from the pinned guideline pack                                                                                                  | —                      | beta   |
 | Behaviors, typed and seeded, in place of expressions: wiggle, loop (cycle, ping-pong, offset), inertia/overshoot, follow/link to another property, oscillate | Expressions            | beta   |

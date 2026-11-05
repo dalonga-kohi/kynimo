@@ -162,6 +162,36 @@ describe("spring segments", () => {
   });
 });
 
+describe("hostile and out-of-range springs", () => {
+  it("reports only the range issue for an out-of-range spring, never a bogus settle frame", () => {
+    for (const bad of [
+      { type: "spring", damping: 0, response: 0.5 },
+      { type: "spring", damping: 0.5, response: -1 },
+      { type: "spring", damping: 1e150, response: 0.5 },
+    ]) {
+      const found = paths(withTransform({ rotation: { keyframes: [kf(0, 0, bad), kf(1, 1)] } }));
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatch(/keyframes\.0\.interpolation\.(damping|response)$/);
+    }
+  });
+
+  it("does not accept keyframes on text content, which the engine cannot interpolate", () => {
+    const text = {
+      ...visual("t"),
+      type: "text",
+      content: { keyframes: [kf(0, "a"), kf(10, "b")] },
+      box: { mode: "point" },
+      font: { family: "inter", weight: 400, size: prop(48) },
+      tracking: prop(0),
+      leading: prop(1.2),
+      align: "left",
+      textCase: "none",
+      fill: prop("#ffffff"),
+    };
+    expect(paths(doc(text))).toContain("compositions.0.layers.0.content");
+  });
+});
+
 describe("position", () => {
   it("accepts spatial motion path handles on position keyframes", () => {
     const position = {
@@ -277,7 +307,7 @@ describe("precomp cycles", () => {
     expect(issues(input)).toEqual([
       {
         path: "compositions.0.layers.0.compositionId",
-        message: expect.stringContaining("precomp cycle: main -> main"),
+        message: expect.stringMatching(/precomp cycle.*main -> main/),
       },
     ]);
   });
@@ -294,6 +324,37 @@ describe("precomp cycles", () => {
     expect(found).toHaveLength(1);
     expect(found[0]?.path).toBe("compositions.2.layers.0.compositionId");
     expect(found[0]?.message).toContain("a -> b -> a");
+  });
+
+  it("keeps cycle error output small when many layers close a long loop", () => {
+    const n = 200;
+    const names = Array.from({ length: n }, (_, i) => `c${i}-${"x".repeat(50)}`);
+    const defs: [string, Obj[]][] = names.map((id, i) => {
+      if (i < n - 1) return [id, [precomp(`p${i}`, names[i + 1] as string)]];
+      return [id, Array.from({ length: 900 }, (_, k) => precomp(`back${k}`, names[0] as string))];
+    });
+    const input = project({ mainCompositionId: names[0], compositions: comps(...defs) });
+    const result = ProjectSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    const inputSize = JSON.stringify(input).length;
+    expect(JSON.stringify(result.error?.issues).length).toBeLessThan(inputSize);
+  });
+
+  it("handles an unreachable cycle and a long acyclic chain", () => {
+    const chain = Array.from(
+      { length: 150 },
+      (_, i) => [`k${i}`, i < 149 ? [precomp(`q${i}`, `k${i + 1}`)] : []] as [string, Obj[]],
+    );
+    const lone = project({
+      compositions: comps(
+        ["main", []],
+        ["u", [precomp("pu", "v")]],
+        ["v", [precomp("pv", "u")]],
+        ...chain,
+      ),
+    });
+    expect(paths(lone)).toEqual(["compositions.2.layers.0.compositionId"]);
+    expect(issues(project({ compositions: comps(["main", []], ...chain) }))).toEqual([]);
   });
 
   it("accepts shared and nested precomps that do not form a cycle", () => {

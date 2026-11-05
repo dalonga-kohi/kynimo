@@ -18,12 +18,15 @@ Scene schema v1 (roadmap M1) fixes the shape of every stored document. Agents wr
 - **Pinned references:** the style pack (`style`) and each component instance (`componentVersion`) are pinned by version, so publishing a new version never changes an existing document. Assets pin `sha256` and use store-relative keys, never URLs or paths.
 - **Frame rate is an exact ratio** `{ num, den }`.
 - **Hostile input is bounded.** Arrays, sizes, fps and duration have limits. Recursive structures (shape groups, component props) are checked by an iterative depth check that runs before the recursive schema and aborts with one pathed issue. Parent-cycle and precomp-cycle checks are linear time. Validation must never throw, overflow the stack, or produce error output that grows faster than the input.
+- **Text content** is stored as `{ value }` and is constant-only: strings cannot be interpolated. Keyframed source text (`v1.x`) will allow only hold keyframes, which loosens the rule and needs no migration.
 - Cross-reference rules (uniqueness, references, cycles, spring timing) live in one project-level integrity pass, with messages that name the location and the fix.
 
 ## Consequences
 
 - New animatable properties get keyframes, spring checks and error paths for free by using `animatable`.
-- The exported JSON Schema is large (about 177 KB) because every property carries a keyframe form; it has a size budget in tests and should be emitted with `reused: "ref"` for the MCP resource.
+- The exported JSON Schema is large (about 177 KB inline) because every property carries a keyframe form; it has a size budget in tests and is emitted with `reused: "ref"` for the MCP resource (about 39 KB, budgeted at 60 KB in tests).
 - `springSettleFrames` uses `Math.exp`/`Math.log`, which are not guaranteed bit-identical across JS engines. A settle frame could in theory land one frame differently on another runtime. If that ever matters, replace them with a table or a fixed-point implementation.
+- Interpolation can push a value outside its property's domain (bezier overshoot or a spring on opacity above 1, a negative radius, skew past ±85). The engine ADR must define clamping per property; the schema only validates stored values.
+- A future token interpolation (`{ type: "token", name }`, M5) is an additive union variant, but its spring timing check needs the pinned pack, so it moves from schema validation into the guideline-aware layer.
 - Interpolating paths with different vertex counts, per-dimension spatial paths, time remap and the other `v1.x` items are additive: new optional fields or new union variants.
 - Any later change to these conventions needs a `SCENE_FORMAT_VERSION` bump and a migration. Version 1 stays unbumped until this work ships.

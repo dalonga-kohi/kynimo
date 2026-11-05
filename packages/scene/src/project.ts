@@ -4,6 +4,7 @@ import { CompositionSchema } from "./composition.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
 import type { Keyframe } from "./keyframes.js";
 import type { Layer } from "./layer.js";
+import { SPRING_DAMPING, SPRING_RESPONSE } from "./limits.js";
 import { NameSchema, SemverSchema } from "./primitives.js";
 import type { ShapeItem } from "./shape.js";
 import { type FrameRate, springSettleFrames } from "./spring.js";
@@ -50,23 +51,49 @@ function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> 
 
 type Issue = (path: Path, message: string) => void;
 
+/** Layer fields that hold free-form data rather than schema-defined tracks; the structural walk skips them. */
+const FREE_FORM_LAYER_KEYS: ReadonlySet<string> = new Set(["props"]);
+
+const inRange = (n: number, r: { min: number; max: number }) => n >= r.min && n <= r.max;
+
 /**
  * Spring rule: a spring segment lasts `springSettleFrames` frames, so the next keyframe must sit at or
  * after that frame. Tracks are found structurally (any object with a `keyframes` array), so properties
- * added later are checked automatically. Component `props` are free-form data and are skipped.
+ * added later are checked automatically; free-form fields are skipped and every element is guarded.
+ * Springs whose parameters are out of range are left to their own range issue.
  */
 function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): void {
+  const settleCache = new Map<string, number>();
+  const settleFrames = (s: { damping: number; response: number }) => {
+    const key = `${s.damping}/${s.response}`;
+    let frames = settleCache.get(key);
+    if (frames === undefined) {
+      frames = springSettleFrames(s, fps);
+      settleCache.set(key, frames);
+    }
+    return frames;
+  };
+
   const stack: { node: unknown; path: Path }[] = [{ node: layer, path: base }];
   while (stack.length > 0) {
     const item = stack.pop();
     if (item === undefined || typeof item.node !== "object" || item.node === null) continue;
     const node = item.node as Record<string, unknown>;
     if (Array.isArray(node.keyframes)) {
-      const keyframes = node.keyframes as Keyframe<unknown>[];
-      keyframes.forEach((kf, i) => {
-        const next = keyframes[i + 1];
-        if (kf.interpolation.type !== "spring" || next === undefined) return;
-        const settle = kf.frame + springSettleFrames(kf.interpolation, fps);
+      const keyframes = node.keyframes as unknown[];
+      keyframes.forEach((raw, i) => {
+        const kf = raw as Partial<Keyframe<unknown>> | null;
+        const next = keyframes[i + 1] as Partial<Keyframe<unknown>> | null | undefined;
+        const spring = kf?.interpolation;
+        if (
+          spring?.type !== "spring" ||
+          typeof kf?.frame !== "number" ||
+          typeof next?.frame !== "number" ||
+          !inRange(spring.damping, SPRING_DAMPING) ||
+          !inRange(spring.response, SPRING_RESPONSE)
+        )
+          return;
+        const settle = kf.frame + settleFrames(spring);
         if (next.frame < settle)
           issue(
             [...item.path, "keyframes", i + 1, "frame"],
@@ -76,8 +103,7 @@ function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): v
       continue; // keyframe values hold no further tracks
     }
     for (const [key, child] of Object.entries(node)) {
-      if (item.path.length === base.length && layer.type === "component" && key === "props")
-        continue;
+      if (item.path.length === base.length && FREE_FORM_LAYER_KEYS.has(key)) continue;
       stack.push({ node: child, path: [...item.path, Array.isArray(node) ? Number(key) : key] });
     }
   }
@@ -121,9 +147,14 @@ function checkPrecompCycles(project: Project, issue: Issue): void {
       const seen = state.get(edge.target);
       if (seen === 1) {
         const loop = [...path.slice(path.indexOf(edge.target)), edge.target];
+        // Bounded message: listing the whole loop for every closing layer would grow faster than the input.
+        const shown =
+          loop.length > 7
+            ? `${loop.slice(0, 6).join(" -> ")} -> ... -> ${edge.target}`
+            : loop.join(" -> ");
         issue(
           edge.path,
-          `precomp cycle: ${loop.join(" -> ")}; point this layer at a different composition or delete it`,
+          `precomp cycle (${loop.length - 1} compositions): ${shown}; point this layer at a different composition or delete it`,
         );
       } else if (seen === undefined) {
         state.set(edge.target, 1);
