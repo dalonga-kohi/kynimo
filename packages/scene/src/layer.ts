@@ -4,7 +4,7 @@ import { MAX_COMPOSITION_SIZE } from "./limits.js";
 import {
   ColorSchema,
   FrameSchema,
-  JsonSchema,
+  JsonObjectSchema,
   MAX_MARKERS,
   MAX_PROPS,
   MarkerSchema,
@@ -123,9 +123,10 @@ export const ComponentLayerSchema = z.strictObject({
   componentId: z.string().regex(ID_PATTERN),
   /** Pinned like the style pack: a new component version never changes an existing document. */
   componentVersion: SemverSchema,
-  props: z
-    .record(z.string(), JsonSchema)
-    .refine((p) => Object.keys(p).length <= MAX_PROPS, `at most ${MAX_PROPS} props`),
+  props: JsonObjectSchema.refine(
+    (p) => Object.keys(p).length <= MAX_PROPS,
+    `at most ${MAX_PROPS} props`,
+  ),
 });
 
 /** Audio has no transform and no parent. Beat markers are markers on this layer. */

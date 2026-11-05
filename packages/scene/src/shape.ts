@@ -134,17 +134,53 @@ const leafItems = [
   StrokeSchema,
 ] as const;
 
+/** Recursive through `z.lazy`; the type is written out by hand because Zod cannot infer a self-reference. */
+const ShapeItemUncheckedSchema: z.ZodType<ShapeItem> = z.lazy(
+  () =>
+    z.discriminatedUnion("type", [...leafItems, GroupSchema]) as unknown as z.ZodType<ShapeItem>,
+);
+
+const GroupSchema = z.strictObject({
+  ...GroupBaseSchema.shape,
+  get items(): z.ZodArray<z.ZodType<ShapeItem>> {
+    return z.array(ShapeItemUncheckedSchema).max(MAX_SHAPE_ITEMS);
+  },
+});
+
+/**
+ * Iterative, so hostile nesting can never overflow the stack. It runs before the recursive
+ * schema, so a too-deep group yields one clear, pathed issue.
+ */
+const checkGroupDepth = (value: unknown, ctx: z.RefinementCtx): void => {
+  const stack: { value: unknown; depth: number; path: (string | number)[] }[] = [
+    { value, depth: 1, path: [] },
+  ];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    const group = node?.value as { type?: unknown; items?: unknown } | null | undefined;
+    if (node === undefined || typeof group !== "object" || group === null || group.type !== "group")
+      continue;
+    if (node.depth > MAX_GROUP_DEPTH) {
+      ctx.addIssue({
+        code: "custom",
+        path: node.path,
+        message: `group nesting exceeds ${MAX_GROUP_DEPTH} levels; flatten this group into its parent`,
+        continue: false, // abort: later checks must not walk the unbounded input
+      });
+      return;
+    }
+    if (Array.isArray(group.items))
+      group.items.forEach((child, i) => {
+        stack.push({ value: child, depth: node.depth + 1, path: [...node.path, "items", i] });
+      });
+  }
+};
+
 /**
  * Items are listed top-first, like layers. How fills and strokes bind to geometry is defined with the renderer (M2).
- * Recursion is unrolled to a fixed depth instead of using a lazy self-reference, so parsing
- * hostile input cannot exhaust the stack. The recursive type is written out by hand for the same reason.
+ * The input side is `unknown` because the depth check runs first, so use `io: "output"` when exporting JSON Schema.
  */
-const shapeItemAtDepth = (depth: number): z.ZodType<ShapeItem> => {
-  if (depth === 0) return z.discriminatedUnion("type", [...leafItems]);
-  const group = z.strictObject({
-    ...GroupBaseSchema.shape,
-    items: z.array(shapeItemAtDepth(depth - 1)).max(MAX_SHAPE_ITEMS),
-  });
-  return z.discriminatedUnion("type", [...leafItems, group]) as unknown as z.ZodType<ShapeItem>;
-};
-export const ShapeItemSchema: z.ZodType<ShapeItem> = shapeItemAtDepth(MAX_GROUP_DEPTH);
+export const ShapeItemSchema: z.ZodType<ShapeItem> = z
+  .unknown()
+  .superRefine(checkGroupDepth)
+  .pipe(ShapeItemUncheckedSchema);

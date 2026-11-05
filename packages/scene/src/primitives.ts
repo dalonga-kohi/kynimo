@@ -29,13 +29,53 @@ export const MAX_JSON_DEPTH = 16;
 export const MAX_PROPS = 200;
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
-const jsonAtDepth = (depth: number): z.ZodType<Json> => {
-  const scalars = [z.string(), z.number(), z.boolean(), z.null()] as const;
-  if (depth === 0) return z.union(scalars);
-  const inner = jsonAtDepth(depth - 1);
-  return z.union([...scalars, z.array(inner).max(1000), z.record(z.string(), inner)]);
+
+const JsonValueSchema: z.ZodType<Json> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonValueSchema).max(1000),
+    z.record(z.string(), JsonValueSchema),
+  ]),
+);
+
+/**
+ * Iterative, so hostile nesting can never overflow the stack. It runs before the recursive
+ * schema, so a too-deep value yields one clear, pathed issue instead of a nested union error.
+ */
+const checkJsonDepth = (value: unknown, ctx: z.RefinementCtx): void => {
+  const stack: { value: unknown; depth: number; path: (string | number)[] }[] = [
+    { value, depth: 0, path: [] },
+  ];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === undefined || typeof node.value !== "object" || node.value === null) continue;
+    if (node.depth >= MAX_JSON_DEPTH) {
+      ctx.addIssue({
+        code: "custom",
+        path: node.path,
+        message: `JSON nesting exceeds ${MAX_JSON_DEPTH} levels; flatten this value`,
+        continue: false, // abort: later checks must not walk the unbounded input
+      });
+      return;
+    }
+    for (const [key, child] of Object.entries(node.value)) {
+      stack.push({
+        value: child,
+        depth: node.depth + 1,
+        path: [...node.path, Array.isArray(node.value) ? Number(key) : key],
+      });
+    }
+  }
 };
-export const JsonSchema: z.ZodType<Json> = jsonAtDepth(MAX_JSON_DEPTH);
+
+/** A JSON object (e.g. component props). The depth check runs once for the whole object, then the recursive schema. */
+export const JsonObjectSchema: z.ZodType<Record<string, Json>> = z
+  .unknown()
+  .superRefine(checkJsonDepth)
+  .pipe(z.record(z.string(), JsonValueSchema));
 
 export const SemverSchema = z
   .string()

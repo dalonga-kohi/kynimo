@@ -4,7 +4,8 @@ import { NumberSchema, UnitIntervalSchema, Vec2Schema } from "./primitives.js";
 /**
  * Every animatable property is stored wrapped: `{ value }` today. Keyframe tracks
  * (schema v1 part 2) widen the wrapper to `{ value } | { keyframes }`, so documents
- * written now stay valid. Discrete properties (enums, booleans, counts) are not wrapped. Text content is the exception: keyframed source text is `v1.x`, so it is wrapped too.
+ * written now stay valid. Discrete properties (enums, booleans, counts) are not
+ * wrapped. Text content is the exception: keyframed source text is `v1.x`, so it is wrapped too.
  */
 export const animatable = <T extends z.ZodType>(value: T) => z.strictObject({ value });
 

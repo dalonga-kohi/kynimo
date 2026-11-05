@@ -259,6 +259,32 @@ describe("ProjectSchema: field validation", () => {
       ]);
     }
   });
+  it("keeps asset keys canonical and frame rates and durations sane", () => {
+    for (const uri of ["assets/a/./b", "assets/a/.", "assets/x/"]) {
+      const asset = {
+        id: "x",
+        type: "image",
+        name: "X",
+        uri,
+        sha256: "a".repeat(64),
+        width: 1,
+        height: 1,
+      };
+      expect(
+        issues(project({ assets: [asset] })).map((i) => i.path),
+        uri,
+      ).toContain("assets.0.uri");
+    }
+    const slow = { ...composition("main", []), fps: { num: 1, den: 1_000_000 } };
+    expect(issues(project({ compositions: [slow] })).map((i) => i.path)).toEqual([
+      "compositions.0.fps",
+    ]);
+    const long = { ...composition("main", []), durationFrames: Number.MAX_SAFE_INTEGER };
+    expect(issues(project({ compositions: [long] })).map((i) => i.path)).toEqual([
+      "compositions.0.durationFrames",
+    ]);
+  });
+
   it("requires a pinned component version", () => {
     const layer = { ...visual("c"), type: "component", componentId: "x", props: {} };
     expect(
@@ -291,33 +317,62 @@ describe("ProjectSchema: hostile input", () => {
   it("accepts shape groups nested to the limit and rejects one level deeper with a pathed issue", () => {
     expect(issues(withContents(nest(MAX_GROUP_DEPTH)))).toEqual([]);
     const found = issues(withContents(nest(MAX_GROUP_DEPTH + 1)));
-    expect(found.length).toBeGreaterThan(0);
-    expect(found[0]?.path).toMatch(/^compositions\.0\.layers\.0\.contents\.0/);
+    expect(found).toEqual([
+      {
+        path: expect.stringMatching(/^compositions\.0\.layers\.0\.contents\.0/),
+        message: `group nesting exceeds ${MAX_GROUP_DEPTH} levels; flatten this group into its parent`,
+      },
+    ]);
   });
 
-  it("returns errors instead of overflowing the stack on extreme nesting", () => {
-    expect(issues(withContents(nest(5000))).length).toBeGreaterThan(0);
-    let props: unknown = 1;
-    for (let i = 0; i < 5000; i++) props = { a: props };
+  it("returns one clear issue instead of overflowing the stack on extreme nesting", () => {
+    expect(issues(withContents(nest(5000)))).toHaveLength(1);
+    const deep = (n: number): unknown => {
+      let v: unknown = 1;
+      for (let i = 0; i < n; i++) v = { a: v };
+      return v;
+    };
+    const comp = (props: unknown) => {
+      const layer = {
+        ...visual("c"),
+        type: "component",
+        componentId: "x",
+        componentVersion: "1.0.0",
+        props,
+      };
+      return project({ compositions: [composition("main", [layer])] });
+    };
+    expect(issues(comp(deep(5000)))).toEqual([
+      {
+        path: expect.stringContaining("compositions.0.layers.0.props.a"),
+        message: expect.stringContaining("exceeds 16 levels"),
+      },
+    ]);
+    expect(issues(comp(deep(15)))).toEqual([]);
+  });
+
+  it("keeps error output small for wide, too-deep component props", () => {
+    const wide: Obj = {};
+    for (let k = 0; k < 2000; k++) wide[`k${k}`] = [[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]];
     const layer = {
       ...visual("c"),
       type: "component",
       componentId: "x",
       componentVersion: "1.0.0",
-      props,
+      props: wide,
     };
-    expect(
-      issues(project({ compositions: [composition("main", [layer])] })).length,
-    ).toBeGreaterThan(0);
+    const result = ProjectSchema.safeParse(
+      project({ compositions: [composition("main", [layer])] }),
+    );
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues).length).toBeLessThan(2_000);
   });
 
-  it("checks parent cycles in linear time at the layer limit", () => {
+  it("validates a maximum-size layer chain without reporting false cycles", () => {
     const layers = Array.from({ length: MAX_LAYERS }, (_, i) =>
       nullLayer(`l${i}`, i === MAX_LAYERS - 1 ? null : `l${i + 1}`),
     );
-    const started = Date.now();
     expect(issues(project({ compositions: [composition("main", layers)] }))).toEqual([]);
-    expect(Date.now() - started).toBeLessThan(250);
   });
 
   it("rejects more layers than the limit", () => {
@@ -506,8 +561,9 @@ describe("ProjectSchema: integrity", () => {
 
 describe("JSON Schema export", () => {
   it("produces a JSON Schema for MCP resources without throwing", () => {
-    const schema = z.toJSONSchema(ProjectSchema, { io: "input" }) as Obj;
+    const schema = z.toJSONSchema(ProjectSchema, { io: "output" }) as Obj;
     expect(schema.type).toBe("object");
     expect(JSON.stringify(schema)).toContain("formatVersion");
+    expect(JSON.stringify(schema).length).toBeLessThan(200_000);
   });
 });

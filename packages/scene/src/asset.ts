@@ -12,7 +12,7 @@ const base = {
   uri: z
     .string()
     .max(512)
-    .regex(/^assets\/[a-z0-9][a-z0-9/_.-]*$/, "must be a store key like 'assets/logo.png'")
+    .regex(/^assets(\/[a-z0-9][a-z0-9_.-]*)+$/, "must be a store key like 'assets/logo.png'")
     .refine((u) => !u.includes("..") && !u.includes("//"), "must not contain '..' or '//'"),
   /** Content hash pins the exact bytes, so the same document renders the same pixels. */
   sha256: z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256"),
