@@ -1,0 +1,1944 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kynimo — Motion your AI builds and you can still edit</title>
+<meta name="description" content="Kynimo is a motion engine your AI assistant can drive. It builds the scenes, checks its own frames against motion-design rules, and exports a video you can still change." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F5C842'/%3E%3Cpath transform='translate(4 4)' fill='%2314110A' d='M0 0H2V24H0Z M7 0H12L7 5Z M8 12L12 8V16Z M7 19L12 24H7Z M20 0H24V24H20L14 18V6Z'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Geist:wght@100..900&family=Geist+Mono:wght@400..600&family=Instrument+Serif&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/tokens.css" />
+<style>
+  .wrap {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: clamp(16px, 4.4vw, 64px);
+  }
+  a {
+    color: inherit;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--color-ground) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+  .nav::after {
+    content: "";
+    position: absolute;
+    inset: 100% 0 auto 0;
+    height: 20px;
+    background: linear-gradient(var(--color-ground), transparent);
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+    pointer-events: none;
+  }
+  .nav.scrolled::after {
+    opacity: 0.7;
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    height: 64px;
+  }
+  .lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: var(--color-text);
+  }
+  .lockup svg {
+    height: 20px;
+    width: auto;
+    fill: var(--color-accent);
+  }
+  .lockup span {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-variation-settings: "wdth" 125;
+    font-size: 28px;
+    line-height: 20px;
+    letter-spacing: -0.025em;
+  }
+  .nav-links {
+    display: flex;
+    gap: var(--space-6);
+    margin-left: var(--space-4);
+  }
+  .nav-links a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: var(--text-base);
+    padding-block: 10px;
+    transition: color 150ms ease-out;
+  }
+  .nav-links a:hover {
+    color: var(--color-text);
+  }
+  .nav-end {
+    margin-left: auto;
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .nav .btn {
+    min-height: 40px;
+  }
+
+  /* ---------- hero ---------- */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr);
+    gap: clamp(32px, 4vw, 64px);
+    align-items: center;
+    min-height: calc(100svh - 64px);
+    padding-block: var(--space-12) var(--space-16);
+  }
+  /* "a launch" is 4.97em wide; 5.9vw keeps it inside the copy column at every desktop width */
+  .hero h1 {
+    font-size: clamp(48px, 5.9vw, 88px);
+    margin: 0;
+  }
+  .hero h1 .line {
+    display: block;
+    overflow: hidden;
+    padding-bottom: 0.06em;
+  }
+  .hero h1 .line > span {
+    display: block;
+    animation: rise var(--dur-cine) var(--ease-cine) both;
+  }
+  .hero h1 .line:nth-child(2) > span {
+    animation-delay: 70ms;
+  }
+  .hero h1 .line:nth-child(3) > span {
+    animation-delay: 140ms;
+  }
+  @keyframes rise {
+    from {
+      transform: translateY(105%);
+    }
+  }
+  .lede {
+    margin: var(--space-6) 0 0;
+    max-width: 36ch;
+    font-size: var(--text-md);
+    color: var(--color-text-muted);
+    line-height: 1.55;
+  }
+  .prompt {
+    margin-top: var(--space-8);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    max-width: 440px;
+  }
+  .prompt-who {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+  .prompt-who .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-info);
+  }
+  .prompt-text {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-base);
+    color: var(--color-text);
+    min-height: 3.1em;
+  }
+  .caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.05em;
+    margin-left: 1px;
+    vertical-align: -0.16em;
+    background: var(--color-accent);
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+  }
+  .clients {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* ---------- stage (the live composition) ---------- */
+  .stage {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 30px 80px -30px rgb(0 0 0 / 0.7);
+  }
+  .stage-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 44px;
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-sm);
+  }
+  .stage-bar .crumbs {
+    color: var(--color-text-muted);
+  }
+  .stage-bar .crumbs b {
+    color: var(--color-text);
+    font-weight: 500;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 10px 3px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--color-raised);
+    color: var(--color-text);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    transition: background-color 300ms ease-out;
+  }
+  .status .live {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px rgb(245 200 66 / 0.18);
+  }
+  .status.done .live {
+    background: var(--color-success);
+    box-shadow: 0 0 0 3px rgb(141 196 138 / 0.18);
+  }
+  .stage-bar .tc {
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+  .stage-bar .tc b {
+    color: var(--color-text);
+    font-weight: 400;
+  }
+  .stage-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 248px;
+    min-height: 0;
+  }
+  .preview {
+    position: relative;
+    padding: var(--space-4);
+    background: var(--color-ground);
+    display: flex;
+    align-items: center;
+  }
+  .frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #000;
+  }
+  .frame canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .safe {
+    position: absolute;
+    inset: 10%;
+    border: 1px dashed rgb(239 106 76 / 0.9);
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 300ms ease-out;
+    pointer-events: none;
+  }
+  .safe.on {
+    opacity: 1;
+  }
+  .pin {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: #1a0b07;
+    font: 600 11px/1 var(--font-sans);
+    box-shadow: 0 0 0 3px rgb(239 106 76 / 0.25);
+    transform: scale(0);
+    transition:
+      transform var(--dur-snap) var(--ease-snap),
+      background-color 250ms ease-out,
+      left var(--dur-cine) var(--ease-cine);
+    pointer-events: none;
+  }
+  .pin.on {
+    transform: scale(1);
+  }
+  .pin.fixed {
+    background: var(--color-success);
+    box-shadow: 0 0 0 3px rgb(141 196 138 / 0.25);
+    color: #0c1a0b;
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--color-line);
+    min-height: 0;
+    contain: size; /* the preview sets the row height; the log never stretches the stage */
+  }
+  .side .side-h {
+    margin: 0;
+    padding: var(--space-3) var(--space-4) var(--space-2);
+  }
+  .log {
+    list-style: none;
+    margin: 0;
+    padding: 0 var(--space-4) var(--space-2);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    mask-image: linear-gradient(transparent, #000 32px);
+  }
+  .log li {
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    color: var(--color-text-muted);
+    animation: logIn var(--dur-snap) var(--ease-snap) both;
+  }
+  .log li code {
+    display: block;
+    color: var(--color-text);
+    font-size: var(--text-xs);
+  }
+  @keyframes logIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  .checks {
+    list-style: none;
+    margin: 0;
+    padding: var(--space-1) var(--space-4) var(--space-4);
+    border-top: 1px solid var(--color-line);
+    display: grid;
+    gap: 6px;
+  }
+  .checks .side-h {
+    padding: var(--space-3) 0 var(--space-1);
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .check .icon {
+    width: 14px;
+    height: 14px;
+    color: var(--color-text-faint);
+  }
+  .check.pass .icon {
+    color: var(--color-success);
+  }
+  .check.fail .icon {
+    color: var(--color-danger);
+  }
+  .check.fail {
+    color: var(--color-text);
+  }
+  .check .r {
+    margin-left: auto;
+    font-family: var(--font-mono);
+  }
+
+  /* timeline */
+  .tl {
+    border-top: 1px solid var(--color-line);
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    font-size: var(--text-xs);
+    user-select: none;
+  }
+  .tl-labels {
+    border-right: 1px solid var(--color-line);
+  }
+  .tl-labels div,
+  .tl-rows > div {
+    height: 28px;
+  }
+  .tl-labels div {
+    display: flex;
+    align-items: center;
+    padding-left: var(--space-3);
+    color: var(--color-text-muted);
+  }
+  .tl-labels .tl-ctrl {
+    height: 24px;
+    padding-left: 6px;
+  }
+  .play {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+  }
+  .play:hover {
+    background: var(--color-raised);
+  }
+  .play .icon {
+    width: 13px;
+    height: 13px;
+    fill: currentColor;
+    stroke: none;
+  }
+  .tl-track {
+    position: relative;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .tl-rows > .ruler {
+    height: 24px;
+    position: relative;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .ruler span {
+    position: absolute;
+    top: 6px;
+    transform: translateX(-50%);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .ruler i {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 5px;
+    background: var(--color-line-strong);
+  }
+  .ruler .mark {
+    position: absolute;
+    top: 7px;
+    width: 9px;
+    height: 9px;
+    margin-left: -4.5px;
+    border-radius: 999px;
+    background: var(--color-danger);
+    transform: scale(0);
+    transition:
+      transform var(--dur-snap) var(--ease-snap),
+      background-color 250ms;
+  }
+  .ruler .mark.on {
+    transform: scale(1);
+  }
+  .ruler .mark.fixed {
+    background: var(--color-success);
+  }
+  .row {
+    position: relative;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .clip {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    border-radius: 5px;
+    background: var(--color-raised);
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transform-origin: left center;
+    animation: clipIn 500ms var(--ease-cine) both;
+  }
+  @keyframes clipIn {
+    from {
+      clip-path: inset(0 100% 0 0 round 5px);
+    }
+    to {
+      clip-path: inset(0 0 0 0 round 5px);
+    }
+  }
+  .clip .sw {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
+  .kf {
+    position: absolute;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    background: var(--color-text-muted);
+    transform: rotate(45deg);
+    animation: logIn var(--dur-snap) var(--ease-snap) both;
+  }
+  .wave {
+    position: absolute;
+    inset: 4px 0;
+    display: block;
+    width: 100%;
+    height: calc(100% - 8px);
+  }
+  .playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .playhead::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -0.5px;
+    width: 1.5px;
+    background: var(--color-accent);
+  }
+  .playhead::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -5px;
+    width: 11px;
+    height: 10px;
+    background: var(--color-accent);
+    clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  }
+
+  /* ---------- sections ---------- */
+  section.band {
+    padding-block: clamp(80px, 11vw, 160px);
+  }
+  .band + .band {
+    border-top: 1px solid var(--color-line);
+  }
+  .head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: var(--space-12);
+    align-items: end;
+    margin-bottom: clamp(40px, 5vw, 72px);
+  }
+  .head h2 {
+    margin: 0;
+    font-size: clamp(40px, 5vw, 72px);
+  }
+  .head p {
+    margin: 0;
+    max-width: 46ch;
+    color: var(--color-text-muted);
+    font-size: var(--text-md);
+  }
+
+  /* loop: the four steps on a timeline */
+  .loop-track {
+    position: relative;
+    border-top: 1px solid var(--color-line-strong);
+  }
+  .loop-ruler {
+    position: relative;
+    height: 36px;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .loop-ruler i {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 6px;
+    background: var(--color-line-strong);
+  }
+  .loop-ruler i.down {
+    height: 12px;
+    background: var(--color-text-faint);
+  }
+  .loop-ruler span {
+    position: absolute;
+    top: 8px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 1.4fr 1fr;
+  }
+  .step {
+    padding: var(--space-8) var(--space-6) var(--space-4) 0;
+    border-left: 1px solid var(--color-line);
+    padding-left: var(--space-6);
+    transition: color 300ms ease-out;
+  }
+  .step:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .step h3 {
+    margin: 0 0 var(--space-3);
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-variation-settings: "wdth" 112;
+    font-size: var(--text-xl);
+    letter-spacing: var(--tracking-tight);
+    line-height: 1.1;
+    color: var(--color-text-faint);
+    transition: color 300ms ease-out;
+  }
+  .step p {
+    margin: 0;
+    max-width: 34ch;
+    color: var(--color-text-muted);
+  }
+  .step.lit h3 {
+    color: var(--color-text);
+  }
+  .step .tools {
+    margin-top: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .step .tools code {
+    font-size: var(--text-xs);
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    color: var(--color-text-muted);
+  }
+  .loop-head {
+    position: absolute;
+    top: -1px;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    pointer-events: none;
+  }
+  .loop-head::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--color-accent);
+  }
+  .loop-head::after {
+    content: attr(data-tc);
+    position: absolute;
+    top: -26px;
+    left: 0;
+    transform: translateX(-50%);
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+    font: 500 11px/1.3 var(--font-mono);
+    white-space: nowrap;
+  }
+
+  /* checks section */
+  .qa {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: var(--space-8);
+    align-items: start;
+  }
+  .qa-frame {
+    position: relative;
+  }
+  .qa-frame .frame {
+    border-radius: var(--radius-md);
+  }
+  .qa-frame .safe {
+    border-color: rgb(239 106 76 / 0.95);
+  }
+  .qa-frame .safe.ok {
+    border-color: rgb(141 196 138 / 0.9);
+  }
+  .seg {
+    display: inline-flex;
+    min-inline-size: 0;
+    margin: var(--space-4) 0 0;
+    padding: 3px;
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+  }
+  .seg button {
+    min-height: 36px;
+    padding: 0 var(--space-4);
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-text-muted);
+    font: 500 var(--text-sm) / 1 var(--font-sans);
+    cursor: pointer;
+    transition:
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .seg button[aria-pressed="true"] {
+    background: var(--color-raised);
+    color: var(--color-text);
+  }
+  .report {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--color-line);
+  }
+  .finding {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: var(--space-4) 0;
+    border: 0;
+    border-bottom: 1px solid var(--color-line);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .finding:hover .msg {
+    color: var(--color-text);
+  }
+  .finding[aria-current="true"] .rid {
+    color: var(--color-text);
+  }
+  .finding .top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .sev {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--color-danger);
+  }
+  .sev::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    border: 1.5px solid currentColor;
+  }
+  .sev.error::before {
+    background: currentColor;
+  }
+  .rid {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+  .finding .at {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+  .msg {
+    margin: var(--space-2) 0 0;
+    color: var(--color-text-muted);
+    transition: color 150ms;
+  }
+  .fixline {
+    margin: var(--space-2) 0 0;
+    display: flex;
+    gap: var(--space-2);
+    align-items: baseline;
+    font-size: var(--text-sm);
+    color: var(--color-success);
+  }
+  .fixline .icon {
+    width: 14px;
+    height: 14px;
+    align-self: center;
+  }
+  .passed {
+    margin: var(--space-4) 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+  .passed li {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .passed .icon {
+    width: 14px;
+    height: 14px;
+    color: var(--color-success);
+  }
+  .passed code {
+    color: var(--color-text);
+    font-size: var(--text-sm);
+  }
+
+  /* editable */
+  .edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    gap: var(--space-8);
+    align-items: start;
+  }
+  .fields {
+    display: grid;
+    gap: var(--space-4);
+  }
+  fieldset.field {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+  }
+  .field label,
+  .field legend {
+    display: block;
+    padding: 0;
+    margin-bottom: 6px;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+  .field input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-raised);
+    color: var(--color-text);
+    font: 400 var(--text-base) / 1 var(--font-sans);
+    transition: border-color 150ms;
+  }
+  .field input:hover {
+    border-color: var(--color-text-faint);
+  }
+  .field input:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-color: transparent;
+  }
+  .swatches {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .swatch {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(255 255 255 / 0.12);
+    cursor: pointer;
+    position: relative;
+    transition: transform var(--dur-press) ease-out;
+  }
+  .swatch:active {
+    transform: scale(0.94);
+  }
+  .swatch[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border: 2px solid var(--color-text);
+    border-radius: 13px;
+  }
+  .doc {
+    margin: 0;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: var(--color-text-muted);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .doc .k {
+    color: var(--color-text);
+  }
+  .doc .v {
+    color: var(--color-info);
+  }
+  .doc .changed {
+    color: var(--color-accent);
+  }
+  .edit-out {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .edit-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+  }
+  .edit-meta .btn {
+    margin-left: auto;
+    min-height: 40px;
+  }
+
+  /* styles filmstrip */
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+  .shot {
+    margin: 0;
+  }
+  .shot .frame {
+    border-radius: var(--radius-sm);
+    outline: 1px solid var(--color-line);
+    cursor: pointer;
+  }
+  .shot figcaption {
+    padding-top: var(--space-3);
+  }
+  .shot b {
+    display: block;
+    font-weight: 600;
+    font-size: var(--text-md);
+  }
+  .shot span {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    max-width: 32ch;
+  }
+
+  /* connect */
+  .connect {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    gap: var(--space-12);
+    align-items: start;
+  }
+  .connect h2 {
+    margin: 0;
+    font-size: clamp(40px, 5vw, 72px);
+  }
+  .connect > div > p {
+    color: var(--color-text-muted);
+    font-size: var(--text-md);
+    max-width: 40ch;
+    margin: var(--space-6) 0 0;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--color-line);
+    overflow-x: auto;
+  }
+  .tab {
+    min-height: 44px;
+    padding: 0 var(--space-4);
+    border: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 500 var(--text-base) / 1 var(--font-sans);
+    cursor: pointer;
+    position: relative;
+    white-space: nowrap;
+  }
+  .tab:hover {
+    color: var(--color-text);
+  }
+  .tab[aria-selected="true"] {
+    color: var(--color-text);
+  }
+  .tab[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: -1px;
+    height: 2px;
+    background: var(--color-text);
+  }
+  .panel {
+    padding-top: var(--space-6);
+  }
+  .panel p {
+    margin: 0 0 var(--space-3);
+    color: var(--color-text-muted);
+  }
+  .code {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+  }
+  .code pre {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    color: var(--color-text);
+  }
+  .code .btn {
+    min-height: 36px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+  .after-note {
+    margin-top: var(--space-6);
+    display: flex;
+    gap: var(--space-3);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+
+  /* close */
+  .close {
+    text-align: left;
+  }
+  .close h2 {
+    margin: 0;
+    font-size: clamp(48px, 7.4vw, 120px);
+    max-width: 12ch;
+  }
+  .close .actions {
+    margin-top: var(--space-12);
+  }
+  footer {
+    border-top: 1px solid var(--color-line);
+    padding-block: var(--space-12);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+  }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-8);
+    align-items: center;
+  }
+  .foot nav {
+    display: flex;
+    gap: var(--space-6);
+  }
+  .foot nav a {
+    text-decoration: none;
+  }
+  .foot nav a:hover {
+    color: var(--color-text);
+  }
+  .foot .legal {
+    margin-left: auto;
+  }
+  .mock-note {
+    margin-top: var(--space-6);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1180px) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+      min-height: 0;
+      padding-top: var(--space-12);
+    }
+    .hero h1 {
+      font-size: clamp(52px, 10vw, 96px);
+    }
+    .prompt {
+      max-width: 560px;
+    }
+  }
+  @media (max-width: 960px) {
+    .nav-links {
+      display: none;
+    }
+    .head,
+    .qa,
+    .edit,
+    .connect {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .head {
+      gap: var(--space-6);
+    }
+    .steps {
+      grid-template-columns: 1fr 1fr;
+    }
+    .step:nth-child(3) {
+      border-left: 0;
+      padding-left: 0;
+    }
+    .strip {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .stage-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .side {
+      border-left: 0;
+      border-top: 1px solid var(--color-line);
+      contain: none;
+    }
+    .log {
+      max-height: 150px;
+    }
+    .nav .signin {
+      display: none;
+    }
+    .steps {
+      grid-template-columns: 1fr;
+    }
+    .step {
+      border-left: 0;
+      padding-left: 0;
+      padding-top: var(--space-6);
+    }
+    .strip {
+      gap: var(--space-6) var(--space-3);
+    }
+    .foot .legal {
+      margin-left: 0;
+    }
+  }
+  .nav .btn-primary .short {
+    display: none;
+  }
+  .stage-bar {
+    white-space: nowrap;
+  }
+  @media (max-width: 480px) {
+    .stage-bar .crumbs {
+      display: none;
+    }
+    .stage-bar .tc {
+      font-size: var(--text-xs);
+    }
+    .nav .btn-primary .long {
+      display: none;
+    }
+    .nav .btn-primary .short {
+      display: inline;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero h1 .line > span,
+    .clip,
+    .kf,
+    .log li {
+      animation: none;
+    }
+    .caret {
+      animation: none;
+    }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3" /></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" /></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></symbol>
+  <symbol id="i-replay" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></symbol>
+  <symbol id="k-mark" viewBox="0 0 132 120"><path d="M0 0H5V120H0Z M11 0H21V120H11Z M47 0H74L47 27Z M51 60L74 37V83Z M47 93L74 120H47Z M111 0H132V120H111L82 91V29Z" /></symbol>
+</svg>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a class="lockup" href="landing.html" aria-label="Kynimo home">
+      <svg viewBox="0 0 132 120" aria-hidden="true"><use href="#k-mark" /></svg><span>Kynimo</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#checks">Checks</a>
+      <a href="#styles">Styles</a>
+      <a href="#connect">Docs</a>
+    </nav>
+    <div class="nav-end">
+      <a class="btn btn-ghost signin" href="workspace.html">Sign in</a>
+      <a class="btn btn-primary" href="#connect"><span class="long">Connect your assistant</span><span class="short">Connect</span></a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <h1 class="display" id="hero-title">
+        <span class="line"><span>Ask for</span></span>
+        <span class="line"><span>a launch</span></span>
+        <span class="line"><span>video.</span></span>
+      </h1>
+      <p class="lede">Kynimo is a motion engine your AI assistant can drive. It builds the scenes, checks its own frames against real motion-design rules, and exports a video you can still change, down to a single word.</p>
+      <div class="prompt">
+        <div class="prompt-who"><span class="dot" aria-hidden="true"></span>You, in Claude</div>
+        <p class="prompt-text" id="prompt-text">Make a 15-second launch video for Relay 2.0. Playful, cut to the beat of this track.</p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="#connect">Connect your assistant <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></a>
+        <a class="btn" href="#how">See how it works</a>
+      </div>
+      <p class="clients">Works with Claude, ChatGPT, Cursor and any MCP client.</p>
+    </div>
+
+    <section class="stage" id="stage" aria-label="Demo: an assistant building a launch video in Kynimo">
+      <div class="stage-bar">
+        <span class="crumbs"><span>Relay / </span><b>Launch reel</b></span>
+        <output class="status" id="status"><span class="live" aria-hidden="true"></span><span id="status-text">Claude is building</span></output>
+        <span class="tc mono" aria-hidden="true"><b id="tc">00:00:00</b> / 00:15:00</span>
+      </div>
+      <div class="stage-body">
+        <div class="preview">
+          <div class="frame">
+            <canvas id="hero-canvas" aria-label="Preview frame of the launch video"></canvas>
+            <div class="safe" id="hero-safe" aria-hidden="true"></div>
+            <div class="pin" id="hero-pin" style="left: 6.25%; top: 32%" aria-hidden="true">1</div>
+          </div>
+        </div>
+        <aside class="side" aria-label="Agent activity and checks">
+          <p class="label side-h">Activity</p>
+          <ol class="log" id="log" aria-live="polite"></ol>
+          <div class="checks" id="stage-checks">
+            <p class="label side-h">Checks</p>
+          </div>
+        </aside>
+      </div>
+      <div class="tl">
+        <div class="tl-labels" aria-hidden="true">
+          <div class="tl-ctrl"><button class="play" id="play" type="button" aria-label="Play"><svg class="icon" aria-hidden="true"><use href="#i-play" /></svg></button></div>
+          <div>Scenes</div>
+          <div>Layers</div>
+          <div>Audio</div>
+        </div>
+        <div class="tl-track" id="track" role="slider" tabindex="0" aria-label="Timeline" aria-valuemin="0" aria-valuemax="449" aria-valuenow="0" aria-valuetext="Frame 0">
+          <div class="tl-rows">
+            <div class="ruler" id="ruler"></div>
+            <div class="row" id="row-scenes"></div>
+            <div class="row" id="row-layers"></div>
+            <div class="row" id="row-audio"></div>
+          </div>
+          <div class="playhead" id="playhead"></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section class="band" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="display" id="how-title">One sentence in. A real project out.</h2>
+        <p>You stay in the chat you already use. Kynimo gives your assistant the tools a motion designer would reach for, and a way to see what it made.</p>
+      </div>
+      <div class="loop-track" id="loop">
+        <div class="loop-ruler" id="loop-ruler" aria-hidden="true"></div>
+        <div class="steps">
+          <article class="step">
+            <h3>Describe</h3>
+            <p>Say what you need in plain words: the product, the length, the mood, the track.</p>
+          </article>
+          <article class="step">
+            <h3>Build</h3>
+            <p>Your assistant assembles scenes from real components: kinetic type, logo reveals, lists, transitions. Every piece lands in a scene file, not a flat render.</p>
+            <div class="tools"><code>add_component</code><code>set_keyframes</code><code>apply_style</code></div>
+          </article>
+          <article class="step">
+            <h3>Check</h3>
+            <p>Kynimo renders frames the agent can see, then grades them: safe areas, contrast, reading time, motion on the beat. The agent fixes what fails.</p>
+            <div class="tools"><code>render_frames</code><code>check_quality</code></div>
+          </article>
+          <article class="step">
+            <h3>Export</h3>
+            <p>MP4, WebM or GIF, plus a link your team can scrub. The project stays open for the next change.</p>
+          </article>
+        </div>
+        <div class="loop-head" id="loop-head" data-tc="00:00:00" aria-hidden="true"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="checks" aria-labelledby="qa-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="display" id="qa-title">It checks its own work.</h2>
+        <p>An agent can't feel that a headline is cramped. It can follow a rule that says 192px. So the rules live in Kynimo, and every render comes back with a report the agent acts on.</p>
+      </div>
+      <div class="qa">
+        <div class="qa-frame">
+          <div class="frame">
+            <canvas id="qa-canvas" aria-label="Frame from scene S02 with the title-safe area marked"></canvas>
+            <div class="safe on" id="qa-safe" aria-hidden="true"></div>
+          </div>
+          <fieldset class="seg">
+            <legend class="sr-only">Show frame</legend>
+            <button type="button" aria-pressed="true" data-v="before">Before</button>
+            <button type="button" aria-pressed="false" data-v="after">After the fix</button>
+          </fieldset>
+        </div>
+        <div>
+          <ul class="report" id="report"></ul>
+          <ul class="passed" id="passed"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="editable" aria-labelledby="ed-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="display" id="ed-title">Exported. Still editable.</h2>
+        <p>What comes back is a scene file, not a flat video. Change a word, a color or a timing yourself, or ask your assistant to. Try it on the opening scene.</p>
+      </div>
+      <div class="edit">
+        <div class="fields">
+          <div class="field">
+            <label for="f-name">Product name</label>
+            <input id="f-name" value="Relay" maxlength="14" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="f-ver">Version</label>
+            <input id="f-ver" value="2.0" maxlength="6" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="f-tag">Tagline</label>
+            <input id="f-tag" value="The team inbox, rebuilt." maxlength="40" autocomplete="off" />
+          </div>
+          <fieldset class="field">
+            <legend>Background</legend>
+            <div class="swatches">
+              <button class="swatch" type="button" style="background:#2D45E8" data-c="#2D45E8" aria-pressed="true" aria-label="Cobalt"></button>
+              <button class="swatch" type="button" style="background:#1E6B4E" data-c="#1E6B4E" aria-pressed="false" aria-label="Forest"></button>
+              <button class="swatch" type="button" style="background:#5B2A86" data-c="#5B2A86" aria-pressed="false" aria-label="Plum"></button>
+              <button class="swatch" type="button" style="background:#141414" data-c="#141414" aria-pressed="false" aria-label="Ink"></button>
+            </div>
+          </fieldset>
+        </div>
+        <div class="edit-out">
+          <div class="frame"><canvas id="ed-canvas" aria-label="Opening scene, updated as you edit"></canvas></div>
+          <div class="edit-meta">
+            <span class="mono">S01 · Title slam</span>
+            <button class="btn" type="button" id="ed-replay"><svg class="icon" aria-hidden="true"><use href="#i-replay" /></svg>Replay scene</button>
+          </div>
+          <pre class="doc mono" id="doc"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="styles" aria-labelledby="st-title">
+    <div class="wrap">
+      <div class="head">
+        <h2 class="display" id="st-title">Pick a style. The rules come with it.</h2>
+        <p>A style is a whole motion system: type, color, spacing, easing, timing, and the checks that hold them. Same project, four styles. Hover one to play it.</p>
+      </div>
+      <div class="strip" id="strip"></div>
+    </div>
+  </section>
+
+  <section class="band" id="connect" aria-labelledby="cn-title">
+    <div class="wrap connect">
+      <div>
+        <h2 class="display" id="cn-title">Use the assistant you already have.</h2>
+        <p>Kynimo is one remote MCP server. Add it once and your assistant gets the tools. The first time it builds something, you sign in to Kynimo in the browser. No API keys to paste.</p>
+      </div>
+      <div>
+        <div class="tabs" role="tablist" aria-label="Choose your client" id="tabs"></div>
+        <div class="panel" role="tabpanel" id="panel"></div>
+        <div class="after-note"><svg class="icon" aria-hidden="true"><use href="#i-key" /></svg><span>Then ask for a video. Previews and the quality report come back into the same chat.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band close" aria-labelledby="close-title">
+    <div class="wrap">
+      <h2 class="display" id="close-title">Your next launch video starts as a sentence.</h2>
+      <div class="actions">
+        <a class="btn btn-primary" href="#connect">Connect your assistant <svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg></a>
+        <a class="btn" href="#styles">Browse styles</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <a class="lockup" href="landing.html" aria-label="Kynimo home"><svg viewBox="0 0 132 120" aria-hidden="true"><use href="#k-mark" /></svg><span>Kynimo</span></a>
+      <nav aria-label="Footer">
+        <a href="#connect">Docs</a><a href="#styles">Styles</a><a href="/status">Status</a><a href="/privacy">Privacy</a>
+      </nav>
+      <span class="legal">© 2026 Kynimo</span>
+    </div>
+    <p class="mock-note">Design mockup. Relay is a fictional product; the endpoint and the client steps are placeholders.</p>
+  </div>
+</footer>
+
+<script src="assets/kynimo-composition.js"></script>
+<script>
+(async () => {
+  "use strict";
+  const K = window.Kynimo;
+  const RM = K.reduced();
+  const $ = (s, r = document) => r.querySelector(s);
+  const svgIcon = (id, cls = "icon") => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+
+  // The headline reveal must never leave text hidden (background tabs pause animations).
+  setTimeout(() => {
+    document.querySelectorAll(".hero h1 .line > span").forEach((el) => {
+      for (const a of el.getAnimations()) a.finish();
+    });
+  }, 1400);
+
+  // nav scroll edge
+  const nav = $("#nav");
+  const onScroll = () => nav.classList.toggle("scrolled", scrollY > 8);
+  addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  await K.fontsReady();
+
+  /* ================= HERO STAGE ================= */
+  const comp = K.createComposition();
+  const D = comp.duration;
+  const tcEl = $("#tc");
+  const track = $("#track");
+  const playhead = $("#playhead");
+  const playBtn = $("#play");
+  const player = new K.Player($("#hero-canvas"), comp, {
+    onFrame(f) {
+      tcEl.textContent = K.timecode(f, comp.fps);
+      playhead.style.left = `${(f / (D - 1)) * 100}%`;
+      track.setAttribute("aria-valuenow", f);
+      track.setAttribute("aria-valuetext", `Frame ${f}, ${K.timecode(f)}`);
+    },
+  });
+  player.reveal = 0;
+  player.setFrame(96);
+
+  // ruler
+  const ruler = $("#ruler");
+  for (let s = 0; s <= 15; s++) {
+    const x = ((s * comp.fps) / (D - 1)) * 100;
+    ruler.insertAdjacentHTML("beforeend", `<i style="left:${x}%"></i>`);
+    if (s % 3 === 0 && s < 15) ruler.insertAdjacentHTML("beforeend", `<span style="left:${Math.max(x, 2)}%">${s}s</span>`);
+  }
+  const marks = comp.findings.map((fd) => {
+    const m = document.createElement("span");
+    m.className = "mark";
+    m.style.left = `${(fd.frame / (D - 1)) * 100}%`;
+    ruler.appendChild(m);
+    return m;
+  });
+
+  // audio waveform + beats
+  const rowAudio = $("#row-audio");
+  const wave = document.createElement("canvas");
+  wave.className = "wave";
+  rowAudio.appendChild(wave);
+  const drawWave = (shown = 1) => {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = wave.clientWidth * dpr;
+    const h = wave.clientHeight * dpr;
+    wave.width = w;
+    wave.height = h;
+    const ctx = wave.getContext("2d");
+    const bins = Math.floor(w / (3 * dpr));
+    const data = K.waveform(comp, bins);
+    const beat = (comp.fps * 60) / comp.audio.bpm;
+    for (let i = 0; i < bins * shown; i++) {
+      const v = data[i] * h * 0.9;
+      ctx.fillStyle = "#4a443d";
+      ctx.fillRect(i * 3 * dpr, (h - v) / 2, 2 * dpr, v);
+    }
+    for (let f = 0; f < D * shown; f += beat) {
+      const x = (f / (D - 1)) * w;
+      const down = Math.round(f) % (beat * 4) === 0;
+      ctx.fillStyle = down ? "#a39c90" : "#6e675d";
+      ctx.fillRect(x, down ? 0 : h * 0.25, dpr, down ? h : h * 0.5);
+    }
+  };
+
+  // scenes + layer keyframes
+  const swatch = { S01: "#2D45E8", S02: "#F4F1EA", S03: "#10163F" };
+  const addClip = (sc) => {
+    const l = (sc.start / (D - 1)) * 100;
+    const w = ((sc.end - sc.start) / (D - 1)) * 100;
+    $("#row-scenes").insertAdjacentHTML(
+      "beforeend",
+      `<div class="clip" style="left:calc(${l}% + 2px);width:calc(${w}% - 4px)"><span class="sw" style="background:${swatch[sc.id]}"></span>${sc.id} · ${sc.name}</div>`,
+    );
+  };
+  const addKeys = (sc) => {
+    const frames = new Set();
+    for (const ly of sc.layers) {
+      for (const tr of Object.values(ly.tracks || {})) for (const k of tr) frames.add(k.f);
+      if (ly.props.start != null) frames.add(ly.props.start);
+    }
+    let i = 0;
+    for (const f of [...frames].sort((a, b) => a - b)) {
+      $("#row-layers").insertAdjacentHTML(
+        "beforeend",
+        `<span class="kf" style="left:${(f / (D - 1)) * 100}%;animation-delay:${i++ * 30}ms"></span>`,
+      );
+    }
+  };
+
+  // checks
+  const checksEl = $("#stage-checks");
+  const checkRows = [
+    { id: "title-safe", label: "Title-safe area" },
+    { id: "simultaneous-motion", label: "Motion per beat" },
+    { id: "contrast", label: "Contrast" },
+    { id: "readability", label: "Reading time" },
+    { id: "beat-sync", label: "Cuts on the beat" },
+  ].map((c) => {
+    const li = document.createElement("div");
+    li.className = "check";
+    li.innerHTML = `${svgIcon("i-dot")}<span>${c.label}</span><span class="r">–</span>`;
+    checksEl.appendChild(li);
+    return { ...c, el: li };
+  });
+  const setCheck = (id, state, r) => {
+    const c = checkRows.find((x) => x.id === id);
+    c.el.className = `check ${state}`;
+    c.el.querySelector("use").setAttribute("href", state === "pass" ? "#i-check" : state === "fail" ? "#i-alert" : "#i-dot");
+    c.el.querySelector(".r").textContent = r;
+  };
+
+  // activity log
+  const log = $("#log");
+  const say = (tool, detail) => {
+    log.insertAdjacentHTML("beforeend", `<li><code>${tool}</code>${detail}</li>`);
+    while (log.children.length > 9) log.firstElementChild.remove();
+  };
+  const statusEl = $("#status");
+  const statusText = $("#status-text");
+  const pin = $("#hero-pin");
+  const safe = $("#hero-safe");
+
+  // play / scrub
+  const setPlayIcon = () => {
+    playBtn.querySelector("use").setAttribute("href", player.playing ? "#i-pause" : "#i-play");
+    playBtn.setAttribute("aria-label", player.playing ? "Pause" : "Play");
+  };
+  playBtn.addEventListener("click", () => {
+    player.playing ? player.pause() : player.play();
+    setPlayIcon();
+  });
+  const frameAt = (e) => {
+    const r = track.getBoundingClientRect();
+    return ((e.clientX - r.left) / r.width) * (D - 1);
+  };
+  track.addEventListener("pointerdown", (e) => {
+    track.setPointerCapture(e.pointerId);
+    player.pause();
+    setPlayIcon();
+    player.setFrame(frameAt(e));
+  });
+  track.addEventListener("pointermove", (e) => {
+    if (track.hasPointerCapture(e.pointerId)) player.setFrame(frameAt(e));
+  });
+  track.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === "ArrowRight") player.setFrame(player.frame + step);
+    else if (e.key === "ArrowLeft") player.setFrame(player.frame - step);
+    else if (e.key === " ") {
+      player.playing ? player.pause() : player.play();
+      setPlayIcon();
+    } else return;
+    e.preventDefault();
+  });
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, RM ? 0 : ms));
+
+  async function typePrompt() {
+    const el = $("#prompt-text");
+    const full = el.textContent;
+    if (RM) return;
+    el.textContent = "";
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    el.appendChild(caret);
+    for (let i = 0; i < full.length; i++) {
+      caret.before(full[i]);
+      await wait(full[i] === " " ? 34 : 22);
+    }
+    await wait(500);
+    caret.remove();
+  }
+
+  async function build() {
+    await typePrompt();
+    say("create_project", "Relay · Launch reel · 1920×1080 · 30 fps");
+    await wait(420);
+    say("apply_style", "Playful SaaS");
+    await wait(420);
+    for (const sc of comp.scenes) {
+      const comps = [...new Set(sc.layers.map((l) => l.component).filter(Boolean))].join(", ");
+      say("add_component", `${comps} → ${sc.id}`);
+      addClip(sc);
+      addKeys(sc);
+      await wait(520);
+    }
+    say("set_audio", `${comp.audio.name} · cuts snapped to downbeats`);
+    drawWave(1);
+    await wait(500);
+    statusText.textContent = "Rendering preview";
+    say("render_frames", "F0000–F0449 · 30 frames sampled");
+    await player.revealIn(900);
+    player.play();
+    setPlayIcon();
+    await wait(600);
+    statusText.textContent = "Checking frames";
+    say("check_quality", "2 findings · 4 passed");
+    setCheck("title-safe", "fail", "F0142");
+    setCheck("simultaneous-motion", "fail", "F0186");
+    setCheck("contrast", "pass", "7.9:1");
+    setCheck("readability", "pass", "≥ 1.2s");
+    setCheck("beat-sync", "pass", "3/3");
+    for (const m of marks) m.classList.add("on");
+    pin.classList.add("on");
+    safe.classList.add("on");
+    await wait(1600);
+    say("update_props", "L05 headline · x 120 → 192");
+    K.applyFix(comp, "Q1");
+    pin.style.left = "10%";
+    await wait(900);
+    say("set_keyframes", "L06 feature list · stagger 0 → 6 frames");
+    K.applyFix(comp, "Q2");
+    await wait(700);
+    say("check_quality", "0 findings · 6 passed");
+    setCheck("title-safe", "pass", "192px");
+    setCheck("simultaneous-motion", "pass", "≤ 2");
+    for (const m of marks) m.classList.add("fixed");
+    pin.classList.add("fixed");
+    safe.classList.remove("on");
+    await wait(500);
+    pin.classList.remove("on");
+    statusText.textContent = "Ready · still editable";
+    statusEl.classList.add("done");
+  }
+
+  if (RM) {
+    // Final state, no autoplay.
+    comp.scenes.forEach((s) => {
+      addClip(s);
+      addKeys(s);
+    });
+    drawWave(1);
+    say("check_quality", "0 findings · 6 passed");
+    K.applyFix(comp, "Q1");
+    K.applyFix(comp, "Q2");
+    for (const c of checkRows) setCheck(c.id, "pass", "✓");
+    statusText.textContent = "Ready · still editable";
+    statusEl.classList.add("done");
+    player.reveal = 1;
+    player.setFrame(96);
+  } else {
+    build();
+  }
+  addEventListener("resize", () => drawWave(1));
+
+  /* ================= LOOP (scroll-linked playhead) ================= */
+  const loopRuler = $("#loop-ruler");
+  for (let i = 0; i <= 32; i++) {
+    loopRuler.insertAdjacentHTML("beforeend", `<i class="${i % 4 === 0 ? "down" : ""}" style="left:${(i / 32) * 100}%"></i>`);
+  }
+  ["00:00", "00:02", "00:09", "00:13"].forEach((t, i) => {
+    const lefts = [0, 20.5, 49.5, 78.5];
+    loopRuler.insertAdjacentHTML("beforeend", `<span style="left:${lefts[i]}%">${t}</span>`);
+  });
+  const loop = $("#loop");
+  const loopHead = $("#loop-head");
+  const steps = [...loop.querySelectorAll(".step")];
+  const onLoop = () => {
+    const r = loop.getBoundingClientRect();
+    const p = Math.min(1, Math.max(0, (innerHeight * 0.75 - r.top) / (r.height + innerHeight * 0.25)));
+    loopHead.style.left = `${p * 100}%`;
+    loopHead.dataset.tc = K.timecode(Math.round(p * (D - 1)));
+    const bounds = [0, 0.208, 0.5, 0.79];
+    steps.forEach((s, i) => {
+      s.classList.toggle("lit", p >= bounds[i] && (i === 3 || p < bounds[i + 1] + 0.001));
+    });
+  };
+  addEventListener("scroll", onLoop, { passive: true });
+  onLoop();
+
+  /* ================= CHECKS ================= */
+  const before = K.createComposition();
+  const after = K.applyFix(K.applyFix(K.createComposition(), "Q1"), "Q2");
+  const qa = new K.Player($("#qa-canvas"), before);
+  const qaSafe = $("#qa-safe");
+  let qaFinding = before.findings[0];
+  let qaMode = "before";
+  const qaFrame = { Q1: 160, Q2: 196 };
+  const showQa = () => {
+    qa.comp = qaMode === "before" ? before : after;
+    qaSafe.classList.toggle("on", qaFinding.rule === "title-safe");
+    qaSafe.classList.toggle("ok", qaMode === "after");
+    qa.setFrame(qaFrame[qaFinding.id]);
+    for (const b of document.querySelectorAll(".finding")) b.setAttribute("aria-current", b.dataset.id === qaFinding.id);
+  };
+  $("#report").innerHTML = before.findings
+    .map(
+      (f) => `<li><button class="finding" type="button" data-id="${f.id}">
+      <span class="top"><span class="sev ${f.severity}">${f.severity}</span><span class="rid">${f.rule}</span><span class="at">${f.scene} · ${K.frameAddr(f.frame)} · ${f.layer}</span></span>
+      <p class="msg">${f.message}</p>
+      <p class="fixline">${svgIcon("i-check")}<span>Fixed by the agent: ${f.fix}</span></p>
+    </button></li>`,
+    )
+    .join("");
+  $("#passed").innerHTML = before.passed.map((p) => `<li>${svgIcon("i-check")}<code>${p.rule}</code><span>${p.detail}</span></li>`).join("");
+  document.querySelectorAll(".finding").forEach((b) =>
+    b.addEventListener("click", () => {
+      qaFinding = before.findings.find((f) => f.id === b.dataset.id);
+      showQa();
+    }),
+  );
+  document.querySelectorAll(".seg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      qaMode = b.dataset.v;
+      document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      showQa();
+    }),
+  );
+  qa.reveal = 0;
+  showQa();
+
+  /* ================= EDITABLE ================= */
+  const ed = K.createComposition();
+  const edPlayer = new K.Player($("#ed-canvas"), ed);
+  edPlayer.reveal = 0;
+  edPlayer.setFrame(100);
+  const fName = $("#f-name");
+  const fVer = $("#f-ver");
+  const fTag = $("#f-tag");
+  const original = { name: "Relay", ver: "2.0", tag: "The team inbox, rebuilt.", bg: "#2D45E8" };
+  let bg = original.bg;
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const val = (v, o) => `<span class="${v === o ? "v" : "changed"}">"${esc(v)}"</span>`;
+  const renderDoc = () => {
+    $("#doc").innerHTML = [
+      `{ <span class="k">"scene"</span>: <span class="v">"S01"</span>,`,
+      `  <span class="k">"palette"</span>: { <span class="k">"primary"</span>: ${val(bg, original.bg)} },`,
+      `  <span class="k">"layers"</span>: [`,
+      `    { <span class="k">"id"</span>: <span class="v">"L01"</span>, <span class="k">"text"</span>: ${val(fName.value, original.name)} },`,
+      `    { <span class="k">"id"</span>: <span class="v">"L02"</span>, <span class="k">"text"</span>: ${val(fVer.value, original.ver)} },`,
+      `    { <span class="k">"id"</span>: <span class="v">"L03"</span>, <span class="k">"text"</span>: ${val(fTag.value, original.tag)} }`,
+      `  ] }`,
+    ].join("\n");
+  };
+  const applyEdits = () => {
+    K.findLayer(ed, "L01").props.text = fName.value || " ";
+    K.findLayer(ed, "L02").props.text = fVer.value || " ";
+    K.findLayer(ed, "L03").props.text = fTag.value || " ";
+    ed.palette = { primary: bg };
+    edPlayer.draw();
+    renderDoc();
+  };
+  [fName, fVer, fTag].forEach((i) => i.addEventListener("input", applyEdits));
+  document.querySelectorAll(".swatch").forEach((s) =>
+    s.addEventListener("click", () => {
+      bg = s.dataset.c;
+      document.querySelectorAll(".swatch").forEach((x) => x.setAttribute("aria-pressed", x === s));
+      applyEdits();
+    }),
+  );
+  let edRaf = 0;
+  $("#ed-replay").addEventListener("click", () => {
+    cancelAnimationFrame(edRaf);
+    if (RM) {
+      edPlayer.setFrame(100);
+      return;
+    }
+    const t0 = performance.now();
+    const tick = (now) => {
+      const f = Math.min(110, Math.floor(((now - t0) / 1000) * comp.fps));
+      edPlayer.setFrame(f);
+      if (f < 110) edRaf = requestAnimationFrame(tick);
+    };
+    edRaf = requestAnimationFrame(tick);
+  });
+  applyEdits();
+
+  /* ================= STYLES ================= */
+  const strip = $("#strip");
+  const stylePlayers = Object.values(K.PACKS).map((pk) => {
+    const fig = document.createElement("figure");
+    fig.className = "shot";
+    fig.innerHTML = `<div class="frame" tabindex="0" aria-label="Play the ${pk.name} version"><canvas></canvas></div><figcaption><b>${pk.name}</b><span>${pk.note}</span></figcaption>`;
+    strip.appendChild(fig);
+    const p = new K.Player(fig.querySelector("canvas"), K.createComposition(), { pack: pk.id });
+    p.reveal = 0;
+    p.setFrame(100);
+    const frame = fig.querySelector(".frame");
+    let raf = 0;
+    const start = () => {
+      if (RM) return;
+      cancelAnimationFrame(raf);
+      const t0 = performance.now();
+      const tick = (now) => {
+        p.setFrame(Math.floor(((now - t0) / 1000) * comp.fps) % 120);
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      p.setFrame(100);
+    };
+    frame.addEventListener("pointerenter", start);
+    frame.addEventListener("pointerleave", stop);
+    frame.addEventListener("focus", start);
+    frame.addEventListener("blur", stop);
+    return p;
+  });
+
+  // dither → colour reveal for media as it scrolls into view
+  const revealTargets = new Map([
+    [$("#qa-canvas"), qa],
+    [$("#ed-canvas"), edPlayer],
+    ...stylePlayers.map((p) => [p.canvas, p]),
+  ]);
+  const io = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((en, i) => {
+        if (!en.isIntersecting) return;
+        io.unobserve(en.target);
+        const p = revealTargets.get(en.target);
+        setTimeout(() => p.revealIn(850), RM ? 0 : i * 90);
+      });
+    },
+    { threshold: 0.45 },
+  );
+  revealTargets.forEach((_, el) => io.observe(el));
+
+  /* ================= CONNECT ================= */
+  const URL_ = "https://mcp.kynimo.com/mcp";
+  const clients = [
+    { id: "cc", name: "Claude Code", lead: "Run this in your terminal:", code: `claude mcp add --transport http kynimo ${URL_}` },
+    { id: "claude", name: "Claude", lead: "Settings → Connectors → Add custom connector, then paste:", code: URL_ },
+    { id: "gpt", name: "ChatGPT", lead: "Settings → Connectors → Add a connector by URL, then paste:", code: URL_ },
+    {
+      id: "cursor",
+      name: "Cursor",
+      lead: "Add to .cursor/mcp.json:",
+      code: `{\n  "mcpServers": {\n    "kynimo": { "url": "${URL_}" }\n  }\n}`,
+    },
+    { id: "other", name: "Other clients", lead: "Any client that speaks MCP over Streamable HTTP. Point it at:", code: URL_ },
+  ];
+  const tabs = $("#tabs");
+  const panel = $("#panel");
+  const showTab = (id) => {
+    const c = clients.find((x) => x.id === id);
+    tabs.querySelectorAll(".tab").forEach((t) => {
+      const on = t.dataset.id === id;
+      t.setAttribute("aria-selected", on);
+      t.tabIndex = on ? 0 : -1;
+    });
+    panel.setAttribute("aria-labelledby", `tab-${id}`);
+    panel.innerHTML = `<p>${c.lead}</p><div class="code"><pre class="mono">${esc(c.code)}</pre><button class="btn" type="button" id="copy">${svgIcon("i-copy")}<span>Copy</span></button></div>`;
+    $("#copy").addEventListener("click", async (e) => {
+      const b = e.currentTarget;
+      try {
+        await navigator.clipboard.writeText(c.code);
+        b.querySelector("span").textContent = "Copied";
+      } catch {
+        b.querySelector("span").textContent = "Select and copy";
+      }
+      setTimeout(() => (b.querySelector("span").textContent = "Copy"), 1600);
+    });
+  };
+  tabs.innerHTML = clients
+    .map((c) => `<button class="tab" role="tab" id="tab-${c.id}" data-id="${c.id}" aria-controls="panel" type="button">${c.name}</button>`)
+    .join("");
+  tabs.addEventListener("click", (e) => {
+    const t = e.target.closest(".tab");
+    if (t) showTab(t.dataset.id);
+  });
+  tabs.addEventListener("keydown", (e) => {
+    const list = [...tabs.querySelectorAll(".tab")];
+    const i = list.indexOf(document.activeElement);
+    if (i < 0) return;
+    const n = e.key === "ArrowRight" ? (i + 1) % list.length : e.key === "ArrowLeft" ? (i - 1 + list.length) % list.length : -1;
+    if (n < 0) return;
+    e.preventDefault();
+    list[n].focus();
+    showTab(list[n].dataset.id);
+  });
+  showTab("cc");
+})();
+</script>
+</body>
+</html>

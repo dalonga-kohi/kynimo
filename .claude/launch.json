@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mockups",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dlx", "serve@14.2.4", "design/mockups", "-l", "4321", "--no-clipboard"],
+      "port": 4321
+    }
+  ]
+}

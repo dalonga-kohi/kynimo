@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/.claude", "!**/skills-lock.json", "!**/dist", "!**/.turbo", "!**/.next"]
+    "includes": [
+      "**",
+      "!**/.claude",
+      "!**/.impeccable",
+      "!**/skills-lock.json",
+      "!**/dist",
+      "!**/.turbo",
+      "!**/.next"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -31,6 +39,16 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["design/mockups/**"],
+      "linter": {
+        "rules": {
+          "suspicious": { "useIterableCallbackReturn": "off" }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
