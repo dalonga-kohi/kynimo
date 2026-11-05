@@ -90,7 +90,7 @@ Thin in v1: sign in, project list, preview player with timeline scrubbing, share
 | `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules         | M4               |
 | `packages/components` | `@kynimo/components` — built-in library + SDK               | M5               |
 | `apps/worker`         | render/export workers                                       | M6               |
-| `apps/web`            | web app                                                     | M7               |
+| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists  | M7               |
 
 ## Invariants
 
@@ -107,4 +107,4 @@ See [CLAUDE.md](../CLAUDE.md#architecture-invariants-the-reviewer-blocks-on-thes
 | Auth / OAuth provider                              | M3        |
 | Job queue                                          | M6        |
 | Object storage + CDN for previews                  | M6        |
-| Web framework                                      | M7        |
+| ~~Web framework~~ → Next.js on Vercel (ADR-0007)   | done      |
