@@ -1,9 +1,10 @@
-/**
- * Version of the Kynimo scene format.
- *
- * Bump this on every schema change and ship a migration from the previous
- * version (see docs/decisions/0001-scene-graph-source-of-truth.md).
- */
-export const SCENE_FORMAT_VERSION = 0 as const;
-
-export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;
+export * from "./asset.js";
+export * from "./composition.js";
+export * from "./ids.js";
+export * from "./layer.js";
+export * from "./limits.js";
+export * from "./primitives.js";
+export * from "./project.js";
+export * from "./shape.js";
+export * from "./transform.js";
+export { SCENE_FORMAT_VERSION, type SceneFormatVersion } from "./version.js";
