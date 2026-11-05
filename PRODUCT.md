@@ -54,7 +54,7 @@ Agent ──MCP──▶ Kynimo Cloud
 
 ## Business model (direction)
 
-Open core, decided before public launch: the scene format and component SDK may be open-sourced for trust and ecosystem; the cloud (hosted MCP, rendering, storage, premium guideline packs) is the paid product, priced on render minutes plus plan tiers. The repository is **private** until then.
+Open core, decided before public launch: the scene format and component SDK may be open-sourced for trust and ecosystem; the cloud (hosted MCP, rendering, storage, premium guideline packs) is the paid product, priced on render minutes plus plan tiers. Until then the repository is **public but unlicensed** (all rights reserved; see ADR-0006).
 
 ## Assumptions to confirm
 

@@ -6,6 +6,9 @@ dist/
 build/
 .turbo/
 *.tsbuildinfo
+.next/
+next-env.d.ts
+.vercel/
 
 # Tests
 coverage/
