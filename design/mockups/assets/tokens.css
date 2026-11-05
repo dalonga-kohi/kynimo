@@ -1,0 +1,226 @@
+/* Kynimo design tokens — mirrors the Paper file "Kynimo — Design". */
+:root {
+  color-scheme: dark;
+
+  --color-ground: #0c0b0a;
+  --color-surface: #171513;
+  --color-raised: #221f1c;
+  --color-line: #2e2a26;
+  --color-line-strong: #3d3832;
+  --color-text: #ede8df;
+  --color-text-muted: #a39c90;
+  --color-text-faint: #6e675d;
+  --color-accent: #f5c842;
+  --color-on-accent: #14110a;
+  --color-accent-dim: #6b5824;
+  --color-success: #8dc48a;
+  --color-danger: #ef6a4c;
+  --color-info: #8ec1ff;
+
+  --font-display: "Archivo", sans-serif;
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 22px;
+  --text-xl: 32px;
+  --text-2xl: 48px;
+  --text-3xl: 64px;
+  --text-4xl: 88px;
+  --text-5xl: 120px;
+
+  --tracking-display: -0.03em;
+  --tracking-tight: -0.015em;
+  --tracking-label: 0.06em;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Motion. Springs run in JS; these are their CSS stand-ins. */
+  --ease-snap: cubic-bezier(0.25, 1, 0.5, 1); /* ≈ critically damped, response 0.35s */
+  --dur-snap: 350ms;
+  --ease-cine: cubic-bezier(0.16, 1, 0.3, 1); /* long exponential ease-out for reveals */
+  --dur-cine: 800ms;
+  --dur-press: 100ms;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  caret-color: var(--color-accent);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mono,
+code,
+kbd,
+.timecode {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variation-settings: "wdth" 125;
+  letter-spacing: var(--tracking-display);
+  line-height: 0.95;
+  text-wrap: balance;
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Buttons */
+.btn {
+  --btn-bg: var(--color-raised);
+  --btn-fg: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: 500 var(--text-base) / 1 var(--font-sans);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform var(--dur-press) ease-out,
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.btn:hover {
+  border-color: var(--color-text-faint);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-primary {
+  --btn-bg: var(--color-accent);
+  --btn-fg: var(--color-on-accent);
+  border-color: var(--color-accent);
+  font-weight: 600;
+}
+.btn-primary:hover {
+  --btn-bg: #f8d462;
+  border-color: #f8d462;
+}
+.btn-ghost {
+  --btn-bg: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover {
+  --btn-bg: var(--color-raised);
+  border-color: transparent;
+}
+.btn[disabled],
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Reduced motion: movement becomes short cross-fades. JS reads the same query
+   and skips playback, typing and shutter wipes (final states render instead). */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn:active {
+    transform: none;
+  }
+}
