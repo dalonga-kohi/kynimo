@@ -10,6 +10,15 @@ import {
 } from "./limits.js";
 import { ColorSchema, MAX_MARKERS, MarkerSchema, NameSchema } from "./primitives.js";
 
+/** Positive integer num and den with a rate between MIN_FPS and MAX_FPS. Safe on any input. */
+export const isValidFrameRate = (fps: { num: number; den: number }): boolean =>
+  Number.isInteger(fps.num) &&
+  Number.isInteger(fps.den) &&
+  fps.num > 0 &&
+  fps.den > 0 &&
+  fps.num / fps.den >= MIN_FPS &&
+  fps.num / fps.den <= MAX_FPS;
+
 export const CompositionSchema = z.strictObject({
   id: CompositionIdSchema,
   name: NameSchema,
@@ -18,10 +27,7 @@ export const CompositionSchema = z.strictObject({
   /** Frame rate as an exact ratio, e.g. 30/1 or 30000/1001. All time is integer frames at this rate. */
   fps: z
     .strictObject({ num: z.number().int().positive(), den: z.number().int().positive() })
-    .refine(
-      (f) => f.num / f.den >= MIN_FPS && f.num / f.den <= MAX_FPS,
-      `frame rate must be between ${MIN_FPS} and ${MAX_FPS} fps`,
-    ),
+    .refine(isValidFrameRate, `frame rate must be between ${MIN_FPS} and ${MAX_FPS} fps`),
   durationFrames: z.number().int().positive().max(MAX_DURATION_FRAMES),
   /** `null` is transparent. */
   background: ColorSchema.nullable(),

@@ -73,8 +73,11 @@ const TextBoxSchema = z.discriminatedUnion("mode", [
 export const TextLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("text"),
-  /** Wrapped because keyframed source text is `v1.x`. */
-  content: animatable(z.string().max(10_000)),
+  /**
+   * Constant for now, but wrapped as `{ value }`: keyframed source text is `v1.x` and will allow
+   * only hold keyframes (strings cannot be interpolated), a loosening that needs no migration.
+   */
+  content: z.strictObject({ value: z.string().max(10_000) }),
   box: TextBoxSchema,
   font: z.strictObject({
     family: z.string().min(1).max(100),

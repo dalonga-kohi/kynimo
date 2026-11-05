@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { ShapeItemIdSchema } from "./ids.js";
+import type { Keyframe } from "./keyframes.js";
+import { MAX_GRADIENT_STOPS } from "./limits.js";
 import {
   ColorSchema,
   NameSchema,
@@ -14,6 +16,7 @@ import { animatable, TransformSchema } from "./transform.js";
 const GradientStopsSchema = z
   .array(z.strictObject({ offset: UnitIntervalSchema, color: ColorSchema }))
   .min(2)
+  .max(MAX_GRADIENT_STOPS)
   .refine(
     (stops) => stops.every((stop, i) => i === 0 || stop.offset >= (stops[i - 1]?.offset ?? 0)),
     {
@@ -21,19 +24,33 @@ const GradientStopsSchema = z
     },
   );
 
+const sameLengthCheck =
+  (what: string) =>
+  (keyframes: Keyframe<readonly unknown[]>[], ctx: z.RefinementCtx): void => {
+    const count = keyframes[0]?.value.length ?? 0;
+    keyframes.forEach((kf, i) => {
+      if (kf.value.length !== count)
+        ctx.addIssue({
+          code: "custom",
+          path: [i, "value"],
+          message: `every keyframe must have the same number of ${what} (${count} in the first keyframe, ${kf.value.length} here)`,
+        });
+    });
+  };
+
 export const PaintSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("solid"), color: animatable(ColorSchema) }),
   z.strictObject({
     type: z.literal("linear-gradient"),
     start: animatable(Vec2Schema),
     end: animatable(Vec2Schema),
-    stops: animatable(GradientStopsSchema),
+    stops: animatable(GradientStopsSchema, sameLengthCheck("gradient stops")),
   }),
   z.strictObject({
     type: z.literal("radial-gradient"),
     center: animatable(Vec2Schema),
     radius: animatable(PositiveSchema),
-    stops: animatable(GradientStopsSchema),
+    stops: animatable(GradientStopsSchema, sameLengthCheck("gradient stops")),
   }),
 ]);
 export type Paint = z.infer<typeof PaintSchema>;
@@ -47,6 +64,20 @@ export const BezierPathSchema = z.strictObject({
     .max(1000),
 });
 export type BezierPath = z.infer<typeof BezierPathSchema>;
+
+/** Morphing needs the same topology on every keyframe. Different vertex counts are `v1.x`. */
+const pathMorphCheck = (keyframes: Keyframe<BezierPath>[], ctx: z.RefinementCtx): void => {
+  const first = keyframes[0]?.value;
+  if (first === undefined) return;
+  keyframes.forEach((kf, i) => {
+    if (kf.value.vertices.length !== first.vertices.length || kf.value.closed !== first.closed)
+      ctx.addIssue({
+        code: "custom",
+        path: [i, "value"],
+        message: `path morphs need the same vertex count and closed flag on every keyframe (${first.vertices.length} vertices, closed=${first.closed} in the first keyframe); morphing between different vertex counts is not supported yet`,
+      });
+  });
+};
 
 const item = <T extends string>(type: T) => ({
   type: z.literal(type),
@@ -84,7 +115,10 @@ const StarSchema = z.strictObject({
   rotation: animatable(NumberSchema),
 });
 
-const PathSchema = z.strictObject({ ...item("path"), path: animatable(BezierPathSchema) });
+const PathSchema = z.strictObject({
+  ...item("path"),
+  path: animatable(BezierPathSchema, pathMorphCheck),
+});
 
 const FillSchema = z.strictObject({
   ...item("fill"),

@@ -1,71 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { MAX_GROUP_DEPTH, MAX_LAYERS, ProjectSchema, SCENE_FORMAT_VERSION } from "./index.js";
-
-type Obj = Record<string, unknown>;
-
-const prop = <T>(value: T) => ({ value });
-
-const transform = (): Obj => ({
-  anchorPoint: prop([0, 0]),
-  position: prop([960, 540]),
-  scale: prop([1, 1]),
-  rotation: prop(0),
-  skew: prop(0),
-  opacity: prop(1),
-});
-
-const common = (id: string): Obj => ({
-  id,
-  name: id,
-  inFrame: 0,
-  outFrame: 90,
-  startFrame: 0,
-  hidden: false,
-  solo: false,
-  editor: { locked: false, shy: false, label: null },
-  markers: [],
-});
-
-const visual = (id: string, parent: string | null = null): Obj => ({
-  ...common(id),
-  parent,
-  transform: transform(),
-});
-
-const nullLayer = (id: string, parent: string | null = null): Obj => ({
-  ...visual(id, parent),
-  type: "null",
-});
-
-const composition = (id: string, layers: Obj[]): Obj => ({
-  id,
-  name: id,
-  width: 1920,
-  height: 1080,
-  fps: { num: 30, den: 1 },
-  durationFrames: 90,
-  background: "#000000",
-  layers,
-  markers: [],
-});
-
-const project = (overrides: Obj = {}): Obj => ({
-  formatVersion: SCENE_FORMAT_VERSION,
-  name: "Demo",
-  mainCompositionId: "main",
-  style: null,
-  assets: [],
-  compositions: [composition("main", [])],
-  ...overrides,
-});
-
-const issues = (input: unknown) => {
-  const result = ProjectSchema.safeParse(input);
-  return result.success
-    ? []
-    : result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
-};
+import {
+  common,
+  composition,
+  issues,
+  nullLayer,
+  type Obj,
+  project,
+  prop,
+  transform,
+  visual,
+} from "./fixtures.test-util.js";
+import { MAX_GROUP_DEPTH, MAX_LAYERS, ProjectSchema } from "./index.js";
 
 describe("ProjectSchema: valid documents", () => {
   it("accepts a minimal project and survives a JSON round trip unchanged", () => {
@@ -564,6 +510,8 @@ describe("JSON Schema export", () => {
     const schema = z.toJSONSchema(ProjectSchema, { io: "output" }) as Obj;
     expect(schema.type).toBe("object");
     expect(JSON.stringify(schema)).toContain("formatVersion");
-    expect(JSON.stringify(schema).length).toBeLessThan(200_000);
+    const compact = z.toJSONSchema(ProjectSchema, { io: "output", reused: "ref" });
+    // The MCP resource uses the deduplicated form; keep it small so new properties cannot bloat it unnoticed.
+    expect(JSON.stringify(compact).length).toBeLessThan(60_000);
   });
 });

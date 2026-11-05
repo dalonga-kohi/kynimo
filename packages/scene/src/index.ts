@@ -1,10 +1,12 @@
 export * from "./asset.js";
 export * from "./composition.js";
 export * from "./ids.js";
+export * from "./keyframes.js";
 export * from "./layer.js";
 export * from "./limits.js";
 export * from "./primitives.js";
 export * from "./project.js";
 export * from "./shape.js";
+export * from "./spring.js";
 export * from "./transform.js";
 export { SCENE_FORMAT_VERSION, type SceneFormatVersion } from "./version.js";
