@@ -1,0 +1,24 @@
+{
+  "name": "@kynimo/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo engine: deterministic interpolation, easing, springs and motion paths.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/scene": "workspace:*"
+  }
+}
