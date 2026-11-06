@@ -1,11 +1,16 @@
+export * from "./apply.js";
 export * from "./asset.js";
+export type { Change, MarkerOwner } from "./changes.js";
 export * from "./composition.js";
+export * from "./history.js";
 export * from "./ids.js";
 export * from "./keyframes.js";
 export * from "./layer.js";
 export * from "./limits.js";
+export * from "./ops.js";
 export * from "./primitives.js";
 export * from "./project.js";
+export { type LayerSelector, LayerSelectorSchema } from "./selectors.js";
 export * from "./shape.js";
 export * from "./spring.js";
 export * from "./transform.js";

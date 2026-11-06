@@ -173,12 +173,12 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 1. **Same operations as the editor.** Every tool compiles to the typed scene operations in `@kynimo/scene`. Anything an agent does is undoable and editable in the UI.
 2. **Batch and transactional.** `apply_ops` applies a list of operations atomically and returns one new document version. A full entrance animation is one call, not forty.
 3. **Intent over math.** Agents are unreliable at bezier handles and frame arithmetic, and good at stating intent. Intent tools (`animate`, `apply_preset`, `stagger`, `retime`) take tokens and seconds, then expand them into exact keyframes the agent can still inspect and adjust.
-4. **Typed selectors.** Layers are addressed by id, by name, or by a structured, schema-validated selector, e.g. `{ "name": "title*" }`, `{ "type": "text", "composition": "scene-2" }`. Selectors resolve against the write's base version, and change records store the concrete layer ids, so undo, replay and conflict detection always hit the same layers.
+4. **Typed selectors.** Layers are addressed by id, by name, or by a structured, schema-validated selector, e.g. `{ "name": "title*" }`, `{ "type": "text", "composition": "scene-2" }`. Selectors resolve against the document as it stands when each op runs (so later ops in a batch see earlier ones), and change records store the concrete layer ids, so undo, replay and conflict detection always hit the same layers.
 5. **Compact reads.** `get_scene` returns a summary by default (layers, timing, what animates when) and full detail on request, so large projects don't flood the context window.
 6. **The agent sees its work.** Frames, contact sheets and a motion timeline summary are returned in the tool result.
 7. **Actionable feedback.** Validation errors and quality findings name the exact location and the operation that fixes it.
 8. **Optimistic concurrency.** Writes carry the base version, so agent edits and edits in the open editor never silently overwrite each other. The editor shows agent edits live.
-9. **Per-actor undo.** `undo` reverts the caller's own most recent batch, not whatever changed last. It's version-checked: if a later edit by someone else touches the same properties, undo fails with a conflict instead of discarding that edit.
+9. **Per-actor undo.** `undo` reverts the caller's own most recent batch, not whatever changed last. It's version-checked: if a later edit by someone else touches the same properties, undo fails with a conflict instead of discarding that edit. Property edits are checked per property; adding or removing a layer or marker is checked on the whole item, and reordering on the layer's position.
 10. **Versioned contracts.** Schema-validated input and output on every tool; breaking change → new tool name.
 
 ### Tool groups (target)
