@@ -2,7 +2,7 @@
   "name": "@kynimo/engine",
   "version": "0.0.0",
   "private": true,
-  "description": "Kynimo engine: deterministic interpolation, easing, springs and motion paths.",
+  "description": "Kynimo engine: deterministic interpolation, easing, springs, motion paths and frame evaluation.",
   "type": "module",
   "exports": {
     ".": {
