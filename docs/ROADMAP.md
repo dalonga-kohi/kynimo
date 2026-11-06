@@ -75,11 +75,14 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Viewer + timeline scrubbing, layer list, inspector, basic keyframe editing, all on scene operations
 - [ ] Live view of agent edits (same document versions as MCP)
 
-## After beta (v1.x, ADR-0013)
+## Private beta
+
+- [ ] Schema check: confirm additive room for 3D (Z, camera/light/model layers; interaction with order, blend modes, mattes, precomps), ADR-0013
+- [ ] Onboarding for MCP clients, usage limits, billing direction, open-core decision
+
+## After beta: v1.x highlights (ADR-0013)
+
+Not exhaustive; every `v1.x` item in CAPABILITIES.md follows after the private beta.
 
 - 3D compositing: 3D layers, cameras, lights; glTF / GLB model layers; shader materials
 - Lottie import → editable layers
-
-## Private beta
-
-- [ ] Onboarding for MCP clients, usage limits, billing direction, open-core decision

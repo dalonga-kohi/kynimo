@@ -57,7 +57,7 @@ Status:
 | Render switches: hidden, solo                             | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color              | Layer switches   | beta   |
 
-Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are decoded to frames with FFmpeg at upload, and the renderer draws those frames.
+Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload.
 
 ## 3. Transform, hierarchy and compositing
 
@@ -144,7 +144,7 @@ Effects stack per layer and on adjustment layers. They render deterministically 
 
 ## 8. Components, code, guidelines, quality
 
-Code is a first-class way to build (ADR-0012). Agents and users write custom components (TypeScript, `evaluate(props, frame, style) → layer subtree`) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's output is ordinary layers and keyframes; a shader's props are animatable uniforms. Nothing draws outside the scene graph.
+Code is a first-class way to build (ADR-0012). Agents and users write custom components (TypeScript, `evaluate(props, frame, style) → layer subtree`) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's `evaluate` runs every frame and returns a layer subtree derived at render time (not stored), so the instance is edited through its props. A shader's props are animatable uniforms; effect shaders get their input texture(s), the layer-local frame, fps, resolution and a document-derived seed. Code runs under resource limits. Nothing draws outside these nodes.
 
 | Capability                                                                                | Status |
 | ----------------------------------------------------------------------------------------- | ------ |
@@ -173,7 +173,7 @@ Code is a first-class way to build (ADR-0012). Agents and users write custom com
 
 ## Determinism
 
-The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled fonts, pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is GPU-based on **WebGL2** (ADR-0013); the M2 ADR picks the exact stack and must support blend modes, mattes, masks, the effect list and shaders under these conditions. Shaders get `frame`, resolution and declared uniforms only, never wall-clock time.
+The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled and uploaded fonts pinned by content hash (missing glyphs fall back to a pinned bundled font), pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is GPU-based on **WebGL2** (ADR-0013); the M2 ADR picks the exact stack and must support blend modes, mattes, masks, the effect list and shaders under these conditions. Shaders get only their declared inputs (ADR-0012), never wall-clock time.
 
 ## MCP surface
 
@@ -208,4 +208,4 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Feedback | `render_frames`, `render_contact_sheet`                                                                          | M3        |
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `get_preview_link`                                         | M7        |
 
-MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog and the component catalog, so agents can look things up instead of guessing.
+MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog and the shader catalog (built-in and project definitions), so agents can look things up instead of guessing.

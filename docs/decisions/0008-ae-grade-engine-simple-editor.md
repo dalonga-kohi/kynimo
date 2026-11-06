@@ -1,6 +1,6 @@
 # 0008 — After Effects-grade engine, simple editor
 
-- Status: accepted (amends ADR-0002: tool groups and web app scope; amends ADR-0004: preview vs export pixel identity; amended by ADR-0013: 3D moves to v1.x)
+- Status: accepted (amends ADR-0002: tool groups and web app scope; amends ADR-0004: preview vs export pixel identity; amended by ADR-0012: adds a `code` tool group; amended by ADR-0013: 3D moves to v1.x)
 - Date: 2026-11-05
 
 ## Context

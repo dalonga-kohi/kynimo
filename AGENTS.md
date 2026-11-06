@@ -58,8 +58,8 @@ Several agents may work in this repo at the same time.
 - **Deterministic rendering.** Same document + same frame → same pixels. No `Date.now()`, `Math.random()`, `performance.now()`, locale/timezone formatting, or network in evaluation/render paths. Randomness is seeded from the document.
 - **Versioned schema.** Any scene format change bumps `SCENE_FORMAT_VERSION` and ships a migration + test.
 - **Typed MCP contracts.** Every tool has schema-validated input and output and is backward compatible. Breaking change → new tool name/version.
-- **Code compiles to the scene graph.** Agents and users can author components (TypeScript) and shaders (GLSL), but their output is always scene-graph content; nothing draws outside it (ADR-0012).
-- **Sandboxed custom code.** User- or agent-authored component and shader code never gets host, filesystem, network, secret or wall-clock access.
+- **Code enters only as scene-graph nodes.** Agents and users can author components (TypeScript) and shaders (GLSL), but code enters a document only as component instances, shader effects or shader generator layers with declared, typed props; nothing draws outside those nodes (ADR-0012).
+- **Sandboxed custom code.** User- or agent-authored component and shader code never gets host, filesystem, network, secret or wall-clock access, and runs under resource limits.
 - **Quality is enforced, not hoped for.** Guideline rules live in code and produce a machine-readable report agents can act on.
 
 ## Code conventions

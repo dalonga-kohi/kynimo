@@ -7,7 +7,7 @@
 ## The problem
 
 - AI video generators (Sora, Veo, …) output pixels: you can't change a word, a color or a timing without regenerating.
-- Code-first motion tools (Remotion, Motion Canvas) are editable only by developers, and AI-written animation code looks generic: linear easing, uniform timing, no hierarchy. Kynimo keeps code but makes it compile to an editable scene graph that reads the guidelines and passes the same quality checks (ADR-0012).
+- Code-first motion tools (Remotion, Motion Canvas) are editable only by developers, and AI-written animation code looks generic: linear easing, uniform timing, no hierarchy. Kynimo keeps code but puts it inside the editable scene graph: code-authored components and shaders read the guidelines, are edited through their props, and are quality-checked (shaders on rendered frames only) (ADR-0012).
 - Professional tools (After Effects, Cavalry) are powerful but slow to learn and not built for agents.
 
 ## Who it's for (first)
@@ -33,7 +33,7 @@ Agent ──MCP──▶ Kynimo Cloud
 
 1. **Scene format** — a versioned JSON scene graph: compositions, scenes, layers, component instances, keyframes, style reference. The single source of truth and the reason everything stays editable.
 2. **Guidelines** — complete motion design systems: visual tokens (color, type, spacing, grid, safe areas), motion tokens (durations, springs, easings, stagger rhythms), choreography rules, and automated quality checks (readability time, simultaneous motion, contrast, safe areas, token-only easing). Shipped as style packs ("Keynote", "Editorial", "Brutalist", "Playful SaaS", custom brand packs).
-3. **Components and code** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. **Agents and users write their own in code:** custom components in TypeScript and custom shaders in GLSL, sandboxed, with declared, animatable props. Code output is ordinary scene-graph content, so it stays editable and quality-checked (ADR-0012).
+3. **Components and code** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. **Agents and users write their own in code:** custom components in TypeScript and custom shaders in GLSL, sandboxed, with declared, animatable props. Code enters the document only as component or shader nodes with editable props, so it stays editable and quality-checked (ADR-0012).
 4. **Render cloud** — deterministic rendering: fast preview frames for the agent's check step, background export jobs, preview links.
 
 ## v1 scope

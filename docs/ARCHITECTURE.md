@@ -71,7 +71,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 ## Agent layer — `apps/mcp`
 
 - Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
-- Tool groups (project, read, precise, intent, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
+- Tool groups (project, read, precise, intent, code, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
 
 ## Web app — `apps/web`
@@ -84,10 +84,10 @@ Simple editor in v1: sign in, project list, viewer with timeline scrubbing, laye
 | --------------------- | ----------------------------------------------------------------------------------------------- | ---------------- |
 | `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                         | M1 (stub exists) |
 | `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators | M1               |
-| `packages/renderer`   | `@kynimo/renderer` — frame drawing + headless capture                                           | M2               |
+| `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders, headless capture                          | M2               |
 | `apps/mcp`            | MCP server                                                                                      | M3               |
 | `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                             | M5               |
-| `packages/components` | `@kynimo/components` — built-in library, component authoring types, built-in shaders            | M6               |
+| `packages/components` | `@kynimo/components` — built-in library, component authoring types                              | M6               |
 | `apps/worker`         | render/export workers                                                                           | M7               |
 | `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                      | M8               |
 
@@ -101,7 +101,7 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | ----------------------------------------------------------------------------------------------------- | --------- |
 | ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                         | done      |
 | WebGL2 stack for v1 (direction set by ADR-0013; mattes, blend modes, effects, shaders, deterministic) | M2        |
-| Sandbox technology for custom component code (ADR-0012)                                               | M6        |
+| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012)  | M6        |
 | Hosting for API/MCP and workers                                                                       | M3 / M7   |
 | Database for project store (Postgres flavor)                                                          | M3        |
 | Auth / OAuth provider                                                                                 | M3        |

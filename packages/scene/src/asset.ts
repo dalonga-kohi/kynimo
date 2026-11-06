@@ -18,7 +18,7 @@ const base = {
   sha256: z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256"),
 };
 
-/** Video assets (pre-decoded to frames) are `v1.x`: adding that variant later is additive. */
+/** Video assets (pre-decoded to frames, ADR-0013) arrive with the asset pipeline: adding that variant is additive. */
 export const AssetSchema = z.discriminatedUnion("type", [
   z.strictObject({
     ...base,
