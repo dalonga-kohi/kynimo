@@ -16,7 +16,7 @@ We measured this with a reproducible spike ([`spikes/renderer-backend`](../../sp
 | WebGL2 in headless Chromium with the flags below  | ANGLE → Vulkan → SwiftShader (Subzero); float render targets, 4× MSAA                                           |
 | GLSL pass (RGBA8), and a two-pass RGBA16F chain   | Identical across launches                                                                                       |
 | Skia **CPU raster** of shapes + shaped text       | Identical across launches **and identical in Node and in Chromium**                                             |
-| Skia CPU raster → texture → our WebGL2 blend pass | Identical across launches; ~95–110 ms raster + ~60–75 ms upload/composite/readback incl. shader compile         |
+| Skia CPU raster → texture → our WebGL2 blend pass | Identical across launches; ~95–110 ms raster + ~60 ms upload/composite/readback incl. shader compile            |
 | PNG and JPEG decoded by CanvasKit's codecs        | Identical across launches and identical in Node and in Chromium                                                 |
 | Skia **GPU backend sharing our WebGL2 context**   | Frame 0 correct; after one raw GL pass every later frame is corrupted (MAE 53/255), even with `_resetContext()` |
 | Skia GPU backend alone, redrawn                   | Stable, so the corruption comes from GL state sharing                                                           |
@@ -58,7 +58,7 @@ The renderer has two halves that meet at premultiplied RGBA textures.
   - Cache a layer's raster while its geometry, resolved transform and content are unchanged.
   - Render the preview at reduced resolution while scrubbing.
   - Render frames in parallel across workers. Determinism makes that safe, because a frame never depends on the frames rendered before it, which is exactly what the shared-context path broke.
-- **Moving vector layers re-rasterize every frame,** because a sub-pixel transform change invalidates the cache. If profiling shows it matters, the fix is GPU resampling for pure translations at integer offsets. That is an optimization, not a format change.
+- **Moving vector layers re-rasterize every frame,** because a sub-pixel transform change invalidates the cache. If profiling shows it matters, the fix is reusing the cached raster for whole-pixel translations. That is an optimization, not a format change.
 - **Security: workers run untrusted GLSL.** `--enable-unsafe-swiftshader` is "unsafe" because SwiftShader JIT-compiles WebGL shaders in Chromium's GPU process, and workers will compile agent- and user-authored shaders (ADR-0012) through exactly that path. Treat render workers as untrusted-code hosts:
   - isolate them per job or per tenant;
   - give them no secrets and no network beyond fetching their inputs;

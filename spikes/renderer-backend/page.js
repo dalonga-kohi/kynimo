@@ -194,7 +194,8 @@ void main(){ vec3 a = vec3(0);
       stencil: 1,
       majorVersion: 2,
     });
-    out.sharedSameContextObject = canvas.getContext("webgl2") === gl;
+    // A canvas has one context, so a non-zero handle on this canvas means Skia uses ours.
+    out.sharedSameContextObject = handle > 0 && canvas.getContext("webgl2") === gl;
     const gr = CK.MakeWebGLContext(handle);
     const surface = CK.MakeOnScreenGLSurface(gr, W, H, CK.ColorSpace.SRGB, 0, 8);
     out.sharedSkiaVsCpuMae = [];
