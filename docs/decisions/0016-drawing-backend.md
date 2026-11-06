@@ -16,7 +16,8 @@ We measured this with a reproducible spike ([`spikes/renderer-backend`](../../sp
 | WebGL2 in headless Chromium with the flags below  | ANGLE → Vulkan → SwiftShader (Subzero); float render targets, 4× MSAA                                           |
 | GLSL pass (RGBA8), and a two-pass RGBA16F chain   | Identical across launches                                                                                       |
 | Skia **CPU raster** of shapes + shaped text       | Identical across launches **and identical in Node and in Chromium**                                             |
-| Skia CPU raster → texture → our WebGL2 blend pass | Identical across launches; ~110 ms raster + ~75 ms upload/composite/readback (whole frame, worst case)          |
+| Skia CPU raster → texture → our WebGL2 blend pass | Identical across launches; ~95–110 ms raster + ~60–75 ms upload/composite/readback incl. shader compile         |
+| PNG and JPEG decoded by CanvasKit's codecs        | Identical across launches and identical in Node and in Chromium                                                 |
 | Skia **GPU backend sharing our WebGL2 context**   | Frame 0 correct; after one raw GL pass every later frame is corrupted (MAE 53/255), even with `_resetContext()` |
 | Skia GPU backend alone, redrawn                   | Stable, so the corruption comes from GL state sharing                                                           |
 
@@ -27,13 +28,17 @@ CanvasKit's GPU backend caches GL state, and its public API has no way to reset 
 The renderer has two halves that meet at premultiplied RGBA textures.
 
 - **Rasterizer: CanvasKit (Skia WASM) on software raster surfaces only.**
-  - Skia draws all vector and raster content: shape paths (fills, strokes, joins, caps, dashes, gradients, fill rules), solids, images and video frames, and text.
-  - Each layer is rasterized in composition space with its resolved 2D transform applied, clipped to its bounds within the composition. Scaled vectors stay sharp (the equivalent of After Effects' continuous rasterization), and the compositor never resamples transformed content.
-  - Images and pre-decoded video frames are decoded by CanvasKit's own codecs, not the browser's, so decoding is identical everywhere.
-  - Text is shaped and laid out by CanvasKit's Paragraph API (HarfBuzz inside the WASM). Its font manager gets only fonts we hand it (bundled, or uploaded and pinned by hash). System fonts are never consulted, so glyph fallback follows only the order the document pins (ADR-0013). Font loading and layout are decided in the M2 text item.
+  - Skia draws shape paths (fills, strokes, joins, caps, dashes, gradients, fill rules), text, and mask paths. It decodes images and video frames.
+  - Raster space follows After Effects:
+    - **Vector and text layers** are rasterized in composition space with their resolved 2D transform applied (After Effects' continuous rasterization), so scaled vectors stay sharp.
+    - **Image, video and solid layers, and precomps**, are rasterized or composited in layer space. The compositor then places them with their transform, resampling with one fixed filter: bilinear, plus trilinear mipmaps when minifying.
+  - **Effects and shader effects run in the layer's raster space:** composition space for vector and text layers, layer space for the rest. This is the same split as After Effects, and ADR-0012's effect-shader inputs refer to that space.
+  - Each raster region is the layer's bounds, padded by its effect stack's bounds expansion (blur radius, shadow offset and so on), so effects don't clip at the frame edge. It is limited to the composition plus that padding.
+  - Images and pre-decoded video frames are decoded by CanvasKit's own codecs, not the browser's. The spike checks this for PNG and JPEG. Pre-decoded video frames are stored as lossless PNG. The M2 "Draw shapes … images" item pins the formats we accept, and the M3 video item revisits storage size.
+  - Text is shaped and laid out by CanvasKit's Paragraph API (HarfBuzz inside the WASM). Its font manager gets only fonts we hand it (bundled, or uploaded and pinned by hash). System fonts are never consulted, so missing glyphs fall back only to a pinned bundled font (ADR-0013). Font loading, fallback order and layout are decided in the M2 text item.
   - CanvasKit's GPU backend and SkSL runtime effects are not used.
 - **Compositor: our own WebGL2 code in `@kynimo/renderer`, no framework.**
-  - Blend modes, track mattes, masks, adjustment layers, the effect list, and built-in and custom GLSL ES 3.00 shaders are all our own full-screen or bounded passes over layer textures.
+  - Blend modes, track mattes, masks (feathering, combining and applying the paths Skia rasterized), adjustment layers, the effect list, and built-in and custom GLSL ES 3.00 shaders are all our own full-screen or bounded passes over layer textures.
   - Intermediate targets are RGBA16F and premultiplied, which avoids the banding of 8-bit chains in blurs and glows. The final output is quantized to RGBA8.
   - Blending runs on sRGB-encoded values, which matches After Effects' default (non-linear) working space. A linear-blending project setting can come later as an additive switch.
 - **Workers launch the pinned Chromium with `--use-angle=swiftshader --enable-unsafe-swiftshader`.** On a host with a GPU, Chromium would otherwise use the GPU. The worker reads `UNMASKED_RENDERER_WEBGL` at startup and refuses to render unless it reports SwiftShader.
@@ -42,15 +47,22 @@ The renderer has two halves that meet at premultiplied RGBA textures.
 
 ## Consequences
 
-- **Determinism scope, stated precisely.** Skia's half is bit-identical across preview, workers and Node, because it is WASM running on the CPU. The compositor's half is bit-identical in workers and visually equivalent in a user's browser (ADR-0008). So vector, text and image pixels match the export exactly even in the preview; only blending and effects can differ by driver.
+- **Determinism scope, stated precisely.**
+  - **Guaranteed:** frames produced in workers (pinned Chromium, SwiftShader, pinned CanvasKit and fonts) are bit-identical.
+  - **The preview** is visually equivalent, not bit-identical (ADR-0008), and nothing may rely on it matching the export.
+  - **Expected but not relied on:** Skia's half should give the same bytes in any engine, because it is WASM with IEEE floats. So far that is verified only between Node 22 and the pinned Chromium on one host. Re-check it when CI moves to Node 24 (a different V8).
 - **Not yet proven.** That results stay identical across CPU families. The spike ran on one x86-64 machine with AVX-512. SwiftShader's JIT, and any WASM SIMD that CanvasKit uses, may generate different code on other CPUs. Until the golden-hash test has run on the worker CPU type, workers stay on one pinned CPU family, and the hashes are checked when the worker hardware changes.
-- **Rasterization tests run in Vitest under Node, without a browser,** because CanvasKit runs there and produces the same bytes. Only compositor tests need headless Chromium.
-- **CPU cost.** A full-frame 1080p raster of a busy scene takes about 100 ms on one core. Mitigations:
+- **Rasterization tests run in Vitest under Node, without a browser,** because CanvasKit runs there and produced the same bytes as Chromium in the spike. Only compositor tests need headless Chromium.
+- **CPU cost.** A simple full-frame 1080p scene (two paths and a paragraph, dominated by one full-frame gradient fill) takes about 100 ms to rasterize on one core. Cost scales with covered area. Mitigations:
   - Rasterize only layer bounds within the composition.
   - Cache a layer's raster while its geometry, resolved transform and content are unchanged.
   - Render the preview at reduced resolution while scrubbing.
   - Render frames in parallel across workers. Determinism makes that safe, because a frame never depends on the frames rendered before it, which is exactly what the shared-context path broke.
 - **Moving vector layers re-rasterize every frame,** because a sub-pixel transform change invalidates the cache. If profiling shows it matters, the fix is GPU resampling for pure translations at integer offsets. That is an optimization, not a format change.
+- **Security: workers run untrusted GLSL.** `--enable-unsafe-swiftshader` is "unsafe" because SwiftShader JIT-compiles WebGL shaders in Chromium's GPU process, and workers will compile agent- and user-authored shaders (ADR-0012) through exactly that path. Treat render workers as untrusted-code hosts:
+  - isolate them per job or per tenant;
+  - give them no secrets and no network beyond fetching their inputs;
+  - make the M6 sandbox ADR cover this path as well as component code.
 - **Bundle size.** CanvasKit is about 2.9 MB gzipped. It loads lazily in the editor; MCP clients render server-side and never download it. A trimmed custom CanvasKit build is an option if size becomes a problem.
 - **New runtime dependency:** `canvaskit-wasm` (BSD-3-Clause), added to `@kynimo/renderer` when the "Draw shapes" item creates that package.
 - **Rejected:**

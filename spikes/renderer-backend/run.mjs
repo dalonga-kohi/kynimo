@@ -31,7 +31,13 @@ await import("./scene.js");
 // Skia CPU raster in Node: must match the browser byte for byte.
 const CK = await CanvasKitInit({ locateFile: (f) => join(ckBin, f) });
 const surface = CK.MakeSurface(W, H);
-globalThis.drawScene(CK, surface.getCanvas(), fontBytes, W, H);
+const { longestLine: nodeLongestLine } = globalThis.drawScene(
+  CK,
+  surface.getCanvas(),
+  fontBytes,
+  W,
+  H,
+);
 const nodeRaster = surface.getCanvas().readPixels(0, 0, {
   width: W,
   height: H,
@@ -40,7 +46,61 @@ const nodeRaster = surface.getCanvas().readPixels(0, 0, {
   colorSpace: CK.ColorSpace.SRGB,
 });
 surface.delete();
-const nodeCpuRaster = createHash("sha256").update(nodeRaster).digest("hex").slice(0, 16);
+const shortHash = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+const nodeCpuRaster = shortHash(nodeRaster);
+
+// Sanity: identical hashes mean nothing if the scene drew nothing. Require laid-out text, ink in
+// the text area and a non-uniform frame.
+const alphaPixels = (px, x0, y0, x1, y1) => {
+  let n = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (px[(y * W + x) * 4 + 3]) n++;
+  return n;
+};
+const textInk = alphaPixels(nodeRaster, Math.round(W * 0.08), 0, W, Math.round(H * 0.15));
+const distinctPixels = new Set();
+for (let i = 0; i < nodeRaster.length && distinctPixels.size < 1000; i += 4 * 97) {
+  distinctPixels.add(nodeRaster.subarray(i, i + 4).join(","));
+}
+
+// Test images: a procedural gradient + shape, encoded once here as PNG and JPEG with CanvasKit's
+// "full" build (the default build has no JPEG encoder), then decoded with the default build's
+// codecs in Node and in Chromium.
+const encoder = await require("canvaskit-wasm/bin/full/canvaskit.js")({
+  locateFile: (f) => join(ckBin, "full", f),
+});
+const imageSurface = encoder.MakeSurface(257, 173);
+{
+  const c = imageSurface.getCanvas();
+  const paint = new encoder.Paint();
+  paint.setShader(
+    encoder.Shader.MakeRadialGradient(
+      [90, 70],
+      160,
+      [encoder.Color(250, 220, 60, 1), encoder.Color(20, 40, 160, 0.7)],
+      null,
+      encoder.TileMode.Mirror,
+    ),
+  );
+  c.drawPaint(paint);
+  paint.setShader(null);
+  paint.setAntiAlias(true);
+  paint.setColor(encoder.Color(255, 255, 255, 0.5));
+  c.drawCircle(180, 100, 50, paint);
+  paint.delete();
+}
+const snapshot = imageSurface.makeImageSnapshot();
+const images = {
+  png: snapshot.encodeToBytes(encoder.ImageFormat.PNG, 100),
+  jpeg: snapshot.encodeToBytes(encoder.ImageFormat.JPEG, 85),
+};
+snapshot.delete();
+imageSurface.delete();
+const nodeDecoded = Object.fromEntries(
+  Object.entries(images).map(([f, bytes]) => [f, shortHash(globalThis.decodeImage(CK, bytes))]),
+);
+const imagesB64 = Object.fromEntries(
+  Object.entries(images).map(([f, bytes]) => [f, Buffer.from(bytes).toString("base64")]),
+);
 
 const runs = [];
 let version;
@@ -66,8 +126,8 @@ for (let i = 0; i < LAUNCHES; i++) {
   await page.addScriptTag({ path: join(here, "page.js") });
   runs.push(
     await page.evaluate(
-      ([w, h, f, o]) => globalThis.runExperiments(w, h, f, o),
-      [W, H, font.toString("base64"), ORIGIN],
+      ([w, h, f, img, o]) => globalThis.runExperiments(w, h, f, img, o),
+      [W, H, font.toString("base64"), imagesB64, ORIGIN],
     ),
   );
   await browser.close();
@@ -79,11 +139,24 @@ const distinct = (arr) => new Set(arr).size;
 const first = runs[0];
 const checks = [
   ["WebGL2 runs on SwiftShader", /SwiftShader/.test(first.renderer)],
+  [
+    `Scene is not blank (text line ${Math.round(nodeLongestLine)} px, ${textInk} inked text-area px)`,
+    nodeLongestLine > 0 &&
+      first.longestLine === nodeLongestLine &&
+      textInk > 1000 &&
+      distinctPixels.size > 50,
+  ],
   ["GLSL shader pass identical across launches", allEqual("shaderPass")],
   ["RGBA16F two-pass chain identical across launches", allEqual("halfFloatChain")],
   ["Skia CPU raster identical across launches", allEqual("cpuRaster")],
   ["Skia CPU raster identical in Node and Chromium", first.cpuRaster === nodeCpuRaster],
   ["CPU raster -> WebGL2 composite identical across launches", allEqual("cpuComposite")],
+  ["PNG + JPEG decode identical across launches", allEqual("decoded")],
+  [
+    "PNG + JPEG decode identical in Node and Chromium",
+    JSON.stringify(first.decoded) === JSON.stringify(nodeDecoded),
+  ],
+  ["Experiment 3 really shares our WebGL2 context", first.sharedSameContextObject === true],
   ["Skia GPU alone: redraws identical", distinct(first.skiaGpuAloneFrames) === 1],
 ];
 // Recorded, not required: the rejected shared-context path.
@@ -98,11 +171,11 @@ console.log(
     ` (MAE vs CPU raster per frame: ${first.sharedSkiaVsCpuMae.join(", ")})`,
 );
 console.log(
-  `INFO  timings (ms, first launch): CPU raster ${first.cpuRasterMs}, upload+composite+readback ` +
+  `INFO  timings (ms, first launch): CPU raster ${first.cpuRasterMs}, upload+composite+readback (incl. shader compile) ` +
     `${first.uploadCompositeMs}; shared-context frames ${first.sharedFrame0Ms}, ${first.sharedFrame1Ms}, ${first.sharedFrame2Ms}`,
 );
 console.log(
-  `INFO  hashes: shader ${first.shaderPass}, half-float ${first.halfFloatChain}, cpu raster ${first.cpuRaster}, composite ${first.cpuComposite}`,
+  `INFO  hashes: shader ${first.shaderPass}, half-float ${first.halfFloatChain}, cpu raster ${first.cpuRaster}, composite ${first.cpuComposite}, png ${nodeDecoded.png}, jpeg ${nodeDecoded.jpeg}`,
 );
 
 process.exit(checks.every(([, ok]) => ok) ? 0 : 1);

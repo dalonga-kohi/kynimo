@@ -1,8 +1,9 @@
 // In-page experiments for ADR-0016. Classic script; run.mjs calls globalThis.runExperiments.
 // Every result is a short SHA-256 of raw RGBA bytes, so runs can be compared exactly.
 
-globalThis.runExperiments = async (W, H, fontB64, origin) => {
-  const fontBytes = Uint8Array.from(atob(fontB64), (c) => c.charCodeAt(0)).buffer;
+globalThis.runExperiments = async (W, H, fontB64, imagesB64, origin) => {
+  const fromB64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+  const fontBytes = fromB64(fontB64);
   // CanvasKitInit is a global from canvaskit.js, which run.mjs injects first.
   const CK = await CanvasKitInit({ locateFile: (f) => `${origin}/${f}` });
   const out = {};
@@ -152,7 +153,7 @@ void main(){ vec3 a = vec3(0);
   {
     let t0 = performance.now();
     const surface = CK.MakeSurface(W, H);
-    drawScene(CK, surface.getCanvas(), fontBytes, W, H);
+    out.longestLine = drawScene(CK, surface.getCanvas(), fontBytes, W, H).longestLine;
     cpuRaster = surface.getCanvas().readPixels(0, 0, {
       width: W,
       height: H,
@@ -170,8 +171,15 @@ void main(){ vec3 a = vec3(0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, cpuRaster);
-    out.cpuComposite = await sha(composite(gl, tex, true));
+    const composited = composite(gl, tex, true);
     out.uploadCompositeMs = Math.round(performance.now() - t0);
+    out.cpuComposite = await sha(composited);
+  }
+
+  // 2b. Image decoding with CanvasKit's codecs (PNG and JPEG encoded once in Node).
+  out.decoded = {};
+  for (const [format, b64] of Object.entries(imagesB64)) {
+    out.decoded[format] = await sha(decodeImage(CK, fromB64(b64)));
   }
 
   // 3. Rejected path: Skia's GPU backend on our own WebGL2 context. We draw with Skia, copy

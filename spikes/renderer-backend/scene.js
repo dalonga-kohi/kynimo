@@ -1,7 +1,8 @@
 // Test scene drawn with CanvasKit (Skia). Loaded as a classic script in the page and as a
 // module in Node, so it only assigns a global. Exercises what M2 needs from Skia: even-odd
 // fills, gradients, rounded rects, dashed strokes with round joins/caps and shaped text
-// (ligatures, accents, symbols, tracking, line wrapping).
+// (ligatures, accents, symbols, tracking, line wrapping). Returns the paragraph's longest line
+// width so callers can tell an empty layout from a drawn one.
 globalThis.drawScene = (CK, canvas, fontBytes, w, h) => {
   canvas.clear(CK.Color(0, 0, 0, 0));
 
@@ -59,6 +60,23 @@ globalThis.drawScene = (CK, canvas, fontBytes, w, h) => {
   const paragraph = builder.build();
   paragraph.layout(w * 0.8);
   canvas.drawParagraph(paragraph, w * 0.08, h * 0.05);
+  const longestLine = paragraph.getLongestLine();
 
   for (const o of [fill, stroke, blobPath, starPath, paragraph, builder, fonts]) o.delete();
+  return { longestLine };
+};
+
+// Decodes encoded image bytes with CanvasKit's own codecs (not the browser's) and returns the
+// decoded RGBA bytes, so decoding can be compared between Node and Chromium.
+globalThis.decodeImage = (CK, bytes) => {
+  const image = CK.MakeImageFromEncoded(new Uint8Array(bytes));
+  const px = image.readPixels(0, 0, {
+    width: image.width(),
+    height: image.height(),
+    colorType: CK.ColorType.RGBA_8888,
+    alphaType: CK.AlphaType.Premul,
+    colorSpace: CK.ColorSpace.SRGB,
+  });
+  image.delete();
+  return px;
 };
