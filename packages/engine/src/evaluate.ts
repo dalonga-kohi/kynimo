@@ -14,8 +14,9 @@ import { sampleColor, sampleNumber } from "./track.js";
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
 
 /**
- * Most work one `evaluateFrame` call may do, in units: 1 per layer, plus 1 per shape item, path
- * vertex and gradient stop, summed over every distinct (composition, local frame) it evaluates.
+ * Most work one `evaluateFrame` call may do inside precomps, in units: 1 per layer, plus 1 per
+ * shape item, path vertex and gradient stop, summed over every distinct (composition, local frame)
+ * a precomp evaluates. The root composition is not charged: its work is already linear in the document.
  * The memo only collapses precomps that land on the same local frame, so precomps placed at many
  * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
  * of JSON. For scale: a 1000-layer composition evaluated at 1000 different offsets costs 1,000,000.
@@ -92,16 +93,7 @@ function evaluateComposition(
   const cached = root ? undefined : ctx.memo.get(key);
   if (cached !== undefined) return cached;
 
-  let cost = ctx.costs.get(comp.id);
-  if (cost === undefined) {
-    cost = compositionCost(comp);
-    ctx.costs.set(comp.id, cost);
-  }
-  ctx.budget -= cost;
-  if (ctx.budget < 0)
-    throw new RangeError(
-      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, path vertices); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
-    );
+  if (!root) charge(ctx, comp);
 
   const fps = comp.fps;
   const byId = new Map(comp.layers.map((l) => [l.id as string, l]));
@@ -183,6 +175,20 @@ function evaluateComposition(
   };
   if (!root) ctx.memo.set(key, result);
   return result;
+}
+
+/** Charges one evaluation of a nested composition against the budget. Only reached through a precomp, so `chain` is never empty. */
+function charge(ctx: Context, comp: Composition): void {
+  let cost = ctx.costs.get(comp.id);
+  if (cost === undefined) {
+    cost = compositionCost(comp);
+    ctx.costs.set(comp.id, cost);
+  }
+  ctx.budget -= cost;
+  if (ctx.budget < 0)
+    throw new RangeError(
+      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, path vertices, gradient stops); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
+    );
 }
 
 function withChain<T>(ctx: Context, layerId: string, run: () => T): T {

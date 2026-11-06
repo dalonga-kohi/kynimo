@@ -309,8 +309,8 @@ describe("evaluateFrame: precomps", () => {
   });
 
   it("allows exactly the budget and refuses one unit more", () => {
-    // main: 999 placements of c1 at distinct offsets plus one shape layer (1,000 units);
-    // c1: 1,000 solids, evaluated at 999 frames (999,000 units). Total: exactly 1,000,000.
+    // main (not charged): 999 placements of c1 at distinct offsets (999 × 1,000 units) plus one
+    // placement of c2 (1,000 units). Total: exactly 1,000,000.
     const rect = {
       id: "r",
       name: "r",
@@ -319,19 +319,46 @@ describe("evaluateFrame: precomps", () => {
       size: prop([1, 1]),
       cornerRadius: prop(0),
     };
+    const solids = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => solid(`${prefix}${i}`));
     const placements = Array.from({ length: 999 }, (_, i) =>
       precomp(`a${i}`, "c1", { startFrame: -i, inFrame: 0 }),
     );
-    const c1 = composition(
-      "c1",
-      Array.from({ length: 1000 }, (_, i) => solid(`s${i}`)),
-      { durationFrames: 1000 },
-    );
-    const doc = (contents: Obj[]) =>
-      project([composition("main", [...placements, layer("extra", "shape", { contents })]), c1]);
+    const c1 = composition("c1", solids("s", 1000), { durationFrames: 1000 });
+    const doc = (c2Shape: Obj[]) =>
+      project([
+        composition("main", [...placements, precomp("b", "c2")]),
+        c1,
+        composition("c2", [...solids("t", 999), layer("shape", "shape", { contents: c2Shape })]),
+      ]);
     expect(evaluateFrame(doc([]), 0).layers).toHaveLength(1000);
-    // One rect in main's shape layer is exactly one more unit.
+    // One rect in c2 is exactly one more unit.
     expect(() => evaluateFrame(doc([rect]), 0)).toThrow(RangeError);
+  }, 20_000);
+
+  it("does not charge the root composition", () => {
+    // 1000 path layers × 1000 vertices: over a million units, but linear work with no precomps.
+    const vertices = Array.from({ length: 1000 }, (_, v) => ({
+      point: [v, 0],
+      inTangent: [0, 0],
+      outTangent: [0, 0],
+    }));
+    const path = (id: string) => ({
+      id,
+      name: id,
+      type: "path",
+      path: prop({ closed: false, vertices }),
+    });
+    const layers = Array.from({ length: 1000 }, (_, i) =>
+      layer(`p${i}`, "shape", {
+        inFrame: i % 90,
+        outFrame: (i % 90) + 1,
+        contents: [path(`p${i}path`)],
+      }),
+    );
+    expect(evaluateFrame(project([composition("main", layers)]), 0).layers.length).toBeGreaterThan(
+      0,
+    );
   }, 20_000);
 
   it("charges shape contents, not just layers", () => {
