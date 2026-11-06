@@ -5,6 +5,8 @@ import type { Rgba } from "./color.js";
 /**
  * The output of {@link evaluateFrame}: plain values only, no tracks. Everything the renderer
  * needs to draw one frame, and nothing that can change between two evaluations of it.
+ * The whole tree is read-only: it shares objects with the document (constant positions, dash
+ * arrays, component props) and between precomp instances, so copy before changing anything.
  */
 
 export type Point = readonly [number, number];

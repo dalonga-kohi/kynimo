@@ -49,19 +49,22 @@ export interface TransformValues {
   scale: readonly [number, number];
   /** Degrees, clockwise. */
   rotation: number;
-  /** Degrees; horizontal shear like CSS `skewX`. */
+  /**
+   * Degrees of horizontal shear about the anchor point. Positive skew leans the top edge right and
+   * the bottom edge left, as in After Effects and Lottie (CSS `skewX(-skew)`).
+   */
   skew: number;
 }
 
 /**
  * Local matrix of a layer or shape group, After Effects order:
- * `translate(position) · rotate(rotation) · skewX(skew) · scale(scale) · translate(-anchorPoint)`.
+ * `translate(position) · rotate(rotation) · skew(skew) · scale(scale) · translate(-anchorPoint)`.
  */
 export function transformMatrix(t: TransformValues): Affine {
   const [sin, cos] = sinCos(t.rotation);
-  const k = t.skew === 0 ? 0 : Math.tan((t.skew * Math.PI) / 180);
+  const k = t.skew === 0 ? 0 : -Math.tan((t.skew * Math.PI) / 180);
   const [sx, sy] = t.scale;
-  // rotate · skewX(k) · scale, written out.
+  // rotate · shear(x' = x + k·y) · scale, written out; k = -tan(skew) gives the After Effects lean.
   const a = cos * sx;
   const b = sin * sx;
   const c = (cos * k - sin) * sy;

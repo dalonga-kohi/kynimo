@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyToPoint } from "./affine.js";
-import { evaluateFrame, nestedFrame } from "./evaluate.js";
+import { applyToPoint, multiply, transformMatrix } from "./affine.js";
+import { evaluateFrame, MAX_EVALUATED_LAYERS, nestedFrame } from "./evaluate.js";
 import {
   composition,
   deepFreeze,
@@ -172,6 +172,69 @@ describe("evaluateFrame: time and transforms", () => {
   });
 });
 
+describe("evaluateFrame: parenting parity", () => {
+  const p = {
+    anchorPoint: [10, 20],
+    position: [300, 200],
+    scale: [2, -1],
+    rotation: 30,
+    skew: 15,
+  } as const;
+  const c = {
+    anchorPoint: [5, 5],
+    position: [40, -10],
+    scale: [0.5, 0.5],
+    rotation: -45,
+    skew: -10,
+  } as const;
+  const asTransform = (t: typeof p | typeof c) =>
+    transform({
+      anchorPoint: prop(t.anchorPoint),
+      position: prop(t.position),
+      scale: prop(t.scale),
+      rotation: prop(t.rotation),
+      skew: prop(t.skew),
+    });
+  const expected = multiply(transformMatrix(p), transformMatrix(c));
+
+  it("composes anchor point, scale, rotation and skew through the parent", () => {
+    const out = single([
+      composition("main", [
+        solid("c", { parent: "p", transform: asTransform(c) }),
+        layer("p", "null", { transform: asTransform(p) }),
+      ]),
+    ]);
+    expect((out.layers[0] as ResolvedLayer).matrix).toEqual(expected);
+  });
+
+  it("resolves parents per composition inside a precomp", () => {
+    const inner = composition("inner", [
+      solid("c", { parent: "p", transform: asTransform(c) }),
+      layer("p", "null", { transform: asTransform(p) }),
+    ]);
+    const outer = composition("main", [layer("pc", "precomp", { compositionId: "inner" })]);
+    const pc = evaluateFrame(project([outer, inner]), 0).layers[0] as ResolvedPrecompLayer;
+    const child = pc.composition?.layers[0];
+    expect(child?.matrix).toEqual(expected);
+  });
+
+  it("chains through a null whose own parent is out of range", () => {
+    const out = single([
+      composition("main", [
+        solid("c", { parent: "mid" }),
+        layer("mid", "null", { parent: "top", transform: transform({ position: prop([0, 7]) }) }),
+        solid("top", {
+          inFrame: 50,
+          outFrame: 60,
+          transform: transform({ position: prop([3, 0]) }),
+        }),
+      ]),
+    ]);
+    expect(ids(out.layers)).toEqual(["c"]);
+    expect(applyToPoint((out.layers[0] as ResolvedLayer).matrix, [0, 0])).toEqual([3, 7]);
+  });
+});
+
 describe("evaluateFrame: precomps", () => {
   const precomp = (id: string, compositionId: string, overrides: Obj = {}) =>
     layer(id, "precomp", { compositionId, ...overrides });
@@ -217,6 +280,32 @@ describe("evaluateFrame: precomps", () => {
     );
     const doc = project([composition("main", [precomp("root", "c0")]), ...comps]);
     expect(evaluateFrame(doc, 0).layers).toHaveLength(1);
+  });
+
+  it("refuses precomp fan-out at distinct offsets beyond the work budget", () => {
+    // main places c1 N times and c1 places c2 N times, all at different start frames: N³ layers from 3N.
+    const n = 100;
+    const doc = project([
+      composition(
+        "main",
+        Array.from({ length: n }, (_, i) => precomp(`a${i}`, "c1", { startFrame: -i, inFrame: 0 })),
+      ),
+      composition(
+        "c1",
+        Array.from({ length: n }, (_, i) =>
+          precomp(`b${i}`, "c2", { startFrame: -i * n, inFrame: 0, outFrame: 90 }),
+        ),
+      ),
+      composition(
+        "c2",
+        Array.from({ length: n }, (_, i) => solid(`s${i}`)),
+        { durationFrames: 100_000 },
+      ),
+    ]);
+    expect(n ** 3).toBeGreaterThan(MAX_EVALUATED_LAYERS);
+    expect(() => evaluateFrame(doc, 0)).toThrow(
+      /more than 250000 layers; it ran out in composition 'c2' via precomp layers a\d+ > b\d+/,
+    );
   });
 
   it("maps frames across frame rates, flooring to the nested composition's frames", () => {
@@ -352,27 +441,53 @@ describe("evaluateFrame: layer contents", () => {
 });
 
 describe("evaluateFrame: determinism", () => {
-  it("returns equal output for the same document and frame and never mutates the document", () => {
-    const doc = deepFreeze(
-      project([
-        composition("main", [
-          solid("a", {
-            transform: transform({
-              rotation: {
-                keyframes: [kf(0, 0, { type: "spring", damping: 0.5, response: 0.5 }), kf(60, 360)],
-              },
-            }),
+  const doc = deepFreeze(
+    project([
+      composition("main", [
+        solid("a", {
+          parent: "n",
+          transform: transform({
+            rotation: {
+              keyframes: [kf(0, 0, { type: "spring", damping: 0.5, response: 0.5 }), kf(60, 360)],
+            },
+            skew: prop(12),
+            anchorPoint: prop([50, 50]),
           }),
-          layer("pc", "precomp", { compositionId: "inner" }),
-        ]),
-        composition("inner", [
+        }),
+        layer("n", "null", {
+          transform: transform({ position: { keyframes: [kf(0, [0, 0]), kf(89, [500, 300])] } }),
+        }),
+        layer("pc", "precomp", { compositionId: "inner", startFrame: 3 }),
+        layer("pc2", "precomp", { compositionId: "inner", startFrame: 3 }),
+      ]),
+      composition(
+        "inner",
+        [
           solid("s", {
             transform: transform({ scale: { keyframes: [kf(0, [0, 0]), kf(30, [1, 1])] } }),
           }),
-        ]),
-      ]),
-    );
-    for (const frame of [0, 7, 33, 89])
+        ],
+        {
+          fps: { num: 24, den: 1 },
+        },
+      ),
+      composition("ntsc", [layer("pi", "precomp", { compositionId: "inner" })], {
+        fps: { num: 30000, den: 1001 },
+      }),
+    ]),
+  );
+
+  it("returns equal output for the same document and frame and never mutates the document", () => {
+    for (const frame of [0, 7, 33, 89]) {
       expect(evaluateFrame(doc, frame)).toEqual(evaluateFrame(doc, frame));
+      expect(evaluateFrame(doc, frame, "ntsc")).toEqual(evaluateFrame(doc, frame, "ntsc"));
+    }
+  });
+
+  it("carries no state between calls", () => {
+    const first = evaluateFrame(doc, 40);
+    evaluateFrame(doc, 12);
+    evaluateFrame(doc, 12, "ntsc");
+    expect(evaluateFrame(doc, 40)).toEqual(first);
   });
 });

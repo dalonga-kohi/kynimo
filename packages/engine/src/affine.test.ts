@@ -37,11 +37,21 @@ describe("transformMatrix", () => {
     expect(transformMatrix({ ...base, rotation: 180 })).toEqual([-1, 0, -0, -1, 0, 0]);
   });
 
-  it("applies rotation · skewX · scale in After Effects order", () => {
+  it("leans the top edge right for positive skew, like After Effects", () => {
+    const m = transformMatrix({ ...base, skew: 45 });
+    // y is down: the top edge (y < 0) moves right, the bottom edge left.
+    const [topX, topY] = applyToPoint(m, [0, -10]);
+    const [bottomX] = applyToPoint(m, [0, 10]);
+    expect(topX).toBeCloseTo(10, 12);
+    expect(topY).toBe(-10);
+    expect(bottomX).toBeCloseTo(-10, 12);
+  });
+
+  it("applies rotation · skew · scale in After Effects order", () => {
     const m = transformMatrix({ ...base, rotation: 30, skew: 45, scale: [2, 3] });
     const r = (30 * Math.PI) / 180;
     const rotate: Affine = [Math.cos(r), Math.sin(r), -Math.sin(r), Math.cos(r), 0, 0];
-    const skew: Affine = [1, 0, 1, 1, 0, 0]; // tan(45°) = 1
+    const skew: Affine = [1, 0, -1, 1, 0, 0]; // x' = x - tan(45°)·y
     const scale: Affine = [2, 0, 0, 3, 0, 0];
     close(m, [...multiply(rotate, multiply(skew, scale))]);
   });

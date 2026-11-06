@@ -14,6 +14,15 @@ import { sampleColor, sampleNumber } from "./track.js";
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
 
 /**
+ * Most layers one `evaluateFrame` call may resolve, counting every layer of every distinct
+ * (composition, local frame) it evaluates. The memo only collapses precomps that land on the
+ * same local frame, so precomps placed at many different offsets multiply: N placements of N
+ * placements of N layers is N³ work from 3N layers of JSON. Honest documents (every composition
+ * shown once, all at the layer limit) stay far below this.
+ */
+export const MAX_EVALUATED_LAYERS = 250_000;
+
+/**
  * Maps a precomp layer's content time (parent frames) to the nested composition's frame.
  * Exact integer math, floored, so the nested composition is always sampled on its own frames
  * (After Effects "preserve frame rate"). BigInt because num/den are unbounded integers.
@@ -30,6 +39,10 @@ interface Context {
   compositions: Map<string, Composition>;
   /** `compositionId@frame` → result. Shared precomp instances are evaluated once per call. */
   memo: Map<string, ResolvedComposition>;
+  /** Layers left in this call's {@link MAX_EVALUATED_LAYERS} budget. */
+  budget: number;
+  /** Precomp layer ids from the root down to the composition being evaluated, for error messages. */
+  chain: string[];
 }
 
 function evaluateComposition(
@@ -41,6 +54,12 @@ function evaluateComposition(
   const key = `${comp.id}@${frame}`;
   const cached = root ? undefined : ctx.memo.get(key);
   if (cached !== undefined) return cached;
+
+  ctx.budget -= comp.layers.length;
+  if (ctx.budget < 0)
+    throw new RangeError(
+      `evaluating this frame needs more than ${MAX_EVALUATED_LAYERS} layers; it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
+    );
 
   const fps = comp.fps;
   const byId = new Map(comp.layers.map((l) => [l.id as string, l]));
@@ -124,6 +143,15 @@ function evaluateComposition(
   return result;
 }
 
+function withChain<T>(ctx: Context, layerId: string, run: () => T): T {
+  ctx.chain.push(layerId);
+  try {
+    return run();
+  } finally {
+    ctx.chain.pop();
+  }
+}
+
 type Base = Pick<ResolvedLayer, "id" | "name" | "layerFrame" | "transform" | "matrix">;
 
 function resolveLayer(
@@ -186,7 +214,7 @@ function resolveLayer(
         compositionId: nested.id,
         composition:
           local >= 0 && local < nested.durationFrames
-            ? evaluateComposition(ctx, nested, local, false)
+            ? withChain(ctx, layer.id, () => evaluateComposition(ctx, nested, local, false))
             : null,
       };
     }
@@ -224,5 +252,6 @@ export function evaluateFrame(
     throw new RangeError(
       `frame must be an integer from 0 to ${comp.durationFrames - 1} for composition '${comp.id}' (got ${frame})`,
     );
-  return evaluateComposition({ compositions, memo: new Map() }, comp, frame, true);
+  const ctx: Context = { compositions, memo: new Map(), budget: MAX_EVALUATED_LAYERS, chain: [] };
+  return evaluateComposition(ctx, comp, frame, true);
 }
