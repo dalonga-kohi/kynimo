@@ -102,7 +102,7 @@ export function undo(state: SceneState, actor: string): StepResult {
       state,
       errors: [{ path: [], message: `nothing to undo for actor '${actor}'` }],
     };
-  const changes = [...entry].reverse().map(invert);
+  const changes = clone([...entry].reverse().map(invert));
   const replayed = replay(state.doc, changes);
   if ("errors" in replayed) return { ok: false, kind: "conflict", state, errors: replayed.errors };
   return {
@@ -136,7 +136,7 @@ export function redo(state: SceneState, actor: string): StepResult {
   if ("errors" in replayed) return { ok: false, kind: "conflict", state, errors: replayed.errors };
   return {
     ok: true,
-    changes: [...entry],
+    changes: clone([...entry]),
     state: {
       ...state,
       doc: replayed.doc,

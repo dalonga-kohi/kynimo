@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nullLayer } from "./fixtures.test-util.js";
-import { applyBatch, redo, undo } from "./index.js";
+import { applyBatch, MAX_HISTORY, redo, undo } from "./index.js";
 import { baseState, layerIds, omitId } from "./ops.test-util.js";
 
 const hide = (layer: string, hidden = true) => [{ op: "updateLayer", layer, set: { hidden } }];
@@ -109,5 +109,77 @@ describe("per-actor undo/redo", () => {
       kind: "invalid",
       state: s,
     });
+  });
+});
+
+describe("undo/redo: every change kind", () => {
+  it("undoes and redoes a reorder, and conflicts if another actor reorders", () => {
+    let s = must(applyBatch(baseState(), "alice", [{ op: "reorderLayer", layer: "c", index: 0 }]));
+    expect(layerIds(s.doc)).toEqual(["c", "a", "b"]);
+    const u = undo(s, "alice");
+    if (!u.ok) throw new Error("expected ok");
+    expect(layerIds(u.state.doc)).toEqual(["a", "b", "c"]);
+    const r = redo(u.state, "alice");
+    expect(r.ok && layerIds(r.state.doc)).toEqual(["c", "a", "b"]);
+    s = must(applyBatch(s, "bob", [{ op: "reorderLayer", layer: "c", index: 2 }]));
+    expect(undo(s, "alice")).toMatchObject({ ok: false, kind: "conflict" });
+  });
+
+  it("undoes and redoes marker add and remove", () => {
+    const m = { frame: 3, durationFrames: 0, name: "m" };
+    let s = must(
+      applyBatch(baseState(), "alice", [
+        { op: "addMarker", target: { layer: "a" }, id: "m1", marker: m },
+      ]),
+    );
+    s = must(applyBatch(s, "alice", [{ op: "removeMarker", marker: "m1" }]));
+    const markers = (st: typeof s) => st.doc.compositions[0]?.layers[0]?.markers.length;
+    expect(markers(s)).toBe(0);
+    const u1 = undo(s, "alice");
+    if (!u1.ok) throw new Error("expected ok");
+    expect(markers(u1.state)).toBe(1);
+    const u2 = undo(u1.state, "alice");
+    if (!u2.ok) throw new Error("expected ok");
+    expect(markers(u2.state)).toBe(0);
+    const r = redo(u2.state, "alice");
+    expect(r.ok && markers(r.state)).toBe(1);
+  });
+
+  it("undoing an add conflicts if another actor edited the new layer (checked per layer, not per property)", () => {
+    let s = must(
+      applyBatch(baseState(), "alice", [
+        { op: "addLayer", composition: "main", id: "n", layer: omitId(nullLayer("n")) },
+      ]),
+    );
+    s = must(applyBatch(s, "bob", hide("n")));
+    expect(undo(s, "alice")).toMatchObject({ ok: false, kind: "conflict" });
+  });
+
+  it("keeps at most MAX_HISTORY batches per actor", () => {
+    let s = baseState();
+    for (let k = 0; k < MAX_HISTORY + 5; k++)
+      s = must(
+        applyBatch(s, "alice", [{ op: "updateLayer", layer: "a", set: { startFrame: k + 1 } }]),
+      );
+    let n = 0;
+    for (let r = undo(s, "alice"); r.ok; r = undo(r.state, "alice")) n++;
+    expect(n).toBe(MAX_HISTORY);
+  });
+
+  it("is deterministic and not corrupted by callers mutating returned changes", () => {
+    const run = () => {
+      let s = must(
+        applyBatch(baseState(), "alice", [{ op: "updateLayer", layer: "a", set: { name: "x" } }]),
+      );
+      const u = undo(s, "alice");
+      if (!u.ok) throw new Error("expected ok");
+      for (const c of u.changes) if (c.type === "layer.set") c.after = "tampered";
+      const r = redo(u.state, "alice");
+      if (!r.ok) throw new Error("expected ok");
+      s = r.state;
+      return s.doc;
+    };
+    expect(run()).toEqual(run());
+    expect(run().compositions[0]?.layers[0]?.name).toBe("x");
   });
 });

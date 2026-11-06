@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyOps } from "./index.js";
+import { applyOps, OpSchema } from "./index.js";
 import { baseDoc, layerIds, omitId, solid } from "./ops.test-util.js";
+import { globMatch } from "./selectors.js";
 
 const add = (extra: object = {}) => ({
   op: "addLayer",
@@ -173,6 +174,9 @@ describe("applyOps: atomic batches", () => {
     const r = applyOps(doc, [add(), { op: "removeLayer", layer: "nope" }], 7);
     expect(r).toMatchObject({ ok: false, doc });
     expect(layerIds(doc)).toEqual(["a", "b", "c"]);
+    // the caller keeps its counter on failure, so the next id is still layer-8
+    const next = applyOps(doc, [add()], 7);
+    expect(next.ok && layerIds(next.doc)[0]).toBe("layer-8");
   });
 
   it("an integrity failure on the final state rolls back earlier ops, but a fixed-up batch passes", () => {
@@ -182,5 +186,71 @@ describe("applyOps: atomic batches", () => {
       { op: "removeLayer", layer: "a" },
     ]);
     expect(ok.ok).toBe(true);
+  });
+});
+
+describe("selectors and ids: hostile and edge input", () => {
+  it("glob matching is linear: a pathological pattern finishes immediately", () => {
+    const start = Date.now();
+    expect(globMatch("*a*a*a*a*a*a*a*b", "a".repeat(200))).toBe(false);
+    expect(Date.now() - start).toBeLessThan(200);
+    expect(globMatch("t*e*", "title")).toBe(true);
+    expect(globMatch("*", "")).toBe(true);
+    expect(globMatch("a", "ab")).toBe(false);
+  });
+
+  it("a generated marker id never collides with markers inside a layer added in the same batch", () => {
+    const layer = {
+      ...omitId(solid("x")),
+      markers: [{ id: "marker-1", frame: 0, durationFrames: 0, name: "m" }],
+    };
+    const r = applyOps(baseDoc(), [
+      add({ layer }),
+      {
+        op: "addMarker",
+        target: { layer: "a" },
+        marker: { frame: 1, durationFrames: 0, name: "n" },
+      },
+    ]);
+    if (!r.ok) throw new Error(JSON.stringify(r.errors));
+    expect(r.changes.at(-1)).toMatchObject({ type: "marker.insert", markerId: "marker-2" });
+  });
+
+  it("rejects a reused marker id with an ops path; layer and marker ids are separate namespaces", () => {
+    const m = { frame: 0, durationFrames: 0, name: "m" };
+    const dup = applyOps(baseDoc(), [
+      { op: "addMarker", target: { layer: "a" }, id: "m1", marker: m },
+      { op: "addMarker", target: { layer: "b" }, id: "m1", marker: m },
+    ]);
+    expect(dup).toMatchObject({ ok: false, errors: [{ path: ["ops", 1, "id"] }] });
+    expect(
+      applyOps(baseDoc(), [{ op: "addMarker", target: { layer: "a" }, id: "c", marker: m }]).ok,
+    ).toBe(true);
+  });
+
+  it("selectors resolve against the working document, so later ops see earlier ones in the batch", () => {
+    const r = applyOps(baseDoc(), [
+      { op: "updateLayer", layer: "a", set: { name: "title-1" } },
+      { op: "updateLayer", layer: { name: "title-*" }, set: { hidden: true } },
+    ]);
+    expect(r.ok && r.changes.map((c) => c.type === "layer.set" && c.layerId)).toEqual(["a", "a"]);
+  });
+
+  it("track schemas are per property and exported for MCP schemas", () => {
+    const bad = OpSchema.safeParse({
+      op: "setTransformTrack",
+      layer: "a",
+      property: "opacity",
+      track: { value: 7 },
+    });
+    expect(bad.success).toBe(false);
+    expect(
+      OpSchema.safeParse({
+        op: "setTransformTrack",
+        layer: "a",
+        property: "scale",
+        track: { value: [1, 1] },
+      }).success,
+    ).toBe(true);
   });
 });

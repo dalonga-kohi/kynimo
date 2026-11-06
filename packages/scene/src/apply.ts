@@ -13,7 +13,6 @@ import { BatchSchema, type Op } from "./ops.js";
 import type { Json } from "./primitives.js";
 import { type Project, ProjectSchema } from "./project.js";
 import { type LayerSelector, matchLayers } from "./selectors.js";
-import { TransformSchema } from "./transform.js";
 
 /**
  * Where something went wrong. `path[0]` is "ops" (then the op's index in the batch and the field)
@@ -46,7 +45,8 @@ interface Ctx {
   draft: Project;
   changes: Change[];
   counter: number;
-  usedIds: Set<string>;
+  /** Layer and marker ids are separate namespaces. */
+  usedIds: { layer: Set<string>; marker: Set<string> };
 }
 
 const emit = (ctx: Ctx, change: Change): void => {
@@ -61,8 +61,8 @@ function nextId(ctx: Ctx, prefix: "layer" | "marker"): string {
   do {
     ctx.counter += 1;
     id = `${prefix}-${ctx.counter}`;
-  } while (ctx.usedIds.has(id));
-  ctx.usedIds.add(id);
+  } while (ctx.usedIds[prefix].has(id));
+  ctx.usedIds[prefix].add(id);
   return id;
 }
 
@@ -118,10 +118,18 @@ function run(ctx: Ctx, op: Op, i: number): void {
           [i, "index"],
           `index ${index} is past the end; composition '${composition.id}' has ${composition.layers.length} layers`,
         );
-      if (op.id !== undefined && ctx.usedIds.has(op.id))
+      if (op.id !== undefined && ctx.usedIds.layer.has(op.id))
         fail([i, "id"], `id '${op.id}' is already in use; choose another or omit it`);
       const id = op.id ?? nextId(ctx, "layer");
-      ctx.usedIds.add(id);
+      ctx.usedIds.layer.add(id);
+      for (const [k, m] of op.layer.markers.entries()) {
+        if (ctx.usedIds.marker.has(m.id))
+          fail(
+            [i, "layer", "markers", k, "id"],
+            `marker id '${m.id}' is already in use; choose another`,
+          );
+        ctx.usedIds.marker.add(m.id);
+      }
       const layer = { ...op.layer, id } as Layer;
       emit(ctx, {
         op: i,
@@ -155,15 +163,7 @@ function run(ctx: Ctx, op: Op, i: number): void {
       const { layer } = resolve(ctx, op.layer, [i, "layer"]);
       if (layer.type === "audio")
         fail([i, "layer"], `layer '${layer.id}' is an audio layer and has no transform`);
-      const parsed = TransformSchema.shape[op.property].safeParse(op.track);
-      if (!parsed.success)
-        throw new OpFailure(
-          parsed.error.issues.map((e) => ({
-            path: ["ops", i, "track", ...e.path.map(seg)],
-            message: e.message,
-          })),
-        );
-      setLayerValue(ctx, i, layer, ["transform", op.property], parsed.data as Json);
+      setLayerValue(ctx, i, layer, ["transform", op.property], op.track as Json);
       return;
     }
     case "reorderLayer": {
@@ -217,10 +217,10 @@ function run(ctx: Ctx, op: Op, i: number): void {
         owner = { layer: layer.id };
         count = layer.markers.length;
       }
-      if (op.id !== undefined && ctx.usedIds.has(op.id))
+      if (op.id !== undefined && ctx.usedIds.marker.has(op.id))
         fail([i, "id"], `id '${op.id}' is already in use; choose another or omit it`);
       const id = (op.id ?? nextId(ctx, "marker")) as MarkerId;
-      ctx.usedIds.add(id);
+      ctx.usedIds.marker.add(id);
       emit(ctx, {
         op: i,
         type: "marker.insert",
@@ -282,12 +282,12 @@ export function applyOps(doc: Project, ops: unknown, idCounter = 0): ApplyResult
         })),
       );
 
-    const usedIds = new Set<string>();
+    const usedIds = { layer: new Set<string>(), marker: new Set<string>() };
     for (const c of doc.compositions) {
-      for (const m of c.markers) usedIds.add(m.id);
+      for (const m of c.markers) usedIds.marker.add(m.id);
       for (const l of c.layers) {
-        usedIds.add(l.id);
-        for (const m of l.markers) usedIds.add(m.id);
+        usedIds.layer.add(l.id);
+        for (const m of l.markers) usedIds.marker.add(m.id);
       }
     }
     const ctx: Ctx = { draft: clone(doc), changes: [], counter: idCounter, usedIds };

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { CompositionIdSchema, LayerIdSchema, MarkerIdSchema } from "./ids.js";
+import type { Animatable, PositionTrack } from "./keyframes.js";
 import { type Layer, LayerSchema } from "./layer.js";
 import { MarkerSchema, NameSchema } from "./primitives.js";
 import { LayerSelectorSchema } from "./selectors.js";
-import type { TransformSchema } from "./transform.js";
+import { TransformSchema } from "./transform.js";
 
 export const MAX_BATCH_OPS = 500;
 
@@ -17,6 +18,7 @@ const LayerInputSchema = z.discriminatedUnion(
   (LayerSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
 ) as unknown as z.ZodType<LayerInput>;
 
+export type TransformProperty = (typeof TRANSFORM_PROPERTIES)[number];
 export const TRANSFORM_PROPERTIES = [
   "anchorPoint",
   "position",
@@ -58,13 +60,27 @@ const updateLayer = z.strictObject({
 const removeLayer = z.strictObject({ op: z.literal("removeLayer"), layer: LayerSelectorSchema });
 
 /** Sets one transform property to a constant (`{ value }`) or to keyframes (`{ keyframes }`). */
-const setTransformTrack = z.strictObject({
-  op: z.literal("setTransformTrack"),
-  layer: LayerSelectorSchema,
-  property: z.enum(TRANSFORM_PROPERTIES),
-  /** Validated against the property's own track schema when the op runs. */
-  track: z.unknown(),
-});
+// One variant per property so each `track` has its own schema; the casts only restore the static type.
+type TrackVariant = z.ZodObject<
+  {
+    op: z.ZodLiteral<"setTransformTrack">;
+    layer: typeof LayerSelectorSchema;
+    property: z.ZodLiteral<TransformProperty>;
+    track: z.ZodType<Animatable<unknown> | PositionTrack>;
+  },
+  z.core.$strict
+>;
+const setTransformTrack = z.discriminatedUnion(
+  "property",
+  TRANSFORM_PROPERTIES.map((property) =>
+    z.strictObject({
+      op: z.literal("setTransformTrack"),
+      layer: LayerSelectorSchema,
+      property: z.literal(property),
+      track: TransformSchema.shape[property],
+    }),
+  ) as unknown as [TrackVariant, ...TrackVariant[]],
+);
 
 const reorderLayer = z.strictObject({
   op: z.literal("reorderLayer"),

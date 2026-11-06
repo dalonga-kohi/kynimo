@@ -42,21 +42,35 @@ export interface LayerRef {
   layer: Layer;
 }
 
-const globToRegExp = (pattern: string): RegExp =>
-  new RegExp(
-    `^${pattern
-      .split("*")
-      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-      .join("[\\s\\S]*")}$`,
-  );
+/**
+ * `*` matches any run of characters. Greedy two-pointer match with backtracking only to the last
+ * star: O(name x pattern), no regex, so a hostile pattern cannot hang the server.
+ */
+export function globMatch(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (p < pattern.length && pattern[p] === text[t]) {
+      p++;
+      t++;
+    } else if (star >= 0) {
+      p = star + 1;
+      t = ++mark;
+    } else return false;
+  }
+  while (pattern[p] === "*") p++;
+  return p === pattern.length;
+}
 
 /** All layers matching the selector, in document order. */
 export function matchLayers(doc: Project, selector: LayerSelector): LayerRef[] {
   const matches: LayerRef[] = [];
-  const nameTest =
-    typeof selector === "object" && selector.name !== undefined
-      ? globToRegExp(selector.name)
-      : undefined;
+  const name = typeof selector === "object" ? selector.name : undefined;
   for (const composition of doc.compositions) {
     if (typeof selector === "object" && selector.composition !== undefined) {
       if (composition.id !== selector.composition) continue;
@@ -65,7 +79,7 @@ export function matchLayers(doc: Project, selector: LayerSelector): LayerRef[] {
       const ok =
         typeof selector === "string"
           ? layer.id === selector
-          : (nameTest === undefined || nameTest.test(layer.name)) &&
+          : (name === undefined || globMatch(name, layer.name)) &&
             (selector.type === undefined || layer.type === selector.type);
       if (ok) matches.push({ composition, index, layer });
     });
