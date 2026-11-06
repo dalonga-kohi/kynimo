@@ -80,6 +80,7 @@ const first = runs[0];
 const checks = [
   ["WebGL2 runs on SwiftShader", /SwiftShader/.test(first.renderer)],
   ["GLSL shader pass identical across launches", allEqual("shaderPass")],
+  ["RGBA16F two-pass chain identical across launches", allEqual("halfFloatChain")],
   ["Skia CPU raster identical across launches", allEqual("cpuRaster")],
   ["Skia CPU raster identical in Node and Chromium", first.cpuRaster === nodeCpuRaster],
   ["CPU raster -> WebGL2 composite identical across launches", allEqual("cpuComposite")],
@@ -101,7 +102,7 @@ console.log(
     `${first.uploadCompositeMs}; shared-context frames ${first.sharedFrame0Ms}, ${first.sharedFrame1Ms}, ${first.sharedFrame2Ms}`,
 );
 console.log(
-  `INFO  hashes: shader ${first.shaderPass}, cpu raster ${first.cpuRaster}, composite ${first.cpuComposite}`,
+  `INFO  hashes: shader ${first.shaderPass}, half-float ${first.halfFloatChain}, cpu raster ${first.cpuRaster}, composite ${first.cpuComposite}`,
 );
 
 process.exit(checks.every(([, ok]) => ok) ? 0 : 1);

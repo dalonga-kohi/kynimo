@@ -1,6 +1,6 @@
 # 0013 — User media, 3D direction and a GPU renderer
 
-- Status: accepted (amends ADR-0008: 3D moves from out-of-scope to v1.x; amends ADR-0004: the renderer is GPU-based; narrows the M2 drawing-backend decision)
+- Status: accepted (amends ADR-0008: 3D moves from out-of-scope to v1.x; amends ADR-0004: the renderer is GPU-based; narrows the M2 drawing-backend decision; the exact stack is ADR-0016)
 - Date: 2026-11-06
 
 ## Context

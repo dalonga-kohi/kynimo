@@ -64,7 +64,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 ### 4. Renderer — `@kynimo/renderer`
 
-- v1: the scene is evaluated per frame and drawn in the browser with **WebGL2** (ADR-0013; exact stack in the M2 ADR); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
+- v1: the scene is evaluated per frame and drawn in the browser: CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, masks, effects and shaders (ADR-0013, ADR-0016); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
 - Deterministic: bundled and uploaded fonts pinned by hash, pre-decoded video, seeded randomness, no wall-clock time.
 - Encoding to MP4/WebM/GIF via FFmpeg in workers.
 
@@ -97,14 +97,14 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 
 ## Open questions (settled in the feature that needs them)
 
-| Question                                                                                              | Decide in |
-| ----------------------------------------------------------------------------------------------------- | --------- |
-| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                         | done      |
-| WebGL2 stack for v1 (direction set by ADR-0013; mattes, blend modes, effects, shaders, deterministic) | M2        |
-| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012)  | M6        |
-| Hosting for API/MCP and workers                                                                       | M3 / M7   |
-| Database for project store (Postgres flavor)                                                          | M3        |
-| Auth / OAuth provider                                                                                 | M3        |
-| Job queue                                                                                             | M7        |
-| Object storage (M3, assets) + CDN for previews (M7)                                                   | M3 / M7   |
-| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                      | done      |
+| Question                                                                                             | Decide in |
+| ---------------------------------------------------------------------------------------------------- | --------- |
+| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                        | done      |
+| ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                         | done      |
+| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012) | M6        |
+| Hosting for API/MCP and workers                                                                      | M3 / M7   |
+| Database for project store (Postgres flavor)                                                         | M3        |
+| Auth / OAuth provider                                                                                | M3        |
+| Job queue                                                                                            | M7        |
+| Object storage (M3, assets) + CDN for previews (M7)                                                  | M3 / M7   |
+| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                     | done      |

@@ -66,13 +66,14 @@ globalThis.runExperiments = async (W, H, fontB64, origin) => {
     return p;
   };
 
-  // One full-screen GPU pass into an offscreen RGBA8 target; returns the target's pixels.
-  const pass = (gl, fs, setup) => {
+  // One full-screen GPU pass into an offscreen target (RGBA8, or RGBA16F when `half`).
+  // Returns the target's pixels (bytes, or float32 values for half targets) and its texture.
+  const passTo = (gl, fs, setup, half) => {
     const p = program(gl, fs);
     gl.useProgram(p);
     const target = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, target);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, W, H);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, half ? gl.RGBA16F : gl.RGBA8, W, H);
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
@@ -91,12 +92,13 @@ globalThis.runExperiments = async (W, H, fontB64, origin) => {
     gl.disable(gl.BLEND);
     setup(p);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    const px = new Uint8Array(W * H * 4);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const px = half ? new Float32Array(W * H * 4) : new Uint8Array(W * H * 4);
+    gl.readPixels(0, 0, W, H, gl.RGBA, half ? gl.FLOAT : gl.UNSIGNED_BYTE, px);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindVertexArray(null);
-    return px;
+    return { px, target };
   };
+  const pass = (gl, fs, setup) => passTo(gl, fs, setup, false).px;
 
   // A layer texture composited with a separable "multiply" blend (premultiplied) over a
   // procedural background: the shape of every M2 compositing pass.
@@ -115,20 +117,34 @@ void main(){ vec4 s = texture(L, flipY ? vec2(uv.x, 1.0 - uv.y) : uv);
       gl.uniform1i(gl.getUniformLocation(p, "flipY"), flipY ? 1 : 0);
     });
 
-  // 1. A GLSL shader pass alone: transcendental functions, loops, fract, pow.
-  {
-    const { gl } = newContext();
-    const px = pass(
-      gl,
-      `#version 300 es
+  // 1. A GLSL shader pass alone: transcendental functions, loops, fract, pow. Run into an
+  // RGBA8 target, and into RGBA16F followed by a second pass that samples it (linear filter)
+  // into another RGBA16F target: the half-float chain the compositor uses.
+  const SHADER = `#version 300 es
 precision highp float; in vec2 uv; out vec4 o; uniform float t;
 void main(){ vec3 a = vec3(0);
   for (int i = 0; i < 24; i++) { float f = float(i);
     a += 0.04*vec3(sin(uv.x*13.1 + f*t), cos(uv.y*7.3 - f), exp(-f*0.1)*fract(uv.x*uv.y*91.7 + f)); }
-  o = vec4(pow(clamp(a, 0.0, 1.0), vec3(1.0/2.2))*0.8, 0.8); }`,
-      (p) => gl.uniform1f(gl.getUniformLocation(p, "t"), 1.37),
+  o = vec4(pow(clamp(a, 0.0, 1.0), vec3(1.0/2.2))*0.8, 0.8); }`;
+  {
+    const { gl } = newContext();
+    const setT = (p) => gl.uniform1f(gl.getUniformLocation(p, "t"), 1.37);
+    out.shaderPass = await sha(pass(gl, SHADER, setT));
+    const first = passTo(gl, SHADER, setT, true);
+    const second = passTo(
+      gl,
+      MULTIPLY,
+      (p) => {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, first.target);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.uniform1i(gl.getUniformLocation(p, "L"), 0);
+        gl.uniform1i(gl.getUniformLocation(p, "flipY"), 1);
+      },
+      true,
     );
-    out.shaderPass = await sha(px);
+    out.halfFloatChain = await sha(second.px);
   }
 
   // 2. Chosen path: Skia CPU raster -> texture upload -> our WebGL2 composite.
