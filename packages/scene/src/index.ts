@@ -7,6 +7,7 @@ export * from "./ids.js";
 export * from "./keyframes.js";
 export * from "./layer.js";
 export * from "./limits.js";
+export * from "./migrations.js";
 export * from "./ops.js";
 export * from "./primitives.js";
 export * from "./project.js";

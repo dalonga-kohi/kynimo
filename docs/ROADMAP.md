@@ -11,7 +11,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 - [x] Scene schema v1, part 1: project, assets, compositions, layer union, transform + parenting, in/out, markers, render switches, pinned style reference. Schema library decided here. Designed to leave room for every `v1.x` item.
 - [x] Scene schema v1, part 2: keyframe tracks (linear, bezier, hold, spring), spatial paths, precomp references with cycle validation
-- [ ] Migration framework + first migration test
+- [x] Migration framework + first migration test
 - [x] Scene operations: pure `(doc, op) → doc'` + change records (concrete ids), batches, per-actor undo/redo, typed selectors
 - [ ] Engine: interpolation (scalars, vectors, colors), cubic-bezier easing, springs (damping + response), spatial motion paths
 - [ ] Engine: evaluate a document at frame N → resolved layer tree (parenting, precomps; deterministic, tested)
