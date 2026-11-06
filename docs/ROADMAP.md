@@ -14,7 +14,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] Migration framework + first migration test
 - [x] Scene operations: pure `(doc, op) → doc'` + change records (concrete ids), batches, per-actor undo/redo, typed selectors
 - [x] Engine: interpolation (scalars, vectors, colors), cubic-bezier easing, springs (damping + response), spatial motion paths
-- [ ] Engine: evaluate a document at frame N → resolved layer tree (parenting, precomps; deterministic, tested)
+- [x] Engine: evaluate a document at frame N → resolved layer tree (parenting, precomps; deterministic, tested)
 
 ## M2 — Renderer (frames)
 
