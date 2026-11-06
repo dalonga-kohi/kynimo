@@ -44,7 +44,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 ### 1. Scene format — `@kynimo/scene`
 
-- Versioned JSON scene graph: `Project → Composition[] → Layer[]` (shape, text, image, video, solid, null, precomp, adjustment, audio, component instance; parenting and masks/mattes between layers), each with animatable properties and keyframe tracks, plus a guideline pack reference pinned by version. A scene is a composition placed in the main composition's sequence; precomp layers reference compositions by id, with no cycles. Audio is audio layers; beat markers live on them. See [CAPABILITIES.md](CAPABILITIES.md#document-model).
+- Versioned JSON scene graph: `Project → Composition[] → Layer[]` (shape, text, image, video, solid, null, precomp, adjustment, audio, component instance, shader generator; 3D layers, cameras, lights and models in v1.x; parenting and masks/mattes between layers), each with animatable properties and keyframe tracks, plus a guideline pack reference pinned by version. A scene is a composition placed in the main composition's sequence; precomp layers reference compositions by id, with no cycles. Audio is audio layers; beat markers live on them. See [CAPABILITIES.md](CAPABILITIES.md#document-model).
 - Schema-validated (runtime schemas + inferred TS types). `SCENE_FORMAT_VERSION` + migrations for every change.
 - **Typed operations** (`addLayer`, `setKeyframes`, `applyPreset`, `retimeScene`, …) are the only way to mutate a document. They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
 - Time model: integer frames at the composition frame rate; seconds only at the API edge.
@@ -60,12 +60,12 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 - Typed props schema + defaults + a deterministic `evaluate(props, frame, style) → layer subtree` function.
 - Components read the active guideline, so the same component looks right in every style.
-- Built-in library first; custom components (user-authored TS) run in a sandbox with no host, filesystem, network or secret access.
+- Built-in library first. **Code authoring** (ADR-0012): agents and users write custom components in TypeScript and shaders in GLSL, submitted over MCP (`define_component`, `define_shader`). Definitions are validated, versioned, content-hashed and stored per project; documents pin them by id + version. Component code runs in a sandbox with no host, filesystem, network, secret, clock or unseeded random access; shaders see only `frame`, resolution and declared uniforms.
 
 ### 4. Renderer — `@kynimo/renderer`
 
-- v1: the scene is evaluated per frame and drawn in the browser (Canvas/SVG/DOM); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004).
-- Deterministic: fixed fonts and assets, seeded randomness, no wall-clock time.
+- v1: the scene is evaluated per frame and drawn in the browser with **WebGL2** (ADR-0013; exact stack in the M2 ADR); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
+- Deterministic: bundled and uploaded fonts pinned by hash, pre-decoded video, seeded randomness, no wall-clock time.
 - Encoding to MP4/WebM/GIF via FFmpeg in workers.
 
 ## Agent layer — `apps/mcp`
@@ -87,23 +87,24 @@ Simple editor in v1: sign in, project list, viewer with timeline scrubbing, laye
 | `packages/renderer`   | `@kynimo/renderer` — frame drawing + headless capture                                           | M2               |
 | `apps/mcp`            | MCP server                                                                                      | M3               |
 | `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                             | M5               |
-| `packages/components` | `@kynimo/components` — built-in library + SDK                                                   | M6               |
+| `packages/components` | `@kynimo/components` — built-in library, component authoring types, built-in shaders            | M6               |
 | `apps/worker`         | render/export workers                                                                           | M7               |
 | `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                      | M8               |
 
 ## Invariants
 
-See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): scene graph is the single source of truth · deterministic rendering · versioned schema with migrations · typed, backward-compatible MCP contracts · sandboxed custom components · quality enforced in code.
+See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): scene graph is the single source of truth · deterministic rendering · versioned schema with migrations · typed, backward-compatible MCP contracts · sandboxed custom code (components and shaders) · quality enforced in code.
 
 ## Open questions (settled in the feature that needs them)
 
-| Question                                                                            | Decide in |
-| ----------------------------------------------------------------------------------- | --------- |
-| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                       | done      |
-| Drawing backend for v1 (must handle mattes, blend modes, effects deterministically) | M2        |
-| Hosting for API/MCP and workers                                                     | M3 / M7   |
-| Database for project store (Postgres flavor)                                        | M3        |
-| Auth / OAuth provider                                                               | M3        |
-| Job queue                                                                           | M7        |
-| Object storage (M3, assets) + CDN for previews (M7)                                 | M3 / M7   |
-| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                    | done      |
+| Question                                                                                              | Decide in |
+| ----------------------------------------------------------------------------------------------------- | --------- |
+| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                         | done      |
+| WebGL2 stack for v1 (direction set by ADR-0013; mattes, blend modes, effects, shaders, deterministic) | M2        |
+| Sandbox technology for custom component code (ADR-0012)                                               | M6        |
+| Hosting for API/MCP and workers                                                                       | M3 / M7   |
+| Database for project store (Postgres flavor)                                                          | M3        |
+| Auth / OAuth provider                                                                                 | M3        |
+| Job queue                                                                                             | M7        |
+| Object storage (M3, assets) + CDN for previews (M7)                                                   | M3 / M7   |
+| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                      | done      |

@@ -1,6 +1,6 @@
 # Kynimo — working agreement for AI agents
 
-Kynimo is an **agent-first, cloud-hosted motion graphics engine**. Any MCP client connects, builds motion videos from components and style guidelines, checks its own work (rendered frames + quality report), and exports a finished, still-editable video. It is a startup: we build **one core product**, feature by feature.
+Kynimo is an **agent-first, cloud-hosted motion graphics engine**. Any MCP client connects, builds motion videos from components, keyframes or code (custom components and shaders) on top of style guidelines, checks its own work (rendered frames + quality report), and exports a finished, still-editable video. It is a startup: we build **one core product**, feature by feature.
 
 This file is the single source of truth for every coding agent (Claude Code, Codex, ChatGPT, Cursor, Copilot, …). Tool-specific notes live in separate files that import this one (`CLAUDE.md`).
 
@@ -58,7 +58,8 @@ Several agents may work in this repo at the same time.
 - **Deterministic rendering.** Same document + same frame → same pixels. No `Date.now()`, `Math.random()`, `performance.now()`, locale/timezone formatting, or network in evaluation/render paths. Randomness is seeded from the document.
 - **Versioned schema.** Any scene format change bumps `SCENE_FORMAT_VERSION` and ships a migration + test.
 - **Typed MCP contracts.** Every tool has schema-validated input and output and is backward compatible. Breaking change → new tool name/version.
-- **Sandboxed custom components.** User-authored component code never gets host, filesystem, network or secret access.
+- **Code compiles to the scene graph.** Agents and users can author components (TypeScript) and shaders (GLSL), but their output is always scene-graph content; nothing draws outside it (ADR-0012).
+- **Sandboxed custom code.** User- or agent-authored component and shader code never gets host, filesystem, network, secret or wall-clock access.
 - **Quality is enforced, not hoped for.** Guideline rules live in code and produce a machine-readable report agents can act on.
 
 ## Code conventions

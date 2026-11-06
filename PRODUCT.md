@@ -2,12 +2,12 @@
 
 ## One-liner
 
-**Motion graphics that agents create and humans finish.** An agent-first, cloud-hosted motion engine: any AI assistant connects over MCP, builds motion videos from components and style guidelines, checks its own work, and exports a finished, fully editable video.
+**Motion graphics that agents create and humans finish.** An agent-first, cloud-hosted motion engine: any AI assistant connects over MCP, builds motion videos from components, keyframes **or code** on top of style guidelines, checks its own work, and exports a finished, fully editable video.
 
 ## The problem
 
 - AI video generators (Sora, Veo, …) output pixels: you can't change a word, a color or a timing without regenerating.
-- Code-first motion tools (Remotion, Motion Canvas) are editable only by developers, and AI-written animation code looks generic: linear easing, uniform timing, no hierarchy.
+- Code-first motion tools (Remotion, Motion Canvas) are editable only by developers, and AI-written animation code looks generic: linear easing, uniform timing, no hierarchy. Kynimo keeps code but makes it compile to an editable scene graph that reads the guidelines and passes the same quality checks (ADR-0012).
 - Professional tools (After Effects, Cavalry) are powerful but slow to learn and not built for agents.
 
 ## Who it's for (first)
@@ -19,7 +19,8 @@ Developers, indie founders and marketers who need **product launch videos, UI pr
 ```
 Agent ──MCP──▶ Kynimo Cloud
   1. Pick a style      → guideline pack: brand, motion personality, typography
-  2. Build             → scenes, components, text, keyframes (the scene graph)
+  2. Build             → scenes, components, text, keyframes, your media,
+                         or code (custom components + shaders), all in the scene graph
   3. Render preview    → frames returned as images the agent can see
   4. Check             → automatic quality report against the guidelines
   5. Fix               → targeted edits
@@ -32,7 +33,7 @@ Agent ──MCP──▶ Kynimo Cloud
 
 1. **Scene format** — a versioned JSON scene graph: compositions, scenes, layers, component instances, keyframes, style reference. The single source of truth and the reason everything stays editable.
 2. **Guidelines** — complete motion design systems: visual tokens (color, type, spacing, grid, safe areas), motion tokens (durations, springs, easings, stagger rhythms), choreography rules, and automated quality checks (readability time, simultaneous motion, contrast, safe areas, token-only easing). Shipped as style packs ("Keynote", "Editorial", "Brutalist", "Playful SaaS", custom brand packs).
-3. **Components** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. Custom components in TypeScript, sandboxed, with declared props.
+3. **Components and code** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. **Agents and users write their own in code:** custom components in TypeScript and custom shaders in GLSL, sandboxed, with declared, animatable props. Code output is ordinary scene-graph content, so it stays editable and quality-checked (ADR-0012).
 4. **Render cloud** — deterministic rendering: fast preview frames for the agent's check step, background export jobs, preview links.
 
 ## v1 scope
@@ -40,6 +41,8 @@ Agent ──MCP──▶ Kynimo Cloud
 - Short-form motion graphics: **5–60 seconds**.
 - **After Effects-grade 2D engine** (beta subset): precomps, parenting, shape operators, text animators, bezier/spring keyframes, masks, mattes, blend modes, core effects, seeded behaviors. Full list: [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (ADR-0008).
 - Every engine capability reachable over MCP through batched, intent-aware tools.
+- **Code authoring:** agents define custom components (TypeScript) and shaders (GLSL) over MCP (`define_component`, `define_shader`); built-in shader library for 2D effects, backgrounds and transitions (ADR-0012).
+- **Your own media:** photos, video (screen recordings, footage), SVG vectors and custom fonts (ADR-0013).
 - Remote MCP server usable from any MCP client, with OAuth sign-in.
 - Built-in guideline packs + component library v1.
 - Preview frames, quality report, MP4 / WebM / GIF export, shareable preview links.
@@ -52,7 +55,9 @@ Agent ──MCP──▶ Kynimo Cloud
 - Multi-agent orchestration.
 - A full After Effects-style editor UI (the engine is AE-grade; the editor stays simple).
 - Long-form "motion movies" (the format supports chaining scenes; we prove quality on short pieces first).
-- Voiceover generation, 3D layers and cameras, live/interactive runtime output.
+- Voiceover generation, live/interactive runtime output.
+- Not in v1, planned for v1.x (ADR-0013): 3D compositing (3D layers, cameras, lights), glTF 3D models with shader materials, Lottie import.
+- Not in v1, direction only (ADR-0012): a TypeScript SDK for building whole scenes in code, a code panel in the editor, a local CLI.
 
 ## Business model (direction)
 

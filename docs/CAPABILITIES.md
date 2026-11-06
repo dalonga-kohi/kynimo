@@ -1,6 +1,6 @@
 # Kynimo — Capability map
 
-What the engine can express, and how agents reach it over MCP. Benchmark: the 2D core of Adobe After Effects. Decision: [ADR-0008](decisions/0008-ae-grade-engine-simple-editor.md).
+What the engine can express, and how agents reach it over MCP. Benchmark: the 2D core of Adobe After Effects. Decision: [ADR-0008](decisions/0008-ae-grade-engine-simple-editor.md). Code authoring: [ADR-0012](decisions/0012-code-authoring.md). Media, 3D and renderer: [ADR-0013](decisions/0013-media-3d-gpu-renderer.md).
 
 **Principle: deep engine, simple editor.** Most users drive Kynimo through their assistant, so every capability below is in the scene format and exposed as MCP tools. The editor is a usable companion (viewer, timeline, layers, inspector) and doesn't need a control for every capability. If the scene graph can't represent something, neither surface can do it.
 
@@ -41,15 +41,18 @@ Status:
 | Shape layer (contents tree, see §4)                       | Shape layer      | beta   |
 | Text layer (see §5)                                       | Text layer       | beta   |
 | Image layer                                               | Footage          | beta   |
-| Video layer (pre-decoded to frames with FFmpeg, see note) | Footage          | v1.x   |
+| Video layer (pre-decoded to frames with FFmpeg, see note) | Footage          | beta   |
 | Solid                                                     | Solid            | beta   |
 | Null (invisible parent / controller)                      | Null object      | beta   |
 | Precomp layer                                             | Precomp layer    | beta   |
 | Collapse transformations on precomp layers                | Collapse         | v1.x   |
 | Adjustment layer (effects apply to everything below)      | Adjustment layer | beta   |
 | Component instance (typed props, see §8)                  | MOGRT            | beta   |
+| Shader generator layer (built-in or custom GLSL, see §8)  | —                | beta   |
 | Audio layer (mixed into exports, carries beat markers)    | Audio            | beta   |
-| Camera, lights, 3D layers                                 | 3D               | later  |
+| 3D compositing: 3D layers (Z), cameras, lights, depth     | 3D               | v1.x   |
+| 3D model layer (glTF / GLB), shader materials             | 3D models        | v1.x   |
+| Lottie import → editable layers (unsupported reported)    | —                | v1.x   |
 | Stable layer ids, human-readable names                    | —                | beta   |
 | Render switches: hidden, solo                             | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color              | Layer switches   | beta   |
@@ -94,7 +97,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 | Capability                                                                                                                                                   | AE equivalent         | Status |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------ |
 | Point and box text; font family, weight, size, tracking, leading, alignment, case                                                                            | Character / Paragraph | beta   |
-| Bundled, pinned fonts only (deterministic shaping)                                                                                                           | —                     | beta   |
+| Bundled fonts + uploaded custom fonts, pinned by content hash (deterministic shaping)                                                                        | —                     | beta   |
 | Auto-fit text to box                                                                                                                                         | —                     | beta   |
 | Keyframed source text                                                                                                                                        | Source text           | v1.x   |
 | Rich runs (mixed weight/color in one layer)                                                                                                                  | Per-character style   | v1.x   |
@@ -120,7 +123,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 | Stagger: apply an animation across layers or glyphs with offset, order and rhythm token                                                                      | Sequence layers        | beta   |
 | Free-form JavaScript expressions                                                                                                                             | Expressions            | no     |
 
-Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant).
+Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant). Motion that really needs code goes into a custom component or shader (§8).
 
 Spring note: a spring segment runs from its keyframe toward the next keyframe's value, and its length is set by the spring's settle time. The next keyframe must sit at or after that settle frame. Placing it earlier is a validation error, and the error suggests a fix op: move the keyframe to the settle frame, or switch the segment to bezier. Every stored keyframe value is therefore the value rendered at its frame, and no velocity carries into the next segment. `animate` places keyframes at settle frames automatically.
 
@@ -128,26 +131,34 @@ Spring note: a spring segment runs from its keyframe toward the next keyframe's 
 
 Effects stack per layer and on adjustment layers. They render deterministically under the conditions in [Determinism](#determinism).
 
-| Capability                                                    | AE equivalent               | Status |
-| ------------------------------------------------------------- | --------------------------- | ------ |
-| Gaussian blur                                                 | Gaussian blur               | beta   |
-| Drop shadow, glow                                             | Drop shadow, glow           | beta   |
-| Color: brightness/contrast, hue/saturation, tint, fill        | Color correction            | beta   |
-| Directional blur, levels, gradient ramp, seeded noise / grain | Various                     | v1.x   |
-| Inner shadow                                                  | Layer style (not an effect) | v1.x   |
-| Turbulent displace (seeded), chromatic aberration, vignette   | Various                     | later  |
-| Particles                                                     | Third-party plugins         | later  |
+| Capability                                                                       | AE equivalent               | Status |
+| -------------------------------------------------------------------------------- | --------------------------- | ------ |
+| Gaussian blur                                                                    | Gaussian blur               | beta   |
+| Drop shadow, glow                                                                | Drop shadow, glow           | beta   |
+| Color: brightness/contrast, hue/saturation, tint, fill                           | Color correction            | beta   |
+| Directional blur, levels, gradient ramp, seeded noise / grain                    | Various                     | v1.x   |
+| Inner shadow                                                                     | Layer style (not an effect) | v1.x   |
+| Turbulent displace (seeded), chromatic aberration, vignette                      | Various                     | later  |
+| Shader effects: built-in library + custom GLSL with animatable uniforms (see §8) | Third-party plugins         | beta   |
+| Particles                                                                        | Third-party plugins         | later  |
 
-## 8. Components, guidelines, quality
+## 8. Components, code, guidelines, quality
 
-| Capability                                                                             | Status |
-| -------------------------------------------------------------------------------------- | ------ |
-| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree  | beta   |
-| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds     | beta   |
-| Built-in library: charts, device mockups                                               | v1.x   |
-| Custom components in sandboxed TypeScript                                              | beta   |
-| Guideline packs: visual + motion tokens, choreography rules                            | beta   |
-| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op | beta   |
+Code is a first-class way to build (ADR-0012). Agents and users write custom components (TypeScript, `evaluate(props, frame, style) → layer subtree`) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's output is ordinary layers and keyframes; a shader's props are animatable uniforms. Nothing draws outside the scene graph.
+
+| Capability                                                                                | Status |
+| ----------------------------------------------------------------------------------------- | ------ |
+| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree     | beta   |
+| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds        | beta   |
+| Built-in library: charts, device mockups                                                  | v1.x   |
+| Custom components in sandboxed TypeScript, defined over MCP (`define_component`)          | beta   |
+| Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`) | beta   |
+| Built-in shader library: backgrounds, textures, transitions, looks                        | beta   |
+| Shaders on 3D layers and models (materials)                                               | v1.x   |
+| TypeScript SDK for building whole scenes in code                                          | later  |
+| Code panel in the web editor; local CLI / dev mode                                        | later  |
+| Guideline packs: visual + motion tokens, choreography rules                               | beta   |
+| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op    | beta   |
 
 ## 9. Output
 
@@ -162,7 +173,7 @@ Effects stack per layer and on adjustment layers. They render deterministically 
 
 ## Determinism
 
-The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled fonts, pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. The drawing backend is chosen in an M2 ADR. It must support blend modes, mattes, masks and the effect list under these conditions; Canvas 2D, WebGL2 and SVG are all candidates.
+The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled fonts, pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is GPU-based on **WebGL2** (ADR-0013); the M2 ADR picks the exact stack and must support blend modes, mattes, masks, the effect list and shaders under these conditions. Shaders get `frame`, resolution and declared uniforms only, never wall-clock time.
 
 ## MCP surface
 
@@ -191,6 +202,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Precise  | `add_effect`, `add_behavior`                                                                                     | M4        |
 | Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                   | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                              | M6        |
+| Code     | `define_component`, `define_shader`, `list_definitions`                                                          | M6        |
 | Intent   | `sync_to_beats`                                                                                                  | M7        |
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                      | M5        |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                          | M3        |

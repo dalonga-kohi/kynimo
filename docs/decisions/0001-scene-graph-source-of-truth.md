@@ -1,6 +1,6 @@
 # 0001 — The scene graph is the single source of truth
 
-- Status: accepted
+- Status: accepted (extended by ADR-0012: code-authored components and shaders)
 - Date: 2026-11-05
 
 ## Context

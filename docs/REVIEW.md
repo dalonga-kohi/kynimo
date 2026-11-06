@@ -29,7 +29,7 @@ The author is usually another AI session. Your job is to catch what it missed be
 - Rendering and evaluation are deterministic: same document + same frame → same pixels. No `Date.now()`, `Math.random()`, `performance.now()`, locale- or timezone-dependent formatting, or network fetches in evaluation/render paths. Randomness is seeded from the document.
 - Any change to the scene schema bumps the format version and ships a migration + migration test.
 - MCP tool contracts are typed (schema-validated input and output), documented, and backward compatible; breaking changes need a new tool name or version.
-- User-authored component code runs sandboxed; it never gets host, filesystem, network or secret access.
+- User- or agent-authored component and shader code runs sandboxed; it never gets host, filesystem, network, secret or wall-clock access, and its output is scene-graph content (ADR-0012).
 - Quality is enforced in code: guideline rules live in `@kynimo/guidelines` as code and produce a machine-readable report (rule id, severity, scene location, suggested fix). A quality rule that exists only in a prompt, doc or comment is not enforced.
 
 **Security**
