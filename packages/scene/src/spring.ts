@@ -26,6 +26,29 @@ const LINEAR_BOUND_X = (() => {
 })();
 
 /**
+ * Remaining fraction of the travel (1 at release, 0 on the target) of a spring released from rest,
+ * `seconds` after release: the closed-form damped harmonic oscillator. Negative while it overshoots.
+ * The single model shared by {@link springSettleFrames} and the engine.
+ */
+export function springDeviation(spring: SpringParams, seconds: number): number {
+  const omega = (2 * Math.PI) / spring.response;
+  const zeta = spring.damping;
+  const t = seconds;
+  if (zeta < 1) {
+    const damped = omega * Math.sqrt(1 - zeta * zeta);
+    return (
+      Math.exp(-zeta * omega * t) *
+      (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t))
+    );
+  }
+  if (zeta === 1) return (1 + omega * t) * Math.exp(-omega * t);
+  const root = Math.sqrt(zeta * zeta - 1);
+  const slow = omega * (zeta - root);
+  const fast = omega * (zeta + root);
+  return (fast * Math.exp(-slow * t) - slow * Math.exp(-fast * t)) / (fast - slow);
+}
+
+/**
  * Number of frames a spring segment lasts: the first frame at which the motion's decay
  * envelope is within {@link SPRING_SETTLE_THRESHOLD} of the target and stays there.
  *
@@ -49,16 +72,7 @@ export function springSettleFrames(spring: SpringParams, fps: FrameRate): number
     seconds = Math.min(envelope, LINEAR_BOUND_X / (zeta * omega));
   } else {
     // Critically and over-damped: the deviation decays monotonically; find where it crosses eps.
-    const deviation =
-      zeta === 1
-        ? (t: number) => (1 + omega * t) * Math.exp(-omega * t)
-        : (() => {
-            const root = Math.sqrt(zeta * zeta - 1);
-            const slow = omega * (zeta - root);
-            const fast = omega * (zeta + root);
-            return (t: number) =>
-              (fast * Math.exp(-slow * t) - slow * Math.exp(-fast * t)) / (fast - slow);
-          })();
+    const deviation = (t: number) => springDeviation(spring, t);
     let hi = 1;
     while (deviation(hi) > eps) hi *= 2;
     let lo = 0;
