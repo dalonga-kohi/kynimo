@@ -93,7 +93,7 @@ Simple editor in v1: sign in, project list, viewer with timeline scrubbing, laye
 
 ## Invariants
 
-See [CLAUDE.md](../CLAUDE.md#architecture-invariants-the-reviewer-blocks-on-these): scene graph is the single source of truth · deterministic rendering · versioned schema with migrations · typed, backward-compatible MCP contracts · sandboxed custom components · quality enforced in code.
+See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): scene graph is the single source of truth · deterministic rendering · versioned schema with migrations · typed, backward-compatible MCP contracts · sandboxed custom components · quality enforced in code.
 
 ## Open questions (settled in the feature that needs them)
 

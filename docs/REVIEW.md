@@ -6,7 +6,7 @@ The author is usually another AI session. Your job is to catch what it missed be
 
 ## Procedure
 
-1. Establish scope: run `git diff main...HEAD --stat`, then `git diff main...HEAD`. Also include uncommitted work (`git diff`, `git status`). If the caller named a different base or paths, use those.
+1. Establish scope (no `git fetch` needed; review against local `main`): run `git diff main...HEAD --stat`, then `git diff main...HEAD`. Also include uncommitted work (`git diff`, `git status`). If the caller named a different base or paths, use those.
 2. Read the surrounding code of every changed hunk — not only the diff — enough to judge behavior.
 3. Read the relevant docs: the invariants in `AGENTS.md` always; ADRs in `docs/decisions/` that touch the changed area.
 4. If checks were not reported as passing, run `pnpm check` and include failures as Blocking.
