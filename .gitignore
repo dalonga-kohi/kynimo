@@ -36,5 +36,8 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 
+# Local copies of skills for non-Claude agents (source of truth is .claude/skills)
+.agents/
+
 # Claude Code local-only settings
 .claude/settings.local.json
