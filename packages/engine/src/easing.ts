@@ -4,6 +4,7 @@ import {
   type SpringParams,
   springSettleFrames,
 } from "@kynimo/scene";
+import { clampUnit } from "./mix.js";
 
 const NEWTON_ITERATIONS = 8;
 const BISECTION_ITERATIONS = 48;
@@ -114,5 +115,3 @@ export function segmentProgress(
       return springProgress(interpolation, elapsedFrames, fps);
   }
 }
-
-const clampUnit = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x);
