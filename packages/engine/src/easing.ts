@@ -2,6 +2,7 @@ import {
   type FrameRate,
   type Interpolation,
   type SpringParams,
+  springDeviation,
   springSettleFrames,
 } from "@kynimo/scene";
 import { clampUnit } from "./mix.js";
@@ -71,24 +72,7 @@ export function springProgress(
 ): number {
   if (elapsedFrames <= 0) return 0;
   if (elapsedFrames >= springSettleFrames(spring, fps)) return 1;
-  const t = (elapsedFrames * fps.den) / fps.num;
-  const omega = (2 * Math.PI) / spring.response;
-  const zeta = spring.damping;
-  let deviation: number;
-  if (zeta < 1) {
-    const damped = omega * Math.sqrt(1 - zeta * zeta);
-    deviation =
-      Math.exp(-zeta * omega * t) *
-      (Math.cos(damped * t) + ((zeta * omega) / damped) * Math.sin(damped * t));
-  } else if (zeta === 1) {
-    deviation = (1 + omega * t) * Math.exp(-omega * t);
-  } else {
-    const root = Math.sqrt(zeta * zeta - 1);
-    const slow = omega * (zeta - root);
-    const fast = omega * (zeta + root);
-    deviation = (fast * Math.exp(-slow * t) - slow * Math.exp(-fast * t)) / (fast - slow);
-  }
-  return 1 - deviation;
+  return 1 - springDeviation(spring, (elapsedFrames * fps.den) / fps.num);
 }
 
 /**

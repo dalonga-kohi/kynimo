@@ -87,8 +87,13 @@ const isZero = (v: Vector) => v.every((x) => x === 0);
  * Samples a position track. Keyframed segments with spatial handles follow the bezier motion
  * path `from → from + outTangent → to + inTangent → to` at arc-length speed; without handles
  * they move in a straight line. Separate tracks sample X and Y independently.
+ * The result may be the document's own array, so it is read-only: copy before changing it.
  */
-export function samplePosition(track: PositionTrack, frame: number, fps: FrameRate): Vec2 {
+export function samplePosition(
+  track: PositionTrack,
+  frame: number,
+  fps: FrameRate,
+): Readonly<Vec2> {
   if ("value" in track) return track.value;
   if ("separate" in track)
     return [sampleNumber(track.separate.x, frame, fps), sampleNumber(track.separate.y, frame, fps)];

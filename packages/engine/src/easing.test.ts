@@ -32,14 +32,28 @@ describe("cubicBezier", () => {
     expect(Math.max(...samples)).toBeGreaterThan(1);
   });
 
-  it("solves flat-start curves where the slope at t=0 is zero", () => {
-    const ease = cubicBezier(0, 0, 0, 1);
-    for (const x of [0.001, 0.01, 0.3, 0.999]) {
-      const y = ease(x);
-      expect(y).toBeGreaterThanOrEqual(0);
-      expect(y).toBeLessThanOrEqual(1);
+  it("solves curves with zero slope at the start or inflection, matching a bisection reference", () => {
+    const reference = (x1: number, y1: number, x2: number, y2: number, x: number) => {
+      const b = (p1: number, p2: number, t: number) =>
+        3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t * t * p2 + t ** 3;
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 200; i++) {
+        const mid = (lo + hi) / 2;
+        if (b(x1, x2, mid) < x) lo = mid;
+        else hi = mid;
+      }
+      return b(y1, y2, lo);
+    };
+    for (const [x1, y1, x2, y2] of [
+      [0, 0, 0, 1],
+      [1, 0, 0, 1],
+      [0.9, -2, 0.1, 3],
+    ] as const) {
+      const ease = cubicBezier(x1, y1, x2, y2);
+      for (const x of [0.001, 0.01, 0.3, 0.5, 0.7, 0.999])
+        expect(Math.abs(ease(x) - reference(x1, y1, x2, y2, x))).toBeLessThan(1e-4);
     }
-    expect(ease(0.5)).toBeGreaterThan(ease(0.25));
   });
 });
 
@@ -81,6 +95,27 @@ describe("springProgress", () => {
     expect(peak({ damping: 0.3, response: 0.5 })).toBeGreaterThan(1.2);
     expect(peak({ damping: 1, response: 0.5 })).toBe(1);
     expect(peak({ damping: 2, response: 0.5 })).toBe(1);
+  });
+
+  it("matches the analytic underdamped peak 1 + exp(-πζ/√(1-ζ²)) at t = π/ω_d", () => {
+    // 60 fps and response 0.5 s: with ζ = 0.5, ω_d = 4π·√0.75, so the peak is at t ≈ 0.2887 s.
+    // Sample at a fractional frame that lands exactly on the peak time.
+    const spring = { damping: 0.5, response: 0.5 };
+    const fps60 = { num: 60, den: 1 };
+    const damped = ((2 * Math.PI) / spring.response) * Math.sqrt(1 - 0.25);
+    const peakFrame = (Math.PI / damped) * 60;
+    const expected = 1 + Math.exp((-Math.PI * 0.5) / Math.sqrt(0.75));
+    expect(springProgress(spring, peakFrame, fps60)).toBeCloseTo(expected, 12);
+    expect(expected).toBeCloseTo(1.16303, 5);
+  });
+
+  it("matches pinned golden values for each damping regime", () => {
+    // Independent reference: RK4 integration of x'' = -2ζωx' - ω²x from rest (200k steps).
+    const at = (damping: number, frame: number) =>
+      springProgress({ damping, response: 0.5 }, frame, fps30);
+    expect(at(0.5, 5)).toBeCloseTo(0.8877867, 6);
+    expect(at(1, 5)).toBeCloseTo(0.61894161, 6);
+    expect(at(2, 5)).toBeCloseTo(0.38537173, 6);
   });
 
   it("is deterministic", () => {

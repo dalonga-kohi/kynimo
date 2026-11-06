@@ -9,6 +9,11 @@ describe("lerp", () => {
     for (const p of [0.13, 0.5, 0.77]) expect(lerp(0.3, 0.3, p)).toBe(0.3);
   });
 
+  it("stays exact at the ends even when the span overflows", () => {
+    expect(lerp(-1e308, 1e308, 0)).toBe(-1e308);
+    expect(lerp(-1e308, 1e308, 1)).toBe(1e308);
+  });
+
   it("extrapolates on overshoot", () => {
     expect(lerp(0, 10, 1.2)).toBeCloseTo(12, 12);
     expect(lerp(0, 10, -0.1)).toBeCloseTo(-1, 12);

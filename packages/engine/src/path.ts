@@ -10,7 +10,7 @@ export const ARC_LENGTH_SAMPLES = 128;
 export interface MotionPath<V extends Vector> {
   readonly length: number;
   /** `p` in 0..1 walks the path at constant speed; outside 0..1 it continues along the end tangent. */
-  at(p: number): V;
+  at(p: number): Readonly<V>;
 }
 
 const sub = (a: Vector, b: Vector) => a.map((x, i) => x - (b[i] as number));

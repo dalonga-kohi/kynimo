@@ -130,4 +130,29 @@ describe("samplePosition", () => {
     expect(samplePosition(track, 0, fps)).toEqual([0, 0]);
     expect(samplePosition(track, 10, fps)).toEqual([100, 0]);
   });
+
+  it("lands exactly on a middle keyframe with handles on both sides", () => {
+    const track = {
+      keyframes: [
+        pk(0, [0, 0], { inTangent: [0, 0], outTangent: [20, 40] }),
+        pk(10, [50.3, 17.7], { inTangent: [-15, 5], outTangent: [15, -5] }),
+        pk(25, [100, 0], { inTangent: [0, 30], outTangent: [0, 0] }),
+      ],
+    };
+    expect(samplePosition(track, 10, fps)).toEqual([50.3, 17.7]);
+    // Approaching from either side converges on it.
+    const before = samplePosition(track, 9.999, fps);
+    const after = samplePosition(track, 10.001, fps);
+    expect(before[0]).toBeCloseTo(50.3, 1);
+    expect(after[1]).toBeCloseTo(17.7, 1);
+  });
+});
+
+describe("fractional frames", () => {
+  it("interpolate between integer frames on non-spring tracks", () => {
+    const track = { keyframes: [kf(0, 0), kf(10, 10)] };
+    expect(sampleNumber(track, 2.5, fps)).toBe(2.5);
+    const hold = { keyframes: [kf(0, 1, { type: "hold" }), kf(10, 2)] };
+    expect(sampleNumber(hold, 9.5, fps)).toBe(1);
+  });
 });

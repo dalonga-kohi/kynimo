@@ -6,6 +6,7 @@ export type Vector = readonly number[];
  * Exact at both ends and when `a === b`, so a keyframe always renders its stored value.
  */
 export function lerp(a: number, b: number, p: number): number {
+  if (p === 0) return a;
   if (p === 1) return b;
   return a + (b - a) * p;
 }
