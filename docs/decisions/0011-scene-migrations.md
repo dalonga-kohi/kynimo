@@ -17,5 +17,6 @@ Stored and imported documents carry `formatVersion`. Every schema change bumps i
 
 ## Consequences
 
+- The first real migration must ship with a `migrateProject` test that starts from a stored version-1 fixture, because `migrateProject` is only exercised end to end once a step exists.
 - `MIGRATIONS` is empty while the format is version 1; the framework is proven with a synthetic chain in tests.
 - Dropping support for old versions means raising `MIN_FORMAT_VERSION` and deleting their steps.

@@ -90,7 +90,7 @@ export function runMigrations(
   try {
     doc = clone(input as Json);
   } catch {
-    return failure("document is not plain JSON data");
+    return failure("document is not plain JSON data, or is nested too deeply");
   }
   for (let v = version; v < target; v++) {
     const step = steps.find((s) => s.from === v);

@@ -48,7 +48,8 @@ describe("runMigrations", () => {
   });
 
   it.each([
-    ["not an object", [], "JSON object"],
+    ["a number", 42, "JSON object"],
+    ["null", null, "JSON object"],
     ["array", [], "JSON object"],
     ["missing version", {}, "formatVersion must be an integer"],
     ["fractional version", { formatVersion: 1.5 }, "formatVersion must be an integer"],
