@@ -18,9 +18,9 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M2 — Renderer (frames)
 
-- [ ] Drawing backend decision (ADR): blend modes, mattes, masks and the effect list, deterministic in workers (see CAPABILITIES.md, "Determinism")
+- [ ] Drawing backend decision (ADR): WebGL2 stack (ADR-0013) for blend modes, mattes, masks, the effect list and shaders, deterministic in workers (see CAPABILITIES.md, "Determinism")
 - [ ] Draw shapes (fill, stroke, gradients, dashes), images, solids
-- [ ] Text: font loading strategy (bundled fonts), shaping, layout (point/box, auto-fit)
+- [ ] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit)
 - [ ] Masks, track mattes, blend modes
 - [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)
 
@@ -30,7 +30,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] `render_frames` + `render_contact_sheet` returning images; `describe_motion` timeline summary
 - [ ] MCP resources: scene schema, preset/component/token catalogs
 - [ ] Project store (database) + versioned documents + optimistic concurrency
-- [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets`
+- [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, SVG, fonts)
+- [ ] Video assets: FFmpeg pre-decode to frames at upload; draw video layers
 - [ ] Remote transport (Streamable HTTP) + OAuth
 - [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT
 
@@ -42,6 +43,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens
 - [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
 - [ ] SVG import → shape layer
+- [ ] Built-in 2D shader effects and generator layers (backgrounds, textures, looks)
 
 ## M5 — Guidelines + quality checks
 
@@ -56,6 +58,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] First components: kinetic type, logo reveal, lower third, transition set, background
 - [ ] `add_component` + `build_from_brief`
 - [ ] Sandbox for custom components (spike → decision ADR)
+- [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012)
+- [ ] Built-in shader transitions
 
 ## M7 — Export pipeline + preview links
 
@@ -73,4 +77,12 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## Private beta
 
+- [ ] Schema check: confirm additive room for 3D (Z, camera/light/model layers; interaction with order, blend modes, mattes, precomps), ADR-0013
 - [ ] Onboarding for MCP clients, usage limits, billing direction, open-core decision
+
+## After beta: v1.x highlights (ADR-0013)
+
+Not exhaustive; every `v1.x` item in CAPABILITIES.md follows after the private beta.
+
+- 3D compositing: 3D layers, cameras, lights; glTF / GLB model layers; shader materials
+- Lottie import → editable layers
