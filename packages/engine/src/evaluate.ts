@@ -1,4 +1,4 @@
-import type { Composition, FrameRate, Layer, Project } from "@kynimo/scene";
+import type { Composition, FrameRate, Layer, Project, ShapeItem } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { parseColor } from "./color.js";
 import { resolveTransform, sampleNonNegative } from "./properties.js";
@@ -14,13 +14,48 @@ import { sampleColor, sampleNumber } from "./track.js";
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
 
 /**
- * Most layers one `evaluateFrame` call may resolve, counting every layer of every distinct
- * (composition, local frame) it evaluates. The memo only collapses precomps that land on the
- * same local frame, so precomps placed at many different offsets multiply: N placements of N
- * placements of N layers is N³ work from 3N layers of JSON. Honest documents (every composition
- * shown once, all at the layer limit) stay far below this.
+ * Most work one `evaluateFrame` call may do, in units: 1 per layer, plus 1 per shape item, path
+ * vertex and gradient stop, summed over every distinct (composition, local frame) it evaluates.
+ * The memo only collapses precomps that land on the same local frame, so precomps placed at many
+ * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
+ * of JSON. For scale: a 1000-layer composition evaluated at 1000 different offsets costs 1,000,000.
  */
-export const MAX_EVALUATED_LAYERS = 250_000;
+export const MAX_EVALUATION_UNITS = 1_000_000;
+
+/** Units one evaluation of `comp` costs (see {@link MAX_EVALUATION_UNITS}). Iterative over shape groups. */
+function compositionCost(comp: Composition): number {
+  let units = 0;
+  for (const layer of comp.layers) {
+    units += 1;
+    if (layer.type !== "shape") continue;
+    const stack: ShapeItem[] = [...layer.contents];
+    for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+      units += 1;
+      switch (item.type) {
+        case "group":
+          stack.push(...item.items);
+          break;
+        case "path":
+          units +=
+            ("value" in item.path ? item.path.value : item.path.keyframes[0]?.value)?.vertices
+              .length ?? 0;
+          break;
+        case "fill":
+        case "stroke": {
+          const paint = item.paint;
+          if (paint.type !== "solid")
+            units +=
+              ("value" in paint.stops ? paint.stops.value : paint.stops.keyframes[0]?.value)
+                ?.length ?? 0;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  }
+  return units;
+}
 
 /**
  * Maps a precomp layer's content time (parent frames) to the nested composition's frame.
@@ -39,8 +74,10 @@ interface Context {
   compositions: Map<string, Composition>;
   /** `compositionId@frame` → result. Shared precomp instances are evaluated once per call. */
   memo: Map<string, ResolvedComposition>;
-  /** Layers left in this call's {@link MAX_EVALUATED_LAYERS} budget. */
+  /** Units left in this call's {@link MAX_EVALUATION_UNITS} budget. */
   budget: number;
+  /** Per-composition cost, computed once per call so counting is not multiplied too. */
+  costs: Map<string, number>;
   /** Precomp layer ids from the root down to the composition being evaluated, for error messages. */
   chain: string[];
 }
@@ -55,10 +92,15 @@ function evaluateComposition(
   const cached = root ? undefined : ctx.memo.get(key);
   if (cached !== undefined) return cached;
 
-  ctx.budget -= comp.layers.length;
+  let cost = ctx.costs.get(comp.id);
+  if (cost === undefined) {
+    cost = compositionCost(comp);
+    ctx.costs.set(comp.id, cost);
+  }
+  ctx.budget -= cost;
   if (ctx.budget < 0)
     throw new RangeError(
-      `evaluating this frame needs more than ${MAX_EVALUATED_LAYERS} layers; it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
+      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, path vertices); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
     );
 
   const fps = comp.fps;
@@ -252,6 +294,12 @@ export function evaluateFrame(
     throw new RangeError(
       `frame must be an integer from 0 to ${comp.durationFrames - 1} for composition '${comp.id}' (got ${frame})`,
     );
-  const ctx: Context = { compositions, memo: new Map(), budget: MAX_EVALUATED_LAYERS, chain: [] };
+  const ctx: Context = {
+    compositions,
+    memo: new Map(),
+    budget: MAX_EVALUATION_UNITS,
+    costs: new Map(),
+    chain: [],
+  };
   return evaluateComposition(ctx, comp, frame, true);
 }

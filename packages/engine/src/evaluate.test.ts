@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyToPoint, multiply, transformMatrix } from "./affine.js";
-import { evaluateFrame, MAX_EVALUATED_LAYERS, nestedFrame } from "./evaluate.js";
+import { evaluateFrame, MAX_EVALUATION_UNITS, nestedFrame } from "./evaluate.js";
 import {
   composition,
   deepFreeze,
@@ -284,7 +284,7 @@ describe("evaluateFrame: precomps", () => {
 
   it("refuses precomp fan-out at distinct offsets beyond the work budget", () => {
     // main places c1 N times and c1 places c2 N times, all at different start frames: N³ layers from 3N.
-    const n = 100;
+    const n = 110;
     const doc = project([
       composition(
         "main",
@@ -302,10 +302,65 @@ describe("evaluateFrame: precomps", () => {
         { durationFrames: 100_000 },
       ),
     ]);
-    expect(n ** 3).toBeGreaterThan(MAX_EVALUATED_LAYERS);
+    expect(n ** 3).toBeGreaterThan(MAX_EVALUATION_UNITS);
     expect(() => evaluateFrame(doc, 0)).toThrow(
-      /more than 250000 layers; it ran out in composition 'c2' via precomp layers a\d+ > b\d+/,
+      /more than 1000000 units of work .*; it ran out in composition 'c2' via precomp layers a\d+ > b\d+/,
     );
+  });
+
+  it("allows exactly the budget and refuses one unit more", () => {
+    // main: 999 placements of c1 at distinct offsets plus one shape layer (1,000 units);
+    // c1: 1,000 solids, evaluated at 999 frames (999,000 units). Total: exactly 1,000,000.
+    const rect = {
+      id: "r",
+      name: "r",
+      type: "rect",
+      position: prop([0, 0]),
+      size: prop([1, 1]),
+      cornerRadius: prop(0),
+    };
+    const placements = Array.from({ length: 999 }, (_, i) =>
+      precomp(`a${i}`, "c1", { startFrame: -i, inFrame: 0 }),
+    );
+    const c1 = composition(
+      "c1",
+      Array.from({ length: 1000 }, (_, i) => solid(`s${i}`)),
+      { durationFrames: 1000 },
+    );
+    const doc = (contents: Obj[]) =>
+      project([composition("main", [...placements, layer("extra", "shape", { contents })]), c1]);
+    expect(evaluateFrame(doc([]), 0).layers).toHaveLength(1000);
+    // One rect in main's shape layer is exactly one more unit.
+    expect(() => evaluateFrame(doc([rect]), 0)).toThrow(RangeError);
+  }, 20_000);
+
+  it("charges shape contents, not just layers", () => {
+    // 700 placements of one shape layer with 500 groups of 3 rects: only 1,400 layers, but 1.4M units.
+    const rect = (id: string) => ({
+      id,
+      name: id,
+      type: "rect",
+      position: prop([0, 0]),
+      size: prop([1, 1]),
+      cornerRadius: prop(0),
+    });
+    const groups = Array.from({ length: 500 }, (_, g) => ({
+      id: `g${g}`,
+      name: `g${g}`,
+      type: "group",
+      transform: transform(),
+      items: [rect(`g${g}a`), rect(`g${g}b`), rect(`g${g}c`)],
+    }));
+    const doc = project([
+      composition(
+        "main",
+        Array.from({ length: 700 }, (_, i) =>
+          precomp(`a${i}`, "c1", { startFrame: -i, inFrame: 0 }),
+        ),
+      ),
+      composition("c1", [layer("shape", "shape", { contents: groups })], { durationFrames: 1000 }),
+    ]);
+    expect(() => evaluateFrame(doc, 0)).toThrow(/units of work/);
   });
 
   it("maps frames across frame rates, flooring to the nested composition's frames", () => {
