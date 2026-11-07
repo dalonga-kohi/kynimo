@@ -1,21 +1,35 @@
-import type { Composition, FrameRate, Layer, Project, ShapeItem } from "@kynimo/scene";
+import type {
+  Animatable,
+  BezierPath,
+  Composition,
+  FrameRate,
+  Layer,
+  Mask,
+  Project,
+  ShapeItem,
+} from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { parseColor } from "./color.js";
-import { resolveTransform, sampleNonNegative } from "./properties.js";
+import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
   ResolvedAudio,
   ResolvedComposition,
   ResolvedLayer,
+  ResolvedMask,
   ResolvedTransform,
 } from "./resolved.js";
-import { resolveShapeItems } from "./shape.js";
+import { resolveShapeItems, samplePath } from "./shape.js";
 import { sampleColor, sampleNumber } from "./track.js";
 
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
+type DrawnLayer = Exclude<VisualLayer, { type: "null" }>;
+
+const vertexCount = (path: Animatable<BezierPath>): number =>
+  ("value" in path ? path.value : path.keyframes[0]?.value)?.vertices.length ?? 0;
 
 /**
  * Most work one `evaluateFrame` call may do inside precomps, in units: 1 per layer, plus 1 per
- * shape item, path vertex and gradient stop, summed over every distinct (composition, local frame)
+ * shape item, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
  * a precomp evaluates. The root composition is not charged: its work is already linear in the document.
  * The memo only collapses precomps that land on the same local frame, so precomps placed at many
  * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
@@ -28,6 +42,8 @@ function compositionCost(comp: Composition): number {
   let units = 0;
   for (const layer of comp.layers) {
     units += 1;
+    if (layer.type === "audio" || layer.type === "null") continue;
+    for (const mask of layer.masks) units += 1 + vertexCount(mask.path);
     if (layer.type !== "shape") continue;
     const stack: ShapeItem[] = [...layer.contents];
     for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
@@ -37,9 +53,7 @@ function compositionCost(comp: Composition): number {
           stack.push(...item.items);
           break;
         case "path":
-          units +=
-            ("value" in item.path ? item.path.value : item.path.keyframes[0]?.value)?.vertices
-              .length ?? 0;
+          units += vertexCount(item.path);
           break;
         case "fill":
         case "stroke": {
@@ -135,15 +149,35 @@ function evaluateComposition(
 
   // Solo is per composition and covers audio too: once any layer is soloed, only soloed layers render or play.
   const anySolo = comp.layers.some((l) => l.solo);
-  const active = (l: Layer) =>
-    !l.hidden && (!anySolo || l.solo) && l.inFrame <= frame && frame < l.outFrame;
+  const inRange = (l: Layer) => l.inFrame <= frame && frame < l.outFrame;
+  const active = (l: Layer) => !l.hidden && (!anySolo || l.solo) && inRange(l);
+
+  const resolvedById = new Map<string, ResolvedLayer>();
+  const resolve = (layer: DrawnLayer): ResolvedLayer => {
+    let resolved = resolvedById.get(layer.id);
+    if (resolved === undefined) {
+      const layerFrame = frame - layer.startFrame;
+      resolved = resolveLayer(ctx, layer, layerFrame, fps, {
+        id: layer.id,
+        name: layer.name,
+        layerFrame,
+        transform: localOf(layer).transform,
+        matrix: worldOf(layer),
+        blendMode: layer.blendMode,
+        masks: resolveMasks(layer.masks, layerFrame, fps),
+        matte: null,
+      });
+      resolvedById.set(layer.id, resolved);
+    }
+    return resolved;
+  };
 
   const layers: ResolvedLayer[] = [];
   const audio: ResolvedAudio[] = [];
   for (const layer of comp.layers) {
     if (!active(layer)) continue;
-    const layerFrame = frame - layer.startFrame;
     if (layer.type === "audio") {
+      const layerFrame = frame - layer.startFrame;
       audio.push({
         id: layer.id,
         assetId: layer.assetId,
@@ -153,14 +187,24 @@ function evaluateComposition(
       continue;
     }
     if (layer.type === "null") continue;
-    const resolved = resolveLayer(ctx, layer, layerFrame, fps, {
-      id: layer.id,
-      name: layer.name,
-      layerFrame,
-      transform: localOf(layer).transform,
-      matrix: worldOf(layer),
-    });
-    layers.push(resolved);
+    layers.push(resolve(layer));
+  }
+
+  // Track mattes, linked in a second pass so chains need no recursion. A matte source is resolved
+  // whatever its hidden and solo switches say, but only inside its in/out range. The schema rules
+  // out cycles and guarantees every source is a drawing layer of this composition.
+  const pending = [...layers];
+  for (let target = pending.pop(); target !== undefined; target = pending.pop()) {
+    const matte = (byId.get(target.id) as DrawnLayer).matte;
+    if (matte === null) continue;
+    const source = byId.get(matte.layerId) as DrawnLayer;
+    let resolved: ResolvedLayer | null = null;
+    if (inRange(source)) {
+      const known = resolvedById.has(source.id);
+      resolved = resolve(source);
+      if (!known) pending.push(resolved);
+    }
+    target.matte = { layerId: source.id, mode: matte.mode, source: resolved };
   }
 
   const result: ResolvedComposition = {
@@ -200,11 +244,31 @@ function withChain<T>(ctx: Context, layerId: string, run: () => T): T {
   }
 }
 
-type Base = Pick<ResolvedLayer, "id" | "name" | "layerFrame" | "transform" | "matrix">;
+type Base = Pick<
+  ResolvedLayer,
+  "id" | "name" | "layerFrame" | "transform" | "matrix" | "blendMode" | "masks" | "matte"
+>;
+
+function resolveMasks(masks: readonly Mask[], frame: number, fps: FrameRate): ResolvedMask[] {
+  const resolved: ResolvedMask[] = [];
+  for (const mask of masks) {
+    if (mask.mode === "none") continue;
+    resolved.push({
+      id: mask.id,
+      mode: mask.mode,
+      inverted: mask.inverted,
+      path: samplePath(mask.path, frame, fps),
+      feather: sampleSize(mask.feather, frame, fps),
+      opacity: sampleUnit(mask.opacity, frame, fps),
+      expansion: sampleNumber(mask.expansion, frame, fps),
+    });
+  }
+  return resolved;
+}
 
 function resolveLayer(
   ctx: Context,
-  layer: Exclude<VisualLayer, { type: "null" }>,
+  layer: DrawnLayer,
   frame: number,
   fps: FrameRate,
   base: Base,

@@ -1,4 +1,4 @@
-import type { BezierPath, FrameRate, Paint, ShapeItem } from "@kynimo/scene";
+import type { Animatable, BezierPath, FrameRate, Paint, ShapeItem } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { mixColor, parseColor } from "./color.js";
 import { lerp, lerpVector } from "./mix.js";
@@ -53,6 +53,13 @@ const mixPath: Mixer<BezierPath, ResolvedBezierPath> = (from, to, p) => ({
     };
   }),
 });
+
+/** Samples a bezier path track, morphing vertex by vertex. */
+export const samplePath = (
+  track: Animatable<BezierPath>,
+  frame: number,
+  fps: FrameRate,
+): ResolvedBezierPath => sampleTrack(track, frame, fps, mixPath);
 
 function resolvePaint(paint: Paint, frame: number, fps: FrameRate): ResolvedPaint {
   switch (paint.type) {
@@ -135,7 +142,7 @@ function resolveItem(
         rotation: sampleNumber(item.rotation, frame, fps),
       };
     case "path":
-      return { id, name, type: "path", path: sampleTrack(item.path, frame, fps, mixPath) };
+      return { id, name, type: "path", path: samplePath(item.path, frame, fps) };
     case "fill":
       return {
         id,

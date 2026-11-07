@@ -1,4 +1,4 @@
-import type { Json } from "@kynimo/scene";
+import type { BlendMode, Json, MaskMode, TrackMatte } from "@kynimo/scene";
 import type { Affine } from "./affine.js";
 import type { Rgba } from "./color.js";
 
@@ -45,6 +45,37 @@ interface LayerBase {
   transform: ResolvedTransform;
   /** Layer space → composition space, including every parent's transform. */
   matrix: Affine;
+  /** How the layer combines with what is below it (ADR-0020). Ignored while it serves as a matte. */
+  blendMode: BlendMode;
+  /** Active masks in document order (`none` masks are left out). Empty: the layer is unmasked. */
+  masks: ResolvedMask[];
+  matte: ResolvedMatte | null;
+}
+
+/**
+ * A mask sampled at the layer's frame, in layer space. `feather` is a per-axis blur width and
+ * `expansion` grows (positive) or shrinks (negative) the path, both in layer units.
+ */
+export interface ResolvedMask {
+  id: string;
+  mode: Exclude<MaskMode, "none">;
+  inverted: boolean;
+  path: ResolvedBezierPath;
+  feather: Point;
+  opacity: number;
+  expansion: number;
+}
+
+/**
+ * The layer whose alpha or luma mattes this one, resolved at this frame with its own masks and
+ * matte. It is resolved even when it is hidden or unsoloed (it may not be in the composition's
+ * `layers`); `source` is `null` when the frame is outside its in/out range, which is an empty matte.
+ * A layer that is both drawn and used as a matte is one shared object.
+ */
+export interface ResolvedMatte {
+  layerId: string;
+  mode: TrackMatte["mode"];
+  source: ResolvedLayer | null;
 }
 
 export interface ResolvedShapeLayer extends LayerBase {
