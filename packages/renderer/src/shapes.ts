@@ -29,7 +29,7 @@ export function rasterizeShapeLayer(
       const path = own(
         buildPath(ck, op.contours, op.paint.type === "fill" && op.paint.rule === "evenodd"),
       );
-      const paint = makePaint(ck, op.paint, own);
+      const paint = makePaint(ck, op.paint, op.opacity, own);
       if (paint === null) continue;
       const local = paintBounds(ck, op, path, own);
       if (local === null) continue;
@@ -59,13 +59,14 @@ export function rasterizeShapeLayer(
 }
 
 /** `null` when the paint can draw nothing: no opacity, a zero-width stroke, a zero radius. */
-function makePaint(ck: CanvasKit, item: PaintItem, own: Own): Paint | null {
-  if (item.opacity <= 0) return null;
+function makePaint(ck: CanvasKit, item: PaintItem, groupOpacity: number, own: Own): Paint | null {
+  const opacity = item.opacity * groupOpacity;
+  if (opacity <= 0) return null;
   // Skia draws a zero-width stroke as a one-pixel hairline; After Effects draws nothing.
   if (item.type === "stroke" && item.width <= 0) return null;
   const paint = own(new ck.Paint());
   paint.setAntiAlias(true);
-  if (!applyPaint(ck, paint, item.paint, item.opacity)) return null;
+  if (!applyPaint(ck, paint, item.paint, opacity)) return null;
   if (item.type === "stroke") {
     paint.setStyle(ck.PaintStyle.Stroke);
     paint.setStrokeWidth(item.width);
@@ -140,11 +141,22 @@ export function dashPattern(
   return { intervals, phase };
 }
 
-/** Bounds in paint space; strokes are widened by their full outline, joins and caps included. */
+/**
+ * Bounds in paint space; strokes are widened by their full outline, joins and caps included.
+ * Dashing adds a cap at every dash end, which can reach past the undashed outline at a beveled
+ * or over-limit corner, so dashed strokes also cover the path outset by the cap's reach.
+ */
 function paintBounds(ck: CanvasKit, op: PaintOp, path: Path, own: Own): Rect | null {
   let source = path;
+  let capBox: Rect | null = null;
   if (op.paint.type === "stroke") {
-    const { width, cap, join, miterLimit } = op.paint;
+    const { width, cap, join, miterLimit, dashes, dashOffset } = op.paint;
+    if (cap !== "butt" && dashPattern(dashes, dashOffset) !== null && !path.isEmpty()) {
+      const reach = cap === "round" ? width / 2 : (width / 2) * Math.SQRT2;
+      const [l, t, r, b] = path.computeTightBounds();
+      if (l !== undefined && t !== undefined && r !== undefined && b !== undefined)
+        capBox = [l - reach, t - reach, r + reach, b + reach];
+    }
     const stroked = path.makeStroked({
       width,
       miter_limit: miterLimit,
@@ -154,10 +166,10 @@ function paintBounds(ck: CanvasKit, op: PaintOp, path: Path, own: Own): Rect | n
     if (stroked === null) return null;
     source = own(stroked);
   }
-  if (source.isEmpty()) return null;
+  if (source.isEmpty()) return capBox;
   const [l, t, r, b] = source.computeTightBounds();
-  if (l === undefined || t === undefined || r === undefined || b === undefined) return null;
-  return [l, t, r, b];
+  if (l === undefined || t === undefined || r === undefined || b === undefined) return capBox;
+  return capBox === null ? [l, t, r, b] : union(capBox, [l, t, r, b]);
 }
 
 /** Axis-aligned box around the transformed rect; `null` if the result is not finite. */

@@ -64,4 +64,17 @@ describe("bindPaints (After Effects semantics)", () => {
     expect(result[1]?.contours[0]?.start).toEqual([5, -5]);
     expect(result[0]?.contours[0]?.start).toEqual([10, -10]);
   });
+
+  it("multiplies the opacities of the groups that hold a paint, not of groups it reaches into", () => {
+    const faded = (items: Obj[], opacity: number) =>
+      group(items, transform({ opacity: prop(opacity) }));
+    const result = ops([
+      faded([faded([rect([0, 0], [10, 10]), fill()], 0.5)], 0.4),
+      stroke(solidPaint("#ffffff"), 1),
+    ]);
+    expect(result.map((op) => [op.paint.type, op.opacity])).toEqual([
+      ["stroke", 1],
+      ["fill", 0.2],
+    ]);
+  });
 });

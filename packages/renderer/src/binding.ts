@@ -11,6 +11,11 @@ export interface PaintOp {
   matrix: Affine;
   /** In paint space. Painted as one compound path, so fill rules act across contours. */
   contours: Contour[];
+  /**
+   * Product of the opacities of the groups that hold the paint (as in After Effects and Lottie).
+   * The opacity of a group whose paths an enclosing paint reaches into does not apply.
+   */
+  opacity: number;
 }
 
 /**
@@ -24,20 +29,27 @@ export interface PaintOp {
  */
 export function bindPaints(items: readonly ResolvedShapeItem[]): PaintOp[] {
   const ops: PaintOp[] = [];
-  walk(items, IDENTITY, ops);
+  walk(items, IDENTITY, 1, ops);
   return ops.reverse();
 }
 
 /** Pushes ops top-first; returns this group's geometry (in its own space) for enclosing paints. */
-function walk(items: readonly ResolvedShapeItem[], matrix: Affine, ops: PaintOp[]): Contour[] {
+function walk(
+  items: readonly ResolvedShapeItem[],
+  matrix: Affine,
+  opacity: number,
+  ops: PaintOp[],
+): Contour[] {
   const above: Contour[] = [];
   for (const item of items) {
     if (isGeometry(item)) above.push(itemContour(item));
     else if (item.type === "group") {
+      const inner = walk(item.items, item.matrix, opacity * item.transform.opacity, ops);
+      // `item.matrix` maps the group to layer space; enclosing paints need its contours in this
+      // group's space instead, so map them up by the group's local (group → parent) matrix.
       const local = transformMatrix(item.transform);
-      for (const contour of walk(item.items, item.matrix, ops))
-        above.push(transformContour(local, contour));
-    } else if (above.length > 0) ops.push({ paint: item, matrix, contours: [...above] });
+      for (const contour of inner) above.push(transformContour(local, contour));
+    } else if (above.length > 0) ops.push({ paint: item, matrix, contours: [...above], opacity });
   }
   return above;
 }

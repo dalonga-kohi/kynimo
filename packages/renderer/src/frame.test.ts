@@ -116,6 +116,62 @@ describe("shape layers", () => {
     expect(pixel(out, 50, 50)).toEqual(RED);
   });
 
+  it("crops to the stroke outline, not just the fill", () => {
+    const p = plan([
+      shapeLayer("s", [rect([50, 50], [40, 40]), stroke(solidPaint("#0000ff"), 6), fill()]),
+    ]);
+    const l = only(p);
+    if (l.space !== "composition") throw new Error("expected composition space");
+    // Outline 27..73 on both axes, plus one pixel of anti-aliasing room.
+    expect([l.x, l.y, l.raster.width, l.raster.height]).toEqual([26, 26, 48, 48]);
+    expect(pixel(compositeReference(ck, p), 28, 50)).toEqual([0, 0, 255, 255]);
+  });
+
+  it("keeps the caps of dashes that end at a beveled corner inside the crop", () => {
+    const tip = Math.hypot(50, 100);
+    const vertex = (x: number, y: number) => ({
+      point: [x, y],
+      inTangent: [0, 0],
+      outTangent: [0, 0],
+    });
+    const contents = (dashes: number[]) => [
+      {
+        id: "v",
+        name: "v",
+        type: "path",
+        path: prop({
+          closed: false,
+          vertices: [vertex(50, 150), vertex(100, 50), vertex(150, 150)],
+        }),
+      },
+      stroke(solidPaint("#ffffff"), 20, { join: "bevel", cap: "square", dashes }),
+    ];
+    const top = (dashes: number[]) => {
+      const p = rasterizeFrame(
+        ck,
+        frameOf([shapeLayer("s", contents(dashes))], { width: 200, height: 200 }),
+        new ImageLibrary(ck),
+      );
+      const l = only(p);
+      if (l.space !== "composition") throw new Error("expected composition space");
+      return l.y;
+    };
+    // Undashed, the bevel's top edge sits near y≈44; the square cap of a dash ending at the tip
+    // reaches y≈36.6.
+    expect(top([])).toBeGreaterThan(40);
+    expect(top([tip, 1000])).toBeLessThanOrEqual(36);
+  });
+
+  it("applies group opacity to the paints inside the group", () => {
+    const faded = (opacity: number) => [
+      shapeLayer("s", [
+        group([rect([50, 50], [20, 20]), fill()], transform({ opacity: prop(opacity) })),
+      ]),
+    ];
+    expect(pixel(render(faded(0.5)), 50, 50)).toEqual([128, 0, 0, 128]);
+    expect(plan(faded(0)).layers).toEqual([]);
+  });
+
   it("scales a group's stroke with the group but not an enclosing stroke", () => {
     const widthAt = (contents: Obj[]) => {
       const out = render([shapeLayer("s", contents)]);
@@ -397,6 +453,16 @@ describe("raster budget", () => {
       /needs more than 199 raster pixels/,
     );
     expect(MAX_FRAME_RASTER_PIXELS).toBe(2 ** 28);
+  });
+
+  it("counts shape rasters at their cropped size, and refuses before allocating", () => {
+    // A 20×10 rect crops to 22×12 = 264 pixels with the anti-aliasing pad.
+    const frame = frameOf([shapeLayer("s", [rect([50, 50], [20, 10]), fill()])]);
+    const images = new ImageLibrary(ck);
+    expect(rasterizeFrame(ck, frame, images, { maxRasterPixels: 264 }).layers).toHaveLength(1);
+    expect(() => rasterizeFrame(ck, frame, images, { maxRasterPixels: 263 })).toThrow(
+      /needs more than 263 raster pixels/,
+    );
   });
 });
 

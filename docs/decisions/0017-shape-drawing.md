@@ -14,10 +14,11 @@ ADR-0016 chose CanvasKit (Skia) on CPU raster surfaces plus our own WebGL2 compo
 - **Fills and strokes bind with After Effects semantics.** Items are listed top-first. A fill or stroke paints every path listed above it in its own group, including the paths inside groups above it. Items lower in the list draw underneath, and a group's own paints draw at the group's place in that order. A paint with nothing above it draws nothing.
   - A fill over several paths fills them as **one compound path**, so even-odd acts across them, as in After Effects.
   - A paint's **gradient coordinates and stroke width live in the paint's own group space.** A stroke inside a scaled group scales with it; a stroke in an enclosing group that paints the same path does not.
+  - **Group opacity** multiplies into the paints the group holds, through every enclosing group, as in After Effects and Lottie. It does not apply when an enclosing paint reaches into the group's paths.
   - Dashes follow SVG: an odd list repeats once, an all-zero pattern draws solid, and the offset wraps within one pattern. A zero-width stroke draws nothing (Skia would draw a hairline).
   - Gradients interpolate in unpremultiplied sRGB (Skia's default, as in After Effects) and clamp past their ends.
 - **The rasterizer's output is a `FramePlan`**: per composition, top-first layers with premultiplied sRGB RGBA8 rasters and layer opacity, which the compositor applies.
-  - **Shape layers** rasterize in composition space, cropped to their bounds (stroke outline included, plus one pixel for anti-aliasing) within the composition, at a whole-pixel offset. Layers that cover no pixels are left out.
+  - **Shape layers** rasterize in composition space, cropped to their bounds (stroke outline included, plus one pixel for anti-aliasing) within the composition, at a whole-pixel offset. Dashed strokes with round or square caps also cover the path outset by the cap's reach, because each dash end gets a cap. Layers that cover no pixels are left out.
   - **Solids and images** rasterize in layer space, one pixel per unit, and carry their layer → composition matrix.
   - **Precomps** carry their nested plan. A precomp shown at the same local frame twice shares one plan.
   - Text, adjustment and component layers are listed as `skipped`, with a reason, until their items land. They are never drawn wrong.
