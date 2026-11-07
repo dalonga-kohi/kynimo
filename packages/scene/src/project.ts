@@ -300,7 +300,7 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
             );
             issue(
               at("font", "family"),
-              `font family '${family}' is neither bundled (${BUNDLED_FONT_FAMILIES.join(", ")}) nor a font asset of this project (${uploaded.length > 0 ? uploaded.join(", ") : "none"})${near === undefined ? "" : `; did you mean '${near}'?`} Use one of those or add a font asset`,
+              `font family '${family}' is neither bundled (${BUNDLED_FONT_FAMILIES.join(", ")}) nor a font asset of this project (${uploaded.length > 0 ? uploaded.join(", ") : "none"}).${near === undefined ? "" : ` Did you mean '${near}'?`} Use one of those or add a font asset`,
             );
           }
           break;
