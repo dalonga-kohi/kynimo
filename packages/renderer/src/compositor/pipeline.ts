@@ -1,4 +1,4 @@
-import type { TrackMatte } from "@kynimo/scene";
+import type { BlendMode, TrackMatte } from "@kynimo/scene";
 import type { PlannedLayer } from "../raster.js";
 
 /**
@@ -58,3 +58,31 @@ export function matteChain(layer: PlannedLayer): { chain: PlannedLayer[]; end: "
   }
   return { chain, end: last.matte === null ? "none" : "empty" };
 }
+
+/** Ids the BLEND shader switches on; they must match its `case` labels (the GPU tests check every mode). */
+export const BLEND_MODE_IDS: Readonly<Record<BlendMode, number>> = {
+  normal: 0,
+  multiply: 1,
+  screen: 2,
+  overlay: 3,
+  darken: 4,
+  lighten: 5,
+  "color-dodge": 6,
+  "color-burn": 7,
+  "hard-light": 8,
+  "soft-light": 9,
+  difference: 10,
+  exclusion: 11,
+  hue: 12,
+  saturation: 13,
+  color: 14,
+  luminosity: 15,
+  add: 16,
+  subtract: 17,
+  divide: 18,
+  "linear-burn": 19,
+  "linear-light": 20,
+  "vivid-light": 21,
+  "pin-light": 22,
+  "hard-mix": 23,
+};
