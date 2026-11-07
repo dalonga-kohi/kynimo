@@ -1,0 +1,14 @@
+{
+  "name": "kynimo-spike-renderer-backend",
+  "private": true,
+  "type": "module",
+  "description": "ADR-0016 spike: WebGL2 + CanvasKit determinism on pinned headless Chromium. Not part of the workspace.",
+  "scripts": {
+    "spike": "node run.mjs"
+  },
+  "dependencies": {
+    "canvaskit-wasm": "0.42.0",
+    "dejavu-fonts-ttf": "2.37.3",
+    "playwright": "1.63.0"
+  }
+}

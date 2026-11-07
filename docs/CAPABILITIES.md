@@ -1,6 +1,6 @@
 # Kynimo — Capability map
 
-What the engine can express, and how agents reach it over MCP. Benchmark: the 2D core of Adobe After Effects. Decision: [ADR-0008](decisions/0008-ae-grade-engine-simple-editor.md). Code authoring: [ADR-0012](decisions/0012-code-authoring.md). Media, 3D and renderer: [ADR-0013](decisions/0013-media-3d-gpu-renderer.md).
+What the engine can express, and how agents reach it over MCP. Benchmark: the 2D core of Adobe After Effects. Decision: [ADR-0008](decisions/0008-ae-grade-engine-simple-editor.md). Code authoring: [ADR-0012](decisions/0012-code-authoring.md). Media, 3D and renderer: [ADR-0013](decisions/0013-media-3d-gpu-renderer.md), drawing backend: [ADR-0016](decisions/0016-drawing-backend.md).
 
 **Principle: deep engine, simple editor.** Most users drive Kynimo through their assistant, so every capability below is in the scene format and exposed as MCP tools. The editor is a usable companion (viewer, timeline, layers, inspector) and doesn't need a control for every capability. If the scene graph can't represent something, neither surface can do it.
 
@@ -173,7 +173,7 @@ Code is a first-class way to build (ADR-0012). Agents and users write custom com
 
 ## Determinism
 
-The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled and uploaded fonts pinned by content hash (missing glyphs fall back to a pinned bundled font), pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is GPU-based on **WebGL2** (ADR-0013); the M2 ADR picks the exact stack and must support blend modes, mattes, masks, the effect list and shaders under these conditions. Shaders get only their declared inputs (ADR-0012), never wall-clock time.
+The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled and uploaded fonts pinned by content hash (missing glyphs fall back to a pinned bundled font), pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is split (ADR-0016): CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, masks, the effect list and shaders, on SwiftShader in workers. Shaders get only their declared inputs (ADR-0012), never wall-clock time.
 
 ## MCP surface
 
