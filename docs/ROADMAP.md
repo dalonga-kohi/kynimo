@@ -23,13 +23,14 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit)
 - [ ] Masks, track mattes, blend modes
 - [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)
+- [ ] Reference scenes (ADR-0018): title card, masked/matted reveal, nested precomp with parenting, image-and-shape product card; approved frames checked in and looked at whenever they change
 
 ## M3 — MCP server v1
 
 - [ ] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops`
-- [ ] `render_frames` + `render_contact_sheet` returning images; `describe_motion` timeline summary
-- [ ] MCP resources: scene schema, preset/component/token catalogs
-- [ ] Project store (database) + versioned documents + optimistic concurrency
+- [ ] `render_frames` + `render_contact_sheet` returning images, with declared limits, a render cache and skipped-feature reporting (ADR-0018); `describe_motion` timeline summary
+- [ ] MCP resources: scene schema, preset/component/token catalogs; capability manifest as a resource and `get_capabilities` tool (ADR-0018)
+- [ ] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on `apply_ops`, batch outcome lookup, undo history persisted with the project (ADR-0018)
 - [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, SVG, fonts)
 - [ ] Video assets: FFmpeg pre-decode to frames at upload; draw video layers
 - [ ] Remote transport (Streamable HTTP) + OAuth
@@ -42,7 +43,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens
 - [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
-- [ ] SVG import → shape layer
+- [ ] SVG import → shape layer, with a fidelity report and dry run (ADR-0018)
 - [ ] Built-in 2D shader effects and generator layers (backgrounds, textures, looks)
 
 ## M5 — Guidelines + quality checks
@@ -63,8 +64,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M7 — Export pipeline + preview links
 
-- [ ] Render workers + job queue
-- [ ] MP4 / WebM / GIF export with audio layers mixed in; `render_preview_clip`, `export`, `get_export_status`
+- [ ] Render workers + job queue; jobs with progress, cancel and idempotent submission (ADR-0018)
+- [ ] MP4 / WebM / GIF export with audio layers mixed in and a fidelity report; `render_preview_clip`, `export`, `get_export_status`, `cancel_export`
 - [ ] Beat markers on audio layers (detection + manual); `sync_to_beats`
 - [ ] Shareable preview links; `get_preview_link`
 
@@ -74,6 +75,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Sign in, project list
 - [ ] Viewer + timeline scrubbing, layer list, inspector, basic keyframe editing, all on scene operations
 - [ ] Live view of agent edits (same document versions as MCP)
+- [ ] Timing finish: easing curve and spring editor, motion-path handles in the viewer (no full graph editor)
 
 ## Private beta
 

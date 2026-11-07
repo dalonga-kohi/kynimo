@@ -73,6 +73,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 - Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
 - Tool groups (project, read, precise, intent, code, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
+- Reliability contracts (ADR-0018): a capability manifest generated from code, idempotency keys and outcome lookup on writes, declared limits and a content-addressed cache on renders, cancellable jobs, fidelity reports on every import and export.
 
 ## Web app — `apps/web`
 
