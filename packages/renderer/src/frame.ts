@@ -1,16 +1,22 @@
 import type { ResolvedComposition, ResolvedSolidLayer } from "@kynimo/engine";
 import type { CanvasKit } from "canvaskit-wasm";
+import { RenderError } from "./errors.js";
+import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary } from "./images.js";
-import type { FramePlan, PlannedLayer, RasterImage, SkippedLayer } from "./raster.js";
+import type {
+  FramePlan,
+  PlannedLayer,
+  RasterImage,
+  RenderWarning,
+  SkippedLayer,
+} from "./raster.js";
 import { rasterizeShapeLayer } from "./shapes.js";
 import { rasterize, toSkColor } from "./skia.js";
+import { rasterizeTextLayer, textWarnings } from "./text.js";
 
-export class RenderError extends Error {
-  override name = "RenderError";
-}
+export { RenderError };
 
 const NOT_YET: Record<SkippedLayer["type"], string> = {
-  text: "text rendering arrives with the M2 text item",
   adjustment: "adjustment layers apply effects, which arrive in M4",
   component: "component evaluation arrives in M6",
 };
@@ -25,6 +31,7 @@ export const MAX_FRAME_RASTER_PIXELS = 268_435_456;
 interface Context {
   ck: CanvasKit;
   images: ImageLibrary;
+  fonts: FontLibrary;
   /** Precomps shown at the same local frame share one resolved object (engine memo); plan it once. */
   nested: Map<ResolvedComposition, FramePlan>;
   limit: number;
@@ -33,18 +40,19 @@ interface Context {
 
 /**
  * Rasterizes every layer of an evaluated frame (ADR-0016's CPU half) into a {@link FramePlan} for
- * the compositor. Deterministic: same resolved frame and same image bytes → same plan.
- * Throws {@link RenderError} when an image layer's asset is not in `images`, or when the frame
- * would allocate more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}).
+ * the compositor. Deterministic: same resolved frame, image bytes and font bytes → same plan.
+ * Throws {@link RenderError} when an image layer's asset is not in `images`, when a text layer's
+ * font family (or the bundled fallback font) is not in `fonts`, or when the frame would allocate
+ * more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}).
  */
 export function rasterizeFrame(
   ck: CanvasKit,
   comp: ResolvedComposition,
-  images: ImageLibrary,
+  { images, fonts }: { images: ImageLibrary; fonts: FontLibrary },
   { maxRasterPixels = MAX_FRAME_RASTER_PIXELS }: { maxRasterPixels?: number } = {},
 ): FramePlan {
   return planComposition(
-    { ck, images, nested: new Map(), limit: maxRasterPixels, remaining: maxRasterPixels },
+    { ck, images, fonts, nested: new Map(), limit: maxRasterPixels, remaining: maxRasterPixels },
     comp,
   );
 }
@@ -60,6 +68,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   };
   const layers: PlannedLayer[] = [];
   const skipped: SkippedLayer[] = [];
+  const warnings: RenderWarning[] = [];
   for (const layer of comp.layers) {
     const { id } = layer;
     const opacity = layer.transform.opacity;
@@ -68,6 +77,13 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         const drawn = rasterizeShapeLayer(ck, layer, comp.width, comp.height, reserve);
         if (drawn !== null)
           layers.push({ type: "shape", space: "composition", id, opacity, ...drawn });
+        break;
+      }
+      case "text": {
+        warnings.push(...textWarnings(ck, ctx.fonts, layer));
+        const drawn = rasterizeTextLayer(ck, ctx.fonts, layer, comp.width, comp.height, reserve);
+        if (drawn !== null)
+          layers.push({ type: "text", space: "composition", id, opacity, ...drawn });
         break;
       }
       case "solid":
@@ -100,14 +116,20 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         layers.push({ type: "precomp", space: "layer", id, opacity, matrix: layer.matrix, frame });
         break;
       }
-      case "text":
       case "adjustment":
       case "component":
         skipped.push({ id, type: layer.type, reason: NOT_YET[layer.type] });
         break;
     }
   }
-  return { width: comp.width, height: comp.height, background: comp.background, layers, skipped };
+  return {
+    width: comp.width,
+    height: comp.height,
+    background: comp.background,
+    layers,
+    skipped,
+    warnings,
+  };
 }
 
 function solidRaster(ck: CanvasKit, layer: ResolvedSolidLayer): RasterImage {

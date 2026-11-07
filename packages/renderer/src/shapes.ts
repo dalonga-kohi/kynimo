@@ -2,12 +2,8 @@ import { type Affine, multiply, type ResolvedPaint, type ResolvedShapeLayer } fr
 import type { CanvasKit, Paint, Path } from "canvaskit-wasm";
 import { bindPaints, type PaintItem, type PaintOp } from "./binding.js";
 import type { RasterImage } from "./raster.js";
+import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
 import { buildPath, type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
-
-/** Anti-aliasing reaches up to a pixel past the geometry. */
-const AA_PAD = 1;
-
-type Rect = [number, number, number, number];
 
 /**
  * Rasterizes a shape layer in composition space (ADR-0016), cropped to its bounds within the
@@ -39,11 +35,9 @@ export function rasterizeShapeLayer(
       bounds = bounds === null ? box : union(bounds, box);
     }
     if (bounds === null) return null;
-    const x0 = Math.max(0, Math.floor(bounds[0] - AA_PAD));
-    const y0 = Math.max(0, Math.floor(bounds[1] - AA_PAD));
-    const x1 = Math.min(width, Math.ceil(bounds[2] + AA_PAD));
-    const y1 = Math.min(height, Math.ceil(bounds[3] + AA_PAD));
-    if (x1 <= x0 || y1 <= y0) return null;
+    const crop = cropToComposition(bounds, width, height);
+    if (crop === null) return null;
+    const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);
     const raster = rasterize(ck, x1 - x0, y1 - y0, (canvas) => {
       for (const draw of draws) {
@@ -171,27 +165,3 @@ function paintBounds(ck: CanvasKit, op: PaintOp, path: Path, own: Own): Rect | n
   if (l === undefined || t === undefined || r === undefined || b === undefined) return capBox;
   return capBox === null ? [l, t, r, b] : union(capBox, [l, t, r, b]);
 }
-
-/** Axis-aligned box around the transformed rect; `null` if the result is not finite. */
-function transformRect(m: Affine, [l, t, r, b]: Rect): Rect | null {
-  const xs: number[] = [];
-  const ys: number[] = [];
-  for (const [x, y] of [
-    [l, t],
-    [r, t],
-    [l, b],
-    [r, b],
-  ] as const) {
-    xs.push(m[0] * x + m[2] * y + m[4]);
-    ys.push(m[1] * x + m[3] * y + m[5]);
-  }
-  const box: Rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
-  return box.every(Number.isFinite) ? box : null;
-}
-
-const union = (a: Rect, b: Rect): Rect => [
-  Math.min(a[0], b[0]),
-  Math.min(a[1], b[1]),
-  Math.max(a[2], b[2]),
-  Math.max(a[3], b[3]),
-];

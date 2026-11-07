@@ -101,3 +101,17 @@ export const frameOf = (
   projectOverrides: Obj = {},
 ): ResolvedComposition =>
   evaluateFrame(project([composition("main", layers, overrides)], projectOverrides), 0);
+
+/** A white, left-aligned, 40-unit Inter point text layer at the origin. */
+export const textLayer = (id: string, content: string, overrides: Obj = {}) =>
+  layer(id, "text", {
+    content: { value: content },
+    box: { mode: "point" },
+    font: { family: "Inter", weight: 400, size: prop(40) },
+    tracking: prop(0),
+    leading: prop(1.2),
+    align: "left",
+    textCase: "none",
+    fill: prop("#ffffff"),
+    ...overrides,
+  });

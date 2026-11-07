@@ -1,5 +1,6 @@
 import { type Asset, MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import type { CanvasKit } from "canvaskit-wasm";
+import { sha256Hex } from "./hash.js";
 import type { RasterImage } from "./raster.js";
 
 export type ImageAsset = Extract<Asset, { type: "image" }>;
@@ -27,16 +28,6 @@ export class ImageAssetError extends Error {
   override name = "ImageAssetError";
 }
 
-// lib is ES2023 without DOM: describe just the Web Crypto call we use (Node 22+, browsers, workers).
-type Subtle = { digest(algorithm: "SHA-256", data: Uint8Array): Promise<ArrayBuffer> };
-const subtle = (globalThis as { crypto?: { subtle?: Subtle } }).crypto?.subtle;
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  if (subtle === undefined) throw new ImageAssetError("Web Crypto (crypto.subtle) is unavailable");
-  const digest = new Uint8Array(await subtle.digest("SHA-256", bytes));
-  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 /**
  * Decoded image assets, keyed by asset id. Loading bytes is the caller's job (the asset store,
  * M3); rendering then reads only from here, so the render path never touches the network.
@@ -58,7 +49,7 @@ export class ImageLibrary {
       throw new ImageAssetError(
         `asset '${asset.id}': images may be at most ${MAX_COMPOSITION_SIZE}×${MAX_COMPOSITION_SIZE} pixels (got ${asset.width}×${asset.height}); downscale it before uploading`,
       );
-    const hash = await sha256Hex(bytes);
+    const hash = await sha256Hex(bytes, (m) => new ImageAssetError(m));
     if (hash !== asset.sha256)
       throw new ImageAssetError(
         `asset '${asset.id}': bytes hash to ${hash}, but the document pins ${asset.sha256}`,
