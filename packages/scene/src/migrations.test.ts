@@ -114,6 +114,55 @@ describe("migrateProject", () => {
     expect(r).toMatchObject({ ok: false, errors: [{ path: ["name"] }] });
   });
 
+  it("1 → 2 spells bundled families exactly and leaves unknown families to validation", () => {
+    const text = (family: string, i: number) => ({
+      id: `t${i}`,
+      name: "t",
+      inFrame: 0,
+      outFrame: 90,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+      parent: null,
+      transform: {
+        anchorPoint: { value: [0, 0] },
+        position: { value: [0, 0] },
+        scale: { value: [1, 1] },
+        rotation: { value: 0 },
+        skew: { value: 0 },
+        opacity: { value: 1 },
+      },
+      type: "text",
+      content: { value: "Hi" },
+      box: { mode: "point" },
+      font: { family, weight: 400, size: { value: 48 } },
+      tracking: { value: 0 },
+      leading: { value: 1.2 },
+      align: "left",
+      textCase: "none",
+      fill: { value: "#ffffff" },
+    });
+    const v1 = (families: string[]) => {
+      const doc = project() as { compositions: { layers: unknown[] }[] };
+      const comp = doc.compositions[0];
+      if (comp) comp.layers = families.map(text);
+      return { ...doc, formatVersion: 1 };
+    };
+    const r = migrateProject(v1(["inter", "NOTO SANS", "Inter"]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.from).toBe(1);
+    expect(
+      r.doc.compositions[0]?.layers.map((l) => (l.type === "text" ? l.font.family : null)),
+    ).toEqual(["Inter", "Noto Sans", "Inter"]);
+    expect(migrateProject(v1(["Comic Sans"]))).toMatchObject({
+      ok: false,
+      errors: [{ path: ["compositions", 0, "layers", 0, "font", "family"] }],
+    });
+  });
+
   it("rejects unknown and future versions", () => {
     expect(migrateProject({ ...project(), formatVersion: 99 })).toMatchObject({ ok: false });
     expect(migrateProject(null)).toMatchObject({ ok: false });

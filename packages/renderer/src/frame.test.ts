@@ -2,7 +2,14 @@ import { evaluateFrame } from "@kynimo/engine";
 import { AssetSchema } from "@kynimo/scene";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit } from "./canvaskit.js";
-import { canvasKit, encodeImage, freshCanvasKit, pixel, sha256 } from "./canvaskit.test-util.js";
+import {
+  bundledFonts,
+  canvasKit,
+  encodeImage,
+  freshCanvasKit,
+  pixel,
+  sha256,
+} from "./canvaskit.test-util.js";
 import { compositeReference } from "./composite.js";
 import {
   composition,
@@ -20,17 +27,22 @@ import {
   stroke,
   transform,
 } from "./fixtures.test-util.js";
+import type { FontLibrary } from "./fonts.js";
 import { MAX_FRAME_RASTER_PIXELS, rasterizeFrame } from "./frame.js";
 import { type ImageAsset, ImageAssetError, ImageLibrary } from "./images.js";
 import type { FramePlan, PlannedLayer, RasterImage } from "./raster.js";
 
 let ck: CanvasKit;
+let fonts: FontLibrary;
 beforeAll(async () => {
   ck = await canvasKit();
+  fonts = await bundledFonts(ck);
 });
 
+const res = (images = new ImageLibrary(ck)) => ({ images, fonts });
+
 const plan = (layers: Obj[], images?: ImageLibrary, assets: ImageAsset[] = []): FramePlan =>
-  rasterizeFrame(ck, frameOf(layers, {}, { assets }), images ?? new ImageLibrary(ck));
+  rasterizeFrame(ck, frameOf(layers, {}, { assets }), res(images));
 
 /** Within `tolerance` per channel: gradients are sampled at pixel centers, not exact stops. */
 const near = (actual: number[], expected: number[], tolerance = 3) => {
@@ -150,7 +162,7 @@ describe("shape layers", () => {
       const p = rasterizeFrame(
         ck,
         frameOf([shapeLayer("s", contents(dashes))], { width: 200, height: 200 }),
-        new ImageLibrary(ck),
+        res(),
       );
       const l = only(p);
       if (l.space !== "composition") throw new Error("expected composition space");
@@ -299,7 +311,7 @@ describe("solid layers", () => {
         ],
         { background: "#ffffff" },
       ),
-      new ImageLibrary(ck),
+      res(),
     );
     const out = compositeReference(ck, p);
     expect(pixel(out, 5, 5)).toEqual([0, 0, 255, 255]);
@@ -405,7 +417,7 @@ describe("precomps and unsupported layers", () => {
       ]),
       nested,
     ]);
-    const p = rasterizeFrame(ck, evaluateFrame(doc, 0), new ImageLibrary(ck));
+    const p = rasterizeFrame(ck, evaluateFrame(doc, 0), res());
     expect(p.layers).toHaveLength(2);
     const [a, b] = p.layers;
     if (a?.type !== "precomp" || b?.type !== "precomp") throw new Error("expected precomps");
@@ -415,25 +427,6 @@ describe("precomps and unsupported layers", () => {
     expect(pixel(out, 105, 5)).toEqual(RED);
     expect(pixel(out, 5, 55)).toEqual(RED);
     expect(pixel(out, 115, 5)).toEqual(CLEAR);
-  });
-
-  it("report text layers as skipped instead of drawing them wrong", () => {
-    const p = plan([
-      layer("t", "text", {
-        content: { value: "Hi" },
-        box: { mode: "point" },
-        font: { family: "Inter", weight: 400, size: prop(24) },
-        tracking: prop(0),
-        leading: prop(1.2),
-        align: "left",
-        textCase: "none",
-        fill: prop("#ffffff"),
-      }),
-    ]);
-    expect(p.layers).toEqual([]);
-    expect(p.skipped).toEqual([
-      { id: "t", type: "text", reason: expect.stringContaining("M2 text") },
-    ]);
   });
 });
 
@@ -448,8 +441,8 @@ describe("raster budget", () => {
     ]);
     const frame = evaluateFrame(doc, 0);
     const images = new ImageLibrary(ck);
-    expect(rasterizeFrame(ck, frame, images, { maxRasterPixels: 200 }).layers).toHaveLength(2);
-    expect(() => rasterizeFrame(ck, frame, images, { maxRasterPixels: 199 })).toThrow(
+    expect(rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 200 }).layers).toHaveLength(2);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 199 })).toThrow(
       /needs more than 199 raster pixels/,
     );
     expect(MAX_FRAME_RASTER_PIXELS).toBe(2 ** 28);
@@ -459,8 +452,8 @@ describe("raster budget", () => {
     // A 20×10 rect crops to 22×12 = 264 pixels with the anti-aliasing pad.
     const frame = frameOf([shapeLayer("s", [rect([50, 50], [20, 10]), fill()])]);
     const images = new ImageLibrary(ck);
-    expect(rasterizeFrame(ck, frame, images, { maxRasterPixels: 264 }).layers).toHaveLength(1);
-    expect(() => rasterizeFrame(ck, frame, images, { maxRasterPixels: 263 })).toThrow(
+    expect(rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 264 }).layers).toHaveLength(1);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 263 })).toThrow(
       /needs more than 263 raster pixels/,
     );
   });
@@ -524,7 +517,10 @@ describe("determinism", () => {
     const other = await freshCanvasKit();
     const again = compositeReference(
       other,
-      rasterizeFrame(other, frameOf(scene), new ImageLibrary(other)),
+      rasterizeFrame(other, frameOf(scene), {
+        images: new ImageLibrary(other),
+        fonts: await bundledFonts(other),
+      }),
     );
     expect(sha256(again.pixels)).toBe(first);
   });

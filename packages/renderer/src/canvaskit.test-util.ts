@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { type CanvasKit, loadCanvasKit } from "./canvaskit.js";
+import { BUNDLED_FONTS, FontLibrary } from "./fonts.js";
 import type { RasterImage } from "./raster.js";
 
 const require = createRequire(import.meta.url);
@@ -15,6 +17,26 @@ export const canvasKit = () => {
   shared ??= freshCanvasKit();
   return shared;
 };
+
+/** The bundled font files, read from this package's `fonts/` directory. */
+export const bundledFontBytes = (file: string): Uint8Array =>
+  new Uint8Array(readFileSync(new URL(`../fonts/${file}`, import.meta.url)));
+
+const libraries = new WeakMap<CanvasKit, Promise<FontLibrary>>();
+
+/** A {@link FontLibrary} holding every bundled font, one per CanvasKit instance. */
+export function bundledFonts(ck: CanvasKit): Promise<FontLibrary> {
+  let library = libraries.get(ck);
+  if (library === undefined) {
+    library = (async () => {
+      const fonts = new FontLibrary(ck);
+      for (const f of BUNDLED_FONTS) await fonts.addBundled(f.family, bundledFontBytes(f.file));
+      return fonts;
+    })();
+    libraries.set(ck, library);
+  }
+  return library;
+}
 
 /** The `full` build has the PNG/JPEG encoders the default build leaves out; tests use it only to make fixtures. */
 let encoder: Promise<CanvasKit> | undefined;

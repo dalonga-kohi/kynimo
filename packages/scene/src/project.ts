@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AssetSchema } from "./asset.js";
 import { CompositionSchema, isValidFrameRate } from "./composition.js";
+import { BUNDLED_FONT_FAMILIES, isBundledFontFamily } from "./fonts.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
 import type { Keyframe } from "./keyframes.js";
 import type { Layer } from "./layer.js";
@@ -48,6 +49,10 @@ function* shapeItemIds(
 function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> {
   return layer.type !== "audio";
 }
+
+/** The bundled family `family` names, ignoring case, if any. */
+const bundledFamilyLike = (family: string) =>
+  BUNDLED_FONT_FAMILIES.find((f) => f.toLowerCase() === family.toLowerCase());
 
 type Issue = (path: Path, message: string) => void;
 
@@ -189,6 +194,34 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
     seenAssets.add(asset.id);
   });
 
+  // Font assets: a family is either bundled or uploaded, and each weight comes from one file.
+  const fontFamilies = new Set<string>();
+  project.assets.forEach((asset, i) => {
+    if (asset.type !== "font") return;
+    fontFamilies.add(asset.family);
+    const bundled = bundledFamilyLike(asset.family);
+    if (bundled !== undefined) {
+      issue(
+        ["assets", i, "family"],
+        `'${asset.family}' is the bundled font family '${bundled}' (names are compared ignoring case); give the uploaded font another family name`,
+      );
+      return;
+    }
+    const clash = project.assets.findIndex(
+      (other, j) =>
+        j < i &&
+        other.type === "font" &&
+        other.family === asset.family &&
+        other.weight.min <= asset.weight.max &&
+        asset.weight.min <= other.weight.max,
+    );
+    if (clash !== -1)
+      issue(
+        ["assets", i, "weight"],
+        `font asset '${asset.id}' covers weights that font asset '${project.assets[clash]?.id}' of family '${asset.family}' already covers; make the weight ranges disjoint`,
+      );
+  });
+
   project.compositions.forEach((comp, i) => {
     if (compositionIds.has(comp.id))
       issue(
@@ -256,6 +289,20 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
               at("assetId"),
               `asset '${layer.assetId}' is ${asset.type}, but this is a ${layer.type} layer; use a ${layer.type} asset`,
             );
+          break;
+        }
+        case "text": {
+          const family = layer.font.family;
+          if (!isBundledFontFamily(family) && !fontFamilies.has(family)) {
+            const uploaded = [...fontFamilies].sort();
+            const near = [...BUNDLED_FONT_FAMILIES, ...uploaded].find(
+              (f) => f.toLowerCase() === family.toLowerCase(),
+            );
+            issue(
+              at("font", "family"),
+              `font family '${family}' is neither bundled (${BUNDLED_FONT_FAMILIES.join(", ")}) nor a font asset of this project (${uploaded.length > 0 ? uploaded.join(", ") : "none"}).${near === undefined ? "" : ` Did you mean '${near}'?`} Use one of those or add a font asset`,
+            );
+          }
           break;
         }
         case "precomp":

@@ -49,7 +49,7 @@ describe("ProjectSchema: valid documents", () => {
             type: "text",
             content: prop("Hello"),
             box: { mode: "point" },
-            font: { family: "inter", weight: 700, size: prop(96) },
+            font: { family: "Inter", weight: 700, size: prop(96) },
             tracking: prop(0),
             leading: prop(1.2),
             align: "center",
@@ -448,6 +448,72 @@ describe("ProjectSchema: integrity", () => {
       "compositions.0.layers.0.assetId",
       "compositions.0.layers.1.assetId",
     ]);
+  });
+
+  describe("fonts", () => {
+    const font = (id: string, family: string, min: number, max: number): Obj => ({
+      id,
+      type: "font",
+      name: id,
+      uri: `assets/${id}.ttf`,
+      sha256: "c".repeat(64),
+      family,
+      weight: { min, max },
+    });
+    const text = (id: string, family: string): Obj => ({
+      ...visual(id),
+      type: "text",
+      content: prop("Hi"),
+      box: { mode: "point" },
+      font: { family, weight: 400, size: prop(48) },
+      tracking: prop(0),
+      leading: prop(1.2),
+      align: "left",
+      textCase: "none",
+      fill: prop("#ffffff"),
+    });
+
+    it("resolves text families against bundled families and font assets", () => {
+      const doc = project({
+        assets: [font("brand", "Brand Sans", 100, 900)],
+        compositions: [
+          composition("main", [
+            text("a", "Inter"),
+            text("b", "Noto Sans"),
+            text("c", "Brand Sans"),
+            text("d", "inter"),
+            text("e", "Comic Sans"),
+          ]),
+        ],
+      });
+      const found = issues(doc);
+      expect(found.map((i) => i.path)).toEqual([
+        "compositions.0.layers.3.font.family",
+        "compositions.0.layers.4.font.family",
+      ]);
+      expect(found[0]?.message).toContain("(Brand Sans). Did you mean 'Inter'? Use one");
+      expect(found[1]?.message).toContain("bundled (Inter, Noto Sans)");
+      expect(found[1]?.message).toContain("font asset of this project (Brand Sans)");
+      expect(found[1]?.message).not.toContain("Did you mean");
+      expect(found[1]?.message).toContain("(Brand Sans). Use one of those");
+    });
+
+    it("rejects font assets that shadow a bundled family or overlap in weight", () => {
+      const doc = project({
+        assets: [
+          font("a", "inter", 400, 400),
+          font("b", "Brand", 100, 400),
+          font("c", "Brand", 500, 900),
+          font("d", "Brand", 400, 500),
+          font("e", "Other", 700, 600),
+        ],
+      });
+      expect(
+        issues(doc)
+          .map((i) => i.path)
+          .sort(),
+      ).toEqual(["assets.0.family", "assets.3.weight", "assets.4.weight"]);
+    });
   });
 
   it("checks precomp targets exist", () => {

@@ -20,7 +20,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 - [x] Drawing backend decision (ADR): WebGL2 stack (ADR-0013) for blend modes, mattes, masks, the effect list and shaders, deterministic in workers (see CAPABILITIES.md, "Determinism") → ADR-0016: Skia CPU raster + own WebGL2 compositor
 - [x] Draw shapes (fill, stroke, gradients, dashes), images, solids → ADR-0017: AE paint binding, PNG + JPEG, frame plan for the compositor
-- [ ] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit)
+- [x] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit) → ADR-0019: Inter + Noto Sans fallback, font assets (format v2), After Effects point/box semantics, shrink-only auto-fit
 - [ ] Masks, track mattes, blend modes
 - [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)
 - [ ] Reference scenes (ADR-0018): title card, masked/matted reveal, nested precomp with parenting, image-and-shape product card; approved frames checked in and looked at whenever they change

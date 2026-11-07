@@ -18,12 +18,13 @@ interface PlannedBase {
 }
 
 /**
- * Vector layers are rasterized in composition space with their transform applied, so they stay
- * sharp at any scale (ADR-0016). The raster covers only the layer's bounds within the composition,
- * with its top-left corner at the whole-pixel offset (`x`, `y`): placing it needs no resampling.
+ * Vector layers (shapes and text) are rasterized in composition space with their transform
+ * applied, so they stay sharp at any scale (ADR-0016). The raster covers only the layer's bounds
+ * within the composition, with its top-left corner at the whole-pixel offset (`x`, `y`): placing
+ * it needs no resampling.
  */
-export interface PlannedShapeLayer extends PlannedBase {
-  type: "shape";
+export interface PlannedVectorLayer extends PlannedBase {
+  type: "shape" | "text";
   space: "composition";
   x: number;
   y: number;
@@ -49,13 +50,26 @@ export interface PlannedPrecompLayer extends PlannedBase {
   frame: FramePlan;
 }
 
-export type PlannedLayer = PlannedShapeLayer | PlannedLayerSpaceLayer | PlannedPrecompLayer;
+export type PlannedLayer = PlannedVectorLayer | PlannedLayerSpaceLayer | PlannedPrecompLayer;
 
 /** A layer the renderer cannot draw yet. It is left out of the frame, never drawn wrong. */
 export interface SkippedLayer {
   id: string;
-  type: "text" | "adjustment" | "component";
+  type: "adjustment" | "component";
   reason: string;
+}
+
+/**
+ * Content that draws, or would draw, other than the document asks: characters drawn with the
+ * fallback font, or with no font at all (missing-glyph boxes). Reported per layer content, even
+ * where this frame hides it. Agents act on these (ADR-0018, fidelity).
+ */
+export interface RenderWarning {
+  id: string;
+  kind: "font-fallback" | "missing-glyphs";
+  /** The affected characters, ascending; at most 32. */
+  codepoints: number[];
+  message: string;
 }
 
 /** What the compositor needs to draw one frame of one composition. */
@@ -67,4 +81,6 @@ export interface FramePlan {
   /** Top-first, like the resolved layers. Layers that cover no pixels are left out. */
   layers: PlannedLayer[];
   skipped: SkippedLayer[];
+  /** Per composition, like `skipped`: nested plans hold their own. */
+  warnings: RenderWarning[];
 }

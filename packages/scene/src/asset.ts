@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema } from "./ids.js";
 import { NameSchema } from "./primitives.js";
 
@@ -30,6 +31,19 @@ export const AssetSchema = z.discriminatedUnion("type", [
     ...base,
     type: z.literal("audio"),
     durationMs: z.number().int().positive(),
+  }),
+  /**
+   * A TrueType or OpenType font file (ADR-0019). Text layers name it by `family`. `weight` is the
+   * range the file covers: one weight for a static font, the `wght` axis range for a variable font,
+   * which is then set to the requested weight.
+   */
+  z.strictObject({
+    ...base,
+    type: z.literal("font"),
+    family: FontFamilySchema,
+    weight: z
+      .strictObject({ min: FontWeightSchema, max: FontWeightSchema })
+      .refine((w) => w.min <= w.max, "weight.min must not exceed weight.max"),
   }),
 ]);
 export type Asset = z.infer<typeof AssetSchema>;
