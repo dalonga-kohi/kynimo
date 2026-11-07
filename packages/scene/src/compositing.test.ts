@@ -83,18 +83,20 @@ describe("blend modes, track mattes and masks", () => {
     expect(issues(doc([noMasks]))).toMatchObject([{ path: "compositions.0.layers.0.masks" }]);
   });
 
-  it("rejects unknown blend and mask modes, and negative feather", () => {
+  it("rejects unknown blend and mask modes, negative feather and out-of-range expansion", () => {
     const found = issues(
       doc([
         solid("a", { blendMode: "dissolve" }),
         solid("b", { masks: [mask("m", { mode: "union" })] }),
         solid("c", { masks: [mask("m", { feather: prop([-1, 0]) })] }),
+        solid("d", { masks: [mask("m", { expansion: prop(-8193) })] }),
       ]),
     ).map((i) => i.path);
     expect(found).toEqual([
       "compositions.0.layers.0.blendMode",
       "compositions.0.layers.1.masks.0.mode",
       "compositions.0.layers.2.masks.0.feather.value.0",
+      "compositions.0.layers.3.masks.0.expansion.value",
     ]);
   });
 

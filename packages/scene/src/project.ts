@@ -336,7 +336,7 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
               : source === undefined
                 ? `'${layer.matte.layerId}' is not a layer in composition '${comp.id}'`
                 : !isDrawn(source) || source.type === "adjustment"
-                  ? `'${layer.matte.layerId}' is ${source.type === "adjustment" ? "an adjustment" : `a ${source.type}`} layer, which draws no pixels to use as a matte`
+                  ? `'${layer.matte.layerId}' is ${source.type === "adjustment" ? "an adjustment" : `${/^[aeiou]/.test(source.type) ? "an" : "a"} ${source.type}`} layer, which draws no pixels to use as a matte`
                   : null;
           if (why !== null)
             issue(

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LayerIdSchema, MaskIdSchema } from "./ids.js";
-import { NameSchema, NumberSchema, UnitIntervalSchema } from "./primitives.js";
+import { MAX_COMPOSITION_SIZE } from "./limits.js";
+import { NameSchema, UnitIntervalSchema } from "./primitives.js";
 import { BezierPathSchema, pathMorphCheck } from "./shape.js";
 import { animatable } from "./transform.js";
 
@@ -62,7 +63,7 @@ export const MASK_MODES = [
 /**
  * A mask path in layer space. Masks combine top-first in list order (ADR-0020); `none` masks are
  * kept but ignored. Feather is a per-axis blur width in layer units, expansion grows (positive) or
- * shrinks (negative) the path in layer units, and `inverted` flips the path's coverage before
+ * shrinks (negative) the path in layer units (at most the composition size limit either way), and `inverted` flips the path's coverage before
  * opacity scales it.
  */
 export const MaskSchema = z.strictObject({
@@ -73,7 +74,7 @@ export const MaskSchema = z.strictObject({
   path: animatable(BezierPathSchema, pathMorphCheck),
   feather: animatable(z.tuple([z.number().min(0).max(1000), z.number().min(0).max(1000)])),
   opacity: animatable(UnitIntervalSchema),
-  expansion: animatable(NumberSchema),
+  expansion: animatable(z.number().min(-MAX_COMPOSITION_SIZE).max(MAX_COMPOSITION_SIZE)),
 });
 export type Mask = z.infer<typeof MaskSchema>;
 export type MaskMode = Mask["mode"];

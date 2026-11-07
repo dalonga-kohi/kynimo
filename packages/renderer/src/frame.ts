@@ -23,7 +23,7 @@ import { rasterizeTextLayer, textWarnings } from "./text.js";
 
 export { RenderError };
 
-const NOT_YET: Record<SkippedLayer["type"], string> = {
+const NOT_YET: Record<"adjustment" | "component", string> = {
   adjustment: "adjustment layers apply effects, which arrive in M4",
   component: "component evaluation arrives in M6",
 };
@@ -127,6 +127,17 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const planned = new Map<string, PlannedLayer | null>();
   const plan = (layer: ResolvedLayer): PlannedLayer | null => {
     if (planned.has(layer.id)) return planned.get(layer.id) ?? null;
+    const blocker = undrawableMatteSource(layer);
+    if (blocker !== null) {
+      // An empty matte would hide (or fully show) the layer: drawn wrong, so leave it out instead.
+      skipped.push({
+        id: layer.id,
+        type: layer.type,
+        reason: `its track matte source '${blocker.id}' is a ${blocker.type} layer, which cannot be drawn yet`,
+      });
+      planned.set(layer.id, null);
+      return null;
+    }
     let result = planContent(layer);
     if (result !== null && layer.masks.length > 0) {
       const { width, height, toRaster } = rasterSpace(result, layer.matrix);
@@ -167,6 +178,16 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     skipped,
     warnings,
   };
+}
+
+/**
+ * The first layer along `layer`'s matte chain that the renderer cannot draw yet, if any. Chains are
+ * finite: the schema rules out matte cycles.
+ */
+function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
+  for (let s = layer.matte?.source ?? null; s !== null; s = s.matte?.source ?? null)
+    if (s.type === "adjustment" || s.type === "component") return s;
+  return null;
 }
 
 /** The size of a planned layer's raster space and the map from its layer space into it. */

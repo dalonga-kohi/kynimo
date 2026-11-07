@@ -1,4 +1,4 @@
-import type { Affine, Rgba } from "@kynimo/engine";
+import type { Affine, ResolvedLayer, Rgba } from "@kynimo/engine";
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
 
 /**
@@ -84,10 +84,13 @@ export interface PlannedPrecompLayer extends PlannedBase {
 
 export type PlannedLayer = PlannedVectorLayer | PlannedLayerSpaceLayer | PlannedPrecompLayer;
 
-/** A layer the renderer cannot draw yet. It is left out of the frame, never drawn wrong. */
+/**
+ * A layer the renderer cannot draw yet. It is left out of the frame, never drawn wrong. Besides
+ * adjustment and component layers, that is any layer whose track matte chain reaches one.
+ */
 export interface SkippedLayer {
   id: string;
-  type: "adjustment" | "component";
+  type: ResolvedLayer["type"];
   reason: string;
 }
 

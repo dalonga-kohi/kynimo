@@ -131,6 +131,11 @@ describe("rasterizeMasks", () => {
     expect(cover([resolved(box(8, 8, 12, 12), { expansion: -3 })])).toBe("empty");
   });
 
+  it("clamps expansion to the composition size limit, so huge values cover everything or nothing", () => {
+    expect(cover([resolved(box(8, 8, 12, 12), { expansion: -1e300 })])).toBe("empty");
+    expect(cover([resolved(box(8, 8, 12, 12), { expansion: 1e300 })])).toBeNull();
+  });
+
   it("feathers edges symmetrically, per axis", () => {
     const c = cover([resolved(box(-20, -20, 20, 40), { feather: [6, 0] })], IDENTITY, 40, 20);
     // The edge at x = 20 sits at half coverage, with a ramp the feather wide.
@@ -310,18 +315,26 @@ describe("rasterizeFrame: blend modes and track mattes", () => {
     expect(masked.matte?.source).toBeNull();
   });
 
-  it("reports a matte source it cannot draw yet as skipped", () => {
+  it("skips, and reports, a layer whose matte chain reaches a layer it cannot draw yet", () => {
     const plan = planOf([
-      solid("t", { matte: { layerId: "c", mode: "alpha" } }),
+      solid("t", { matte: { layerId: "b", mode: "alpha" } }),
+      solid("b", { hidden: true, matte: { layerId: "c", mode: "alpha-inverted" } }),
       layer("c", "component", {
         hidden: true,
         componentId: "badge",
         componentVersion: "1.0.0",
         props: {},
       }),
+      solid("free"),
     ]);
-    expect(only(plan).matte?.source).toBeNull();
-    expect(plan.skipped).toMatchObject([{ id: "c", type: "component" }]);
+    expect(plan.layers.map((l) => l.id)).toEqual(["free"]);
+    expect(plan.skipped).toEqual([
+      {
+        id: "t",
+        type: "solid",
+        reason: "its track matte source 'c' is a component layer, which cannot be drawn yet",
+      },
+    ]);
   });
 
   it("refuses to draw blend modes or mattes in the reference composite", () => {

@@ -1,4 +1,5 @@
 import type { Affine, ResolvedMask } from "@kynimo/engine";
+import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import type { CanvasKit, Path } from "canvaskit-wasm";
 import { bezierContour } from "./geometry.js";
 import type { CoverageImage } from "./raster.js";
@@ -114,14 +115,16 @@ function rasterizeMask(
  */
 function expandedPath(ck: CanvasKit, mask: ResolvedMask, own: Own): Path | null {
   const path = own(buildPath(ck, [bezierContour(mask.path)], false));
-  const e = mask.expansion;
+  // The engine clamps to this range already; past it Skia builds degenerate strokes, not none.
+  const e = Math.min(MAX_COMPOSITION_SIZE, Math.max(-MAX_COMPOSITION_SIZE, mask.expansion));
   if (e === 0 || !mask.path.closed) return mask.path.closed ? path : null;
   const stroked = path.makeStroked({
     width: 2 * Math.abs(e),
     join: ck.StrokeJoin.Round,
     cap: ck.StrokeCap.Round,
   });
-  if (stroked === null) return path;
+  // Skia gives up on absurd widths; growing by that much covers everything, shrinking leaves nothing.
+  if (stroked === null) return e > 0 ? path : null;
   own(stroked);
   const result = ck.Path.MakeFromOp(path, stroked, e > 0 ? ck.PathOp.Union : ck.PathOp.Difference);
   return result === null ? null : own(result);

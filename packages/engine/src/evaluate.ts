@@ -8,6 +8,7 @@ import type {
   Project,
   ShapeItem,
 } from "@kynimo/scene";
+import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { parseColor } from "./color.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
@@ -231,7 +232,7 @@ function charge(ctx: Context, comp: Composition): void {
   ctx.budget -= cost;
   if (ctx.budget < 0)
     throw new RangeError(
-      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, path vertices, gradient stops); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
+      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, masks, path and mask vertices, gradient stops); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
     );
 }
 
@@ -249,6 +250,10 @@ type Base = Pick<
   "id" | "name" | "layerFrame" | "transform" | "matrix" | "blendMode" | "masks" | "matte"
 >;
 
+/** Keeps eased overshoot inside the schema's range, so the renderer never strokes absurd widths. */
+const clampExpansion = (e: number) =>
+  Math.min(MAX_COMPOSITION_SIZE, Math.max(-MAX_COMPOSITION_SIZE, e));
+
 function resolveMasks(masks: readonly Mask[], frame: number, fps: FrameRate): ResolvedMask[] {
   const resolved: ResolvedMask[] = [];
   for (const mask of masks) {
@@ -260,7 +265,7 @@ function resolveMasks(masks: readonly Mask[], frame: number, fps: FrameRate): Re
       path: samplePath(mask.path, frame, fps),
       feather: sampleSize(mask.feather, frame, fps),
       opacity: sampleUnit(mask.opacity, frame, fps),
-      expansion: sampleNumber(mask.expansion, frame, fps),
+      expansion: clampExpansion(sampleNumber(mask.expansion, frame, fps)),
     });
   }
   return resolved;

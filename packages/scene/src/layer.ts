@@ -57,8 +57,8 @@ const visual = {
 
 /**
  * Layers that put pixels in the frame: everything visual but null layers. Order of operations
- * follows After Effects (ADR-0020): masks, then (M4) effects, then the transform, the track matte
- * and finally the blend mode against the layers below.
+ * follows After Effects (ADR-0020): masks, then (M4) effects, then the transform, the track matte,
+ * opacity and finally the blend mode against the layers below.
  */
 const drawn = {
   ...visual,
