@@ -50,6 +50,11 @@ function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> 
   return layer.type !== "audio";
 }
 
+/** Layers that put pixels in the frame and so carry a blend mode, a track matte and masks. */
+function isDrawn(layer: Layer): layer is Exclude<Layer, { type: "audio" | "null" }> {
+  return layer.type !== "audio" && layer.type !== "null";
+}
+
 /** The bundled family `family` names, ignoring case, if any. */
 const bundledFamilyLike = (family: string) =>
   BUNDLED_FONT_FAMILIES.find((f) => f.toLowerCase() === family.toLowerCase());
@@ -174,6 +179,44 @@ function checkPrecompCycles(project: Project, issue: Issue): void {
 }
 
 /**
+ * Cycles in a per-layer link (parent, track matte), linear time. Each layer links to at most one
+ * other, so walk each unvisited chain once: reaching a layer that is on the current walk closes a
+ * cycle. Reported once, on its first member in layer order, with the loop starting there.
+ */
+function checkChainCycles(
+  layers: readonly Layer[],
+  next: (layer: Layer) => string | null,
+  report: (layerIndex: number, loop: string[]) => void,
+): void {
+  const byId = new Map(layers.map((l) => [l.id as string, l]));
+  const indexOf = new Map(layers.map((l, i) => [l.id as string, i]));
+  const state = new Map<string, 1 | 2>(); // 1 = on the current walk, 2 = finished
+  for (const start of layers) {
+    if (state.has(start.id)) continue;
+    const walk: string[] = [];
+    let current: string | null = start.id;
+    while (current !== null) {
+      const seen = state.get(current);
+      if (seen === 2) break;
+      if (seen === 1) {
+        const cycle = walk.slice(walk.indexOf(current));
+        const first = cycle.reduce((a, b) =>
+          (indexOf.get(b) ?? 0) < (indexOf.get(a) ?? 0) ? b : a,
+        );
+        const at = cycle.indexOf(first);
+        report(indexOf.get(first) ?? 0, [...cycle.slice(at), ...cycle.slice(0, at), first]);
+        break;
+      }
+      state.set(current, 1);
+      walk.push(current);
+      const layer = byId.get(current);
+      current = layer === undefined ? null : next(layer);
+    }
+    for (const id of walk) state.set(id, 2);
+  }
+}
+
+/**
  * Cross-reference checks that a field-level schema cannot express. Every message
  * names the location and the change that fixes it, so an agent can act on it.
  */
@@ -275,6 +318,34 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
           );
       }
 
+      if (isDrawn(layer)) {
+        const seenMasks = new Set<string>();
+        layer.masks.forEach((mask, mi) => {
+          if (seenMasks.has(mask.id))
+            issue(
+              at("masks", mi, "id"),
+              `duplicate mask id '${mask.id}' in layer '${layer.id}'; mask ids are unique within a layer, rename one`,
+            );
+          seenMasks.add(mask.id);
+        });
+        if (layer.matte !== null) {
+          const source = layerById.get(layer.matte.layerId);
+          const why =
+            layer.matte.layerId === layer.id
+              ? "a layer cannot be its own track matte"
+              : source === undefined
+                ? `'${layer.matte.layerId}' is not a layer in composition '${comp.id}'`
+                : !isDrawn(source) || source.type === "adjustment"
+                  ? `'${layer.matte.layerId}' is ${source.type === "adjustment" ? "an adjustment" : `a ${source.type}`} layer, which draws no pixels to use as a matte`
+                  : null;
+          if (why !== null)
+            issue(
+              at("matte", "layerId"),
+              `${why}; set matte to null or to a shape, text, image, solid, precomp or component layer of this composition`,
+            );
+        }
+      }
+
       switch (layer.type) {
         case "image":
         case "audio": {
@@ -343,37 +414,28 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
     for (const [li, layer] of comp.layers.entries())
       checkMarkers(layer.markers, ["compositions", ci, "layers", li, "markers"]);
 
-    // Parent cycles, linear time. Each layer has at most one parent, so walk each unvisited chain once:
-    // reaching a layer that is on the current walk closes a cycle. Reported once, on its first member in layer order.
-    const indexOf = new Map(comp.layers.map((l, i) => [l.id as string, i]));
-    const state = new Map<string, 1 | 2>(); // 1 = on the current walk, 2 = finished
-    for (const start of comp.layers) {
-      if (state.has(start.id)) continue;
-      const walk: string[] = [];
-      let current: string | null = start.id;
-      while (current !== null) {
-        const seen = state.get(current);
-        if (seen === 2) break;
-        if (seen === 1) {
-          const cycle = walk.slice(walk.indexOf(current));
-          const first = cycle.reduce((a, b) =>
-            (indexOf.get(b) ?? 0) < (indexOf.get(a) ?? 0) ? b : a,
-          );
-          const at = cycle.indexOf(first);
-          const ordered = [...cycle.slice(at), ...cycle.slice(0, at)];
-          issue(
-            ["compositions", ci, "layers", indexOf.get(first) ?? 0, "parent"],
-            `parenting cycle: ${[...ordered, first].join(" -> ")}; set parent to null on one of these layers`,
-          );
-          break;
-        }
-        state.set(current, 1);
-        walk.push(current);
-        const layer = layerById.get(current);
-        current = layer !== undefined && hasTransform(layer) ? layer.parent : null;
-      }
-      for (const id of walk) state.set(id, 2);
-    }
+    checkChainCycles(
+      comp.layers,
+      (layer) => (hasTransform(layer) ? layer.parent : null),
+      (li, ids) =>
+        issue(
+          ["compositions", ci, "layers", li, "parent"],
+          `parenting cycle: ${ids.join(" -> ")}; set parent to null on one of these layers`,
+        ),
+    );
+    checkChainCycles(
+      comp.layers,
+      // A self-reference is reported above, not again as a one-layer cycle.
+      (layer) =>
+        isDrawn(layer) && layer.matte !== null && layer.matte.layerId !== layer.id
+          ? layer.matte.layerId
+          : null,
+      (li, ids) =>
+        issue(
+          ["compositions", ci, "layers", li, "matte", "layerId"],
+          `track matte cycle: ${ids.join(" -> ")}; set matte to null on one of these layers`,
+        ),
+    );
   });
 
   checkPrecompCycles(project, issue);

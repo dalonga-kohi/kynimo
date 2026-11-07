@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BlendModeSchema, MAX_MASKS, MaskSchema, TrackMatteSchema } from "./compositing.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
 import { MAX_COMPOSITION_SIZE } from "./limits.js";
@@ -54,8 +55,20 @@ const visual = {
   transform: TransformSchema,
 };
 
-export const ShapeLayerSchema = z.strictObject({
+/**
+ * Layers that put pixels in the frame: everything visual but null layers. Order of operations
+ * follows After Effects (ADR-0020): masks, then (M4) effects, then the transform, the track matte
+ * and finally the blend mode against the layers below.
+ */
+const drawn = {
   ...visual,
+  blendMode: BlendModeSchema,
+  matte: TrackMatteSchema.nullable(),
+  masks: z.array(MaskSchema).max(MAX_MASKS),
+};
+
+export const ShapeLayerSchema = z.strictObject({
+  ...drawn,
   type: z.literal("shape"),
   contents: z.array(ShapeItemSchema).max(MAX_SHAPE_ITEMS),
 });
@@ -72,7 +85,7 @@ const TextBoxSchema = z.discriminatedUnion("mode", [
 
 /** `font.family` names a bundled family or a font asset of the project (ADR-0019). */
 export const TextLayerSchema = z.strictObject({
-  ...visual,
+  ...drawn,
   type: z.literal("text"),
   /**
    * Constant for now, but wrapped as `{ value }`: keyframed source text is `v1.x` and will allow
@@ -95,13 +108,13 @@ export const TextLayerSchema = z.strictObject({
 });
 
 export const ImageLayerSchema = z.strictObject({
-  ...visual,
+  ...drawn,
   type: z.literal("image"),
   assetId: AssetIdSchema,
 });
 
 export const SolidLayerSchema = z.strictObject({
-  ...visual,
+  ...drawn,
   type: z.literal("solid"),
   width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
@@ -112,17 +125,17 @@ export const SolidLayerSchema = z.strictObject({
 export const NullLayerSchema = z.strictObject({ ...visual, type: z.literal("null") });
 
 export const PrecompLayerSchema = z.strictObject({
-  ...visual,
+  ...drawn,
   type: z.literal("precomp"),
   compositionId: CompositionIdSchema,
 });
 
 /** Effects on an adjustment layer apply to everything below it (effects arrive in M4). */
-export const AdjustmentLayerSchema = z.strictObject({ ...visual, type: z.literal("adjustment") });
+export const AdjustmentLayerSchema = z.strictObject({ ...drawn, type: z.literal("adjustment") });
 
 /** Instance of a component. `props` are validated against the component's own schema (M6). */
 export const ComponentLayerSchema = z.strictObject({
-  ...visual,
+  ...drawn,
   type: z.literal("component"),
   componentId: z.string().regex(ID_PATTERN),
   /** Pinned like the style pack: a new component version never changes an existing document. */
