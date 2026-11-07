@@ -27,6 +27,7 @@ export const layer = (id: string, type: string, overrides: Obj = {}): Obj => ({
   markers: [],
   parent: null,
   transform: transform(),
+  ...(type === "audio" || type === "null" ? {} : { blendMode: "normal", matte: null, masks: [] }),
   type,
   ...overrides,
 });

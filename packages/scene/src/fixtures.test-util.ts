@@ -25,14 +25,20 @@ export const common = (id: string): Obj => ({
   markers: [],
 });
 
+/** A drawing layer's common fields; spread it and add `type` and the type's own fields. */
 export const visual = (id: string, parent: string | null = null): Obj => ({
   ...common(id),
   parent,
   transform: transform(),
+  blendMode: "normal",
+  matte: null,
+  masks: [],
 });
 
 export const nullLayer = (id: string, parent: string | null = null): Obj => ({
-  ...visual(id, parent),
+  ...common(id),
+  parent,
+  transform: transform(),
   type: "null",
 });
 

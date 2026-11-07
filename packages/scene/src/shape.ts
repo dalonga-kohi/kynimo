@@ -66,7 +66,7 @@ export const BezierPathSchema = z.strictObject({
 export type BezierPath = z.infer<typeof BezierPathSchema>;
 
 /** Morphing needs the same topology on every keyframe. Different vertex counts are `v1.x`. */
-const pathMorphCheck = (keyframes: Keyframe<BezierPath>[], ctx: z.RefinementCtx): void => {
+export const pathMorphCheck = (keyframes: Keyframe<BezierPath>[], ctx: z.RefinementCtx): void => {
   const first = keyframes[0]?.value;
   if (first === undefined) return;
   keyframes.forEach((kf, i) => {

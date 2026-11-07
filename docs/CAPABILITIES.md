@@ -174,7 +174,7 @@ Code is a first-class way to build (ADR-0012). Agents and users write custom com
 
 ## Determinism
 
-The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled and uploaded fonts pinned by content hash (missing glyphs fall back to a pinned bundled font), pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is split (ADR-0016): CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, masks, the effect list and shaders, on SwiftShader in workers. Shaders get only their declared inputs (ADR-0012), never wall-clock time.
+The invariant is "same document + same frame → same pixels". It's guaranteed where frames are produced: headless Chromium workers on a pinned browser version and a pinned software rasterizer, with bundled and uploaded fonts pinned by content hash (missing glyphs fall back to a pinned bundled font), pre-decoded video and seeded randomness. The live preview in a user's browser uses the same drawing code and is visually equivalent but not bit-identical across GPUs and drivers. Drawing is split (ADR-0016): CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, mask application (mask coverage is rasterized on the CPU, ADR-0020), the effect list and shaders, on SwiftShader in workers. Shaders get only their declared inputs (ADR-0012), never wall-clock time.
 
 ## MCP surface
 

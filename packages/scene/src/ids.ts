@@ -28,3 +28,7 @@ export type MarkerId = z.infer<typeof MarkerIdSchema>;
 /** Id of an item inside a shape layer's contents tree. Unique within its layer. */
 export const ShapeItemIdSchema = id("ShapeItemId");
 export type ShapeItemId = z.infer<typeof ShapeItemIdSchema>;
+
+/** Id of a mask. Unique within its layer. */
+export const MaskIdSchema = id("MaskId");
+export type MaskId = z.infer<typeof MaskIdSchema>;

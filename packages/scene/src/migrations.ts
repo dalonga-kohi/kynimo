@@ -43,10 +43,32 @@ function canonicalBundledFamilies(doc: Json): Json {
 }
 
 /**
+ * 2 → 3: drawing layers (all visual layers but null) gain a blend mode, a track matte and masks
+ * (ADR-0020). Version 2 drew every layer normally, unmatted and unmasked, which is exactly what
+ * the defaults say, so every document renders as before.
+ */
+function addCompositingFields(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers) {
+      if (!isJson(layer) || layer.type === "audio" || layer.type === "null") continue;
+      if (!("blendMode" in layer)) layer.blendMode = "normal";
+      if (!("matte" in layer)) layer.matte = null;
+      if (!("masks" in layer)) layer.masks = [];
+    }
+  }
+  return doc;
+}
+
+/**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
  */
-export const MIGRATIONS: readonly Migration[] = [{ from: 1, migrate: canonicalBundledFamilies }];
+export const MIGRATIONS: readonly Migration[] = [
+  { from: 1, migrate: canonicalBundledFamilies },
+  { from: 2, migrate: addCompositingFields },
+];
 
 export interface MigrationError {
   path: (string | number)[];

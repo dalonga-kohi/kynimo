@@ -64,7 +64,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 ### 4. Renderer — `@kynimo/renderer`
 
-- v1: the scene is evaluated per frame and drawn in the browser: CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, masks, effects and shaders (ADR-0013, ADR-0016); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
+- v1: the scene is evaluated per frame and drawn in the browser: CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, mask application, effects and shaders (ADR-0013, ADR-0016, ADR-0020); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
 - Deterministic: bundled and uploaded fonts pinned by hash, with missing glyphs falling back only to bundled Noto Sans (ADR-0019), pre-decoded video, seeded randomness, no wall-clock time.
 - Encoding to MP4/WebM/GIF via FFmpeg in workers.
 

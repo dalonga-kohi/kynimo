@@ -163,6 +163,65 @@ describe("migrateProject", () => {
     });
   });
 
+  it("2 → 3 adds normal blending, no matte and no masks to drawing layers only", () => {
+    const base = {
+      inFrame: 0,
+      outFrame: 90,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+    };
+    const transform = {
+      anchorPoint: { value: [0, 0] },
+      position: { value: [0, 0] },
+      scale: { value: [1, 1] },
+      rotation: { value: 0 },
+      skew: { value: 0 },
+      opacity: { value: 1 },
+    };
+    const solid = { ...base, id: "s", name: "s", parent: null, transform, type: "solid" };
+    const v2 = {
+      ...(project() as Record<string, unknown>),
+      formatVersion: 2,
+      assets: [
+        {
+          id: "music",
+          type: "audio",
+          name: "Music",
+          uri: "assets/music.mp3",
+          sha256: "b".repeat(64),
+          durationMs: 1000,
+        },
+      ],
+      compositions: [
+        {
+          id: "main",
+          name: "main",
+          width: 1920,
+          height: 1080,
+          fps: { num: 30, den: 1 },
+          durationFrames: 90,
+          background: "#000000",
+          markers: [],
+          layers: [
+            { ...solid, width: 10, height: 10, color: "#ff0000" },
+            { ...base, id: "n", name: "n", parent: null, transform, type: "null" },
+            { ...base, id: "a", name: "a", type: "audio", assetId: "music", volume: { value: 1 } },
+          ],
+        },
+      ],
+    };
+    const r = migrateProject(v2);
+    expect(r).toMatchObject({ ok: true, from: 2, to: 3 });
+    if (!r.ok) return;
+    const [drawn, nul, audio] = r.doc.compositions[0]?.layers ?? [];
+    expect(drawn).toMatchObject({ blendMode: "normal", matte: null, masks: [] });
+    expect(nul).not.toHaveProperty("blendMode");
+    expect(audio).not.toHaveProperty("masks");
+  });
+
   it("rejects unknown and future versions", () => {
     expect(migrateProject({ ...project(), formatVersion: 99 })).toMatchObject({ ok: false });
     expect(migrateProject(null)).toMatchObject({ ok: false });
