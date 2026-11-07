@@ -1,6 +1,6 @@
 # 0016 — Drawing backend: Skia CPU raster + own WebGL2 compositor
 
-- Status: accepted (narrows ADR-0013's WebGL2 direction to an exact stack)
+- Status: accepted (narrows ADR-0013's WebGL2 direction to an exact stack; amended by ADR-0020: mask coverage is computed on the CPU)
 - Date: 2026-11-06
 
 ## Context
@@ -38,7 +38,7 @@ The renderer has two halves that meet at premultiplied RGBA textures.
   - Text is shaped and laid out by CanvasKit's Paragraph API (HarfBuzz inside the WASM). Its font manager gets only fonts we hand it (bundled, or uploaded and pinned by hash). System fonts are never consulted, so missing glyphs fall back only to a pinned bundled font (ADR-0013). Font loading, fallback order and layout are decided in the M2 text item.
   - CanvasKit's GPU backend and SkSL runtime effects are not used.
 - **Compositor: our own WebGL2 code in `@kynimo/renderer`, no framework.**
-  - Blend modes, track mattes, masks (feathering, combining and applying the paths Skia rasterized), adjustment layers, the effect list, and built-in and custom GLSL ES 3.00 shaders are all our own full-screen or bounded passes over layer textures.
+  - Blend modes, track mattes, applying masks (ADR-0020 moved feathering and combining them to the rasterizer), adjustment layers, the effect list, and built-in and custom GLSL ES 3.00 shaders are all our own full-screen or bounded passes over layer textures.
   - Intermediate targets are RGBA16F and premultiplied, which avoids the banding of 8-bit chains in blurs and glows. The final output is quantized to RGBA8.
   - Blending runs on sRGB-encoded values, which matches After Effects' default (non-linear) working space. A linear-blending project setting can come later as an additive switch.
 - **Workers launch the pinned Chromium with `--use-angle=swiftshader --enable-unsafe-swiftshader`.** On a host with a GPU, Chromium would otherwise use the GPU. The worker reads `UNMASKED_RENDERER_WEBGL` at startup and refuses to render unless it reports SwiftShader.
