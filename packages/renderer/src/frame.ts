@@ -1,8 +1,15 @@
-import type { ResolvedComposition, ResolvedSolidLayer } from "@kynimo/engine";
+import {
+  type Affine,
+  multiply,
+  type ResolvedComposition,
+  type ResolvedLayer,
+  type ResolvedSolidLayer,
+} from "@kynimo/engine";
 import type { CanvasKit } from "canvaskit-wasm";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary } from "./images.js";
+import { rasterizeMasks } from "./masks.js";
 import type {
   FramePlan,
   PlannedLayer,
@@ -66,62 +73,92 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         `the frame of composition '${comp.id}' needs more than ${ctx.limit} raster pixels; use fewer or smaller layers`,
       );
   };
-  const layers: PlannedLayer[] = [];
   const skipped: SkippedLayer[] = [];
   const warnings: RenderWarning[] = [];
-  for (const layer of comp.layers) {
-    const { id } = layer;
-    const opacity = layer.transform.opacity;
+
+  /** The layer's pixels without masks or matte; `null` when it draws nothing. */
+  const planContent = (layer: ResolvedLayer): PlannedLayer | null => {
+    const { id, blendMode } = layer;
+    const base = { id, opacity: layer.transform.opacity, blendMode, mask: null, matte: null };
     switch (layer.type) {
       case "shape": {
         const drawn = rasterizeShapeLayer(ck, layer, comp.width, comp.height, reserve);
-        if (drawn !== null)
-          layers.push({ type: "shape", space: "composition", id, opacity, ...drawn });
-        break;
+        return drawn === null ? null : { ...base, type: "shape", space: "composition", ...drawn };
       }
       case "text": {
         warnings.push(...textWarnings(ck, ctx.fonts, layer));
         const drawn = rasterizeTextLayer(ck, ctx.fonts, layer, comp.width, comp.height, reserve);
-        if (drawn !== null)
-          layers.push({ type: "text", space: "composition", id, opacity, ...drawn });
-        break;
+        return drawn === null ? null : { ...base, type: "text", space: "composition", ...drawn };
       }
       case "solid":
         reserve(layer.width, layer.height);
-        layers.push({
+        return {
+          ...base,
           type: "solid",
           space: "layer",
-          id,
-          opacity,
           matrix: layer.matrix,
           raster: solidRaster(ck, layer),
-        });
-        break;
+        };
       case "image": {
         const raster = ctx.images.get(layer.assetId);
         if (raster === undefined)
           throw new RenderError(
             `layer '${id}' shows image asset '${layer.assetId}', which was not loaded into the ImageLibrary`,
           );
-        layers.push({ type: "image", space: "layer", id, opacity, matrix: layer.matrix, raster });
-        break;
+        return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
       }
       case "precomp": {
-        if (layer.composition === null) break;
+        if (layer.composition === null) return null;
         let frame = ctx.nested.get(layer.composition);
         if (frame === undefined) {
           frame = planComposition(ctx, layer.composition);
           ctx.nested.set(layer.composition, frame);
         }
-        layers.push({ type: "precomp", space: "layer", id, opacity, matrix: layer.matrix, frame });
-        break;
+        return { ...base, type: "precomp", space: "layer", matrix: layer.matrix, frame };
       }
       case "adjustment":
       case "component":
         skipped.push({ id, type: layer.type, reason: NOT_YET[layer.type] });
-        break;
+        return null;
     }
+  };
+
+  /** Planned once per layer: a layer that is both drawn and a matte source is one object. */
+  const planned = new Map<string, PlannedLayer | null>();
+  const plan = (layer: ResolvedLayer): PlannedLayer | null => {
+    if (planned.has(layer.id)) return planned.get(layer.id) ?? null;
+    let result = planContent(layer);
+    if (result !== null && layer.masks.length > 0) {
+      const { width, height, toRaster } = rasterSpace(result, layer.matrix);
+      const mask = rasterizeMasks(ck, layer.masks, toRaster, width, height, reserve);
+      if (mask === "empty") result = null;
+      else result.mask = mask;
+    }
+    planned.set(layer.id, result);
+    return result;
+  };
+
+  const layers: PlannedLayer[] = [];
+  const pending: { resolved: ResolvedLayer; planned: PlannedLayer }[] = [];
+  for (const layer of comp.layers) {
+    const result = plan(layer);
+    if (result === null) continue;
+    layers.push(result);
+    pending.push({ resolved: layer, planned: result });
   }
+  // Mattes, linked in a second pass like the engine's: no recursion along chains.
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const matte = next.resolved.matte;
+    if (matte === null) continue;
+    let source: PlannedLayer | null = null;
+    if (matte.source !== null) {
+      const known = planned.has(matte.source.id);
+      source = plan(matte.source);
+      if (!known && source !== null) pending.push({ resolved: matte.source, planned: source });
+    }
+    next.planned.matte = { layerId: matte.layerId, mode: matte.mode, source };
+  }
+
   return {
     width: comp.width,
     height: comp.height,
@@ -130,6 +167,21 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     skipped,
     warnings,
   };
+}
+
+/** The size of a planned layer's raster space and the map from its layer space into it. */
+function rasterSpace(
+  layer: PlannedLayer,
+  matrix: Affine,
+): { width: number; height: number; toRaster: Affine } {
+  if (layer.space === "composition")
+    return {
+      width: layer.raster.width,
+      height: layer.raster.height,
+      toRaster: multiply([1, 0, 0, 1, -layer.x, -layer.y], matrix),
+    };
+  const { width, height } = layer.type === "precomp" ? layer.frame : layer.raster;
+  return { width, height, toRaster: [1, 0, 0, 1, 0, 0] };
 }
 
 function solidRaster(ck: CanvasKit, layer: ResolvedSolidLayer): RasterImage {

@@ -1,4 +1,5 @@
 import type { Affine, Rgba } from "@kynimo/engine";
+import type { BlendMode, TrackMatte } from "@kynimo/scene";
 
 /**
  * Pixels for the compositor to upload as a texture: 8-bit RGBA, premultiplied alpha, sRGB-encoded,
@@ -11,10 +12,41 @@ export interface RasterImage {
   readonly pixels: Uint8Array;
 }
 
+/**
+ * One coverage value per pixel (0 = masked out, 255 = kept), rows top to bottom with no padding
+ * (`coverage.length === width * height`). Same size and space as the layer's raster.
+ */
+export interface CoverageImage {
+  readonly width: number;
+  readonly height: number;
+  readonly coverage: Uint8Array;
+}
+
 interface PlannedBase {
   id: string;
   /** Layer opacity, applied by the compositor (it belongs to the layer, not its pixels). */
   opacity: number;
+  /** Ignored while the layer serves as a matte. */
+  blendMode: BlendMode;
+  /**
+   * The layer's masks combined (ADR-0020), in the layer's raster space: the compositor multiplies
+   * the raster (or, for a precomp, the composited nested frame) by it before anything else.
+   * `null` when the layer has no masks or they keep every pixel.
+   */
+  mask: CoverageImage | null;
+  matte: PlannedMatte | null;
+}
+
+/**
+ * The layer whose alpha or luma mattes this one, planned with its own mask and matte; it may not
+ * be in the plan's `layers` (a hidden source). `source` is `null` for an empty matte: the source
+ * is outside its time range, draws nothing, or cannot be drawn yet. A layer that is both drawn
+ * and a matte is one shared object.
+ */
+export interface PlannedMatte {
+  layerId: string;
+  mode: TrackMatte["mode"];
+  source: PlannedLayer | null;
 }
 
 /**
@@ -78,7 +110,7 @@ export interface FramePlan {
   height: number;
   /** Straight-alpha sRGB; `null` renders transparent (nested compositions). */
   background: Rgba | null;
-  /** Top-first, like the resolved layers. Layers that cover no pixels are left out. */
+  /** Top-first, like the resolved layers. Layers that cover no pixels (masks included) are left out. */
   layers: PlannedLayer[];
   skipped: SkippedLayer[];
   /** Per composition, like `skipped`: nested plans hold their own. */
