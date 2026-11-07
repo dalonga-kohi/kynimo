@@ -34,7 +34,7 @@ The author is usually another AI session. Your job is to catch what it missed be
 
 **Agent contracts** (ADR-0018)
 
-- Render paths report what they skip; nothing unsupported is dropped silently. Render tools declare and enforce their limits. Write tools are retry-safe (idempotency key). Importers and exporters return a fidelity report. Changed reference frames were looked at, not just regenerated.
+- Render paths report what they skip; nothing unsupported is dropped silently. Render tools declare and enforce their limits. Every mutating tool takes an idempotency key scoped to project + actor. Importers and exporters return a fidelity report. A PR that adds or changes reference PNGs shows them, and the reviewer opens each changed PNG.
 
 **Security**
 

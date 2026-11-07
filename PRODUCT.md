@@ -47,7 +47,7 @@ Agent ──MCP──▶ Kynimo Cloud
 - Built-in guideline packs + component library v1.
 - Preview frames, quality report, MP4 / WebM / GIF export, shareable preview links.
 - Music track with beat markers (motion timed to the beat).
-- Simple web editor on the same operations: sign in, project list, viewer, timeline, layers, inspector, basic keyframe editing, share links. Usable on its own; most users will work through their assistant.
+- Simple web editor on the same operations: sign in, project list, viewer, timeline, layers, inspector, basic keyframe editing, an easing/spring and motion-path timing editor (ADR-0018), share links. Usable on its own; most users will work through their assistant.
 
 ## Non-goals (for now)
 

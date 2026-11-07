@@ -30,7 +30,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops`
 - [ ] `render_frames` + `render_contact_sheet` returning images, with declared limits, a render cache and skipped-feature reporting (ADR-0018); `describe_motion` timeline summary
 - [ ] MCP resources: scene schema, preset/component/token catalogs; capability manifest as a resource and `get_capabilities` tool (ADR-0018)
-- [ ] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on `apply_ops`, batch outcome lookup, undo history persisted with the project (ADR-0018)
+- [ ] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on every write, `get_write_outcome`, undo history persisted with the project (ADR-0018)
 - [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, SVG, fonts)
 - [ ] Video assets: FFmpeg pre-decode to frames at upload; draw video layers
 - [ ] Remote transport (Streamable HTTP) + OAuth
