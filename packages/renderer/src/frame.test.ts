@@ -10,7 +10,7 @@ import {
   pixel,
   sha256,
 } from "./canvaskit.test-util.js";
-import { compositeReference } from "./composite.js";
+import { compositeReference } from "./compositor/reference.js";
 import {
   composition,
   ellipse,
@@ -50,7 +50,7 @@ const near = (actual: number[], expected: number[], tolerance = 3) => {
 };
 
 const render = (layers: Obj[], images?: ImageLibrary): RasterImage =>
-  compositeReference(ck, plan(layers, images));
+  compositeReference(plan(layers, images));
 
 const only = (p: FramePlan): PlannedLayer => {
   expect(p.layers).toHaveLength(1);
@@ -68,7 +68,7 @@ describe("shape layers", () => {
     if (l.space !== "composition") return;
     // Bounds 40..60 × 45..55, plus one pixel of anti-aliasing room.
     expect([l.x, l.y, l.raster.width, l.raster.height]).toEqual([39, 44, 22, 12]);
-    const out = compositeReference(ck, p);
+    const out = compositeReference(p);
     expect(pixel(out, 50, 50)).toEqual(RED);
     expect(pixel(out, 39, 50)).toEqual(CLEAR);
     expect(pixel(out, 61, 50)).toEqual(CLEAR);
@@ -85,7 +85,7 @@ describe("shape layers", () => {
     // 80×80 at (60..140, 10..90), plus a pixel of anti-aliasing room on each side.
     expect([l.raster.width, l.raster.height]).toEqual([82, 82]);
     // Edges stay one-pixel crisp: an integer-aligned edge has no partial coverage.
-    const out = compositeReference(ck, p);
+    const out = compositeReference(p);
     expect(pixel(out, 59, 50)).toEqual(CLEAR);
     expect(pixel(out, 60, 50)).toEqual(RED);
   });
@@ -136,7 +136,7 @@ describe("shape layers", () => {
     if (l.space !== "composition") throw new Error("expected composition space");
     // Outline 27..73 on both axes, plus one pixel of anti-aliasing room.
     expect([l.x, l.y, l.raster.width, l.raster.height]).toEqual([26, 26, 48, 48]);
-    expect(pixel(compositeReference(ck, p), 28, 50)).toEqual([0, 0, 255, 255]);
+    expect(pixel(compositeReference(p), 28, 50)).toEqual([0, 0, 255, 255]);
   });
 
   it("keeps the caps of dashes that end at a beveled corner inside the crop", () => {
@@ -280,7 +280,7 @@ describe("solid layers", () => {
     expect(l.matrix).toEqual([1, 0, 0, 1, 30, 40]);
     // Premultiplied: 50% green.
     expect(pixel(l.raster, 0, 0)).toEqual([0, 128, 0, 128]);
-    const out = compositeReference(ck, p);
+    const out = compositeReference(p);
     expect(pixel(out, 35, 45)).toEqual([0, 128, 0, 128]);
     expect(pixel(out, 29, 45)).toEqual(CLEAR);
   });
@@ -298,7 +298,7 @@ describe("solid layers", () => {
     expect(l.opacity).toBe(0.5);
     if (l.type !== "solid") return;
     expect(pixel(l.raster, 0, 0)).toEqual(RED);
-    expect(pixel(compositeReference(ck, p), 0, 0)).toEqual([128, 0, 0, 128]);
+    expect(pixel(compositeReference(p), 0, 0)).toEqual([128, 0, 0, 128]);
   });
 
   it("draws top-first layers bottom-up over the composition background", () => {
@@ -313,7 +313,7 @@ describe("solid layers", () => {
       ),
       res(),
     );
-    const out = compositeReference(ck, p);
+    const out = compositeReference(p);
     expect(pixel(out, 5, 5)).toEqual([0, 0, 255, 255]);
     expect(pixel(out, 15, 15)).toEqual(RED);
     expect(pixel(out, 50, 50)).toEqual([255, 255, 255, 255]);
@@ -361,7 +361,7 @@ describe("image layers", () => {
       if (format === "png") {
         expect(pixel(l.raster, 0, 0)).toEqual([255, 255, 255, 255]);
         expect(pixel(l.raster, 1, 0)).toEqual([0, 0, 0, 255]);
-        expect(pixel(compositeReference(ck, p), 10, 10)).toEqual([255, 255, 255, 255]);
+        expect(pixel(compositeReference(p), 10, 10)).toEqual([255, 255, 255, 255]);
       }
     }
   });
@@ -423,7 +423,7 @@ describe("precomps and unsupported layers", () => {
     if (a?.type !== "precomp" || b?.type !== "precomp") throw new Error("expected precomps");
     expect(a.frame).toBe(b.frame);
     expect([a.frame.width, a.frame.height, a.frame.background]).toEqual([20, 20, null]);
-    const out = compositeReference(ck, p);
+    const out = compositeReference(p);
     expect(pixel(out, 105, 5)).toEqual(RED);
     expect(pixel(out, 5, 55)).toEqual(RED);
     expect(pixel(out, 115, 5)).toEqual(CLEAR);
@@ -516,7 +516,6 @@ describe("determinism", () => {
     expect(sha256(render(scene).pixels)).toBe(first);
     const other = await freshCanvasKit();
     const again = compositeReference(
-      other,
       rasterizeFrame(other, frameOf(scene), {
         images: new ImageLibrary(other),
         fonts: await bundledFonts(other),

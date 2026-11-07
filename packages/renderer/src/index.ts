@@ -1,6 +1,6 @@
 export { bindPaints, type PaintOp } from "./binding.js";
 export { type CanvasKit, loadCanvasKit } from "./canvaskit.js";
-export { compositeReference } from "./composite.js";
+export { compositeReference } from "./compositor/reference.js";
 export * from "./fonts.js";
 export { MAX_FRAME_RASTER_PIXELS, RenderError, rasterizeFrame } from "./frame.js";
 export * from "./geometry.js";

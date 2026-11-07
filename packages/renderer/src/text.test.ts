@@ -9,7 +9,7 @@ import {
   freshCanvasKit,
   sha256,
 } from "./canvaskit.test-util.js";
-import { compositeReference } from "./composite.js";
+import { compositeReference } from "./compositor/reference.js";
 import { RenderError } from "./errors.js";
 import {
   composition,
@@ -49,7 +49,7 @@ const plan = (layers: Obj[], library = fonts): FramePlan =>
     images: new ImageLibrary(ck),
     fonts: library,
   });
-const render = (layers: Obj[]): RasterImage => compositeReference(ck, plan(layers));
+const render = (layers: Obj[]): RasterImage => compositeReference(plan(layers));
 
 /** The single text layer of a plan. */
 const only = (p: FramePlan): PlannedVectorLayer => {
@@ -511,7 +511,6 @@ describe("text determinism", () => {
     expect(sha256(render(scene).pixels)).toBe(first);
     const other = await freshCanvasKit();
     const again = compositeReference(
-      other,
       rasterizeFrame(other, frameOf(scene, { width: W, height: H }), {
         images: new ImageLibrary(other),
         fonts: await bundledFonts(other),
