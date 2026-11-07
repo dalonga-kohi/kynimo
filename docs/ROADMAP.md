@@ -19,7 +19,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 ## M2 — Renderer (frames)
 
 - [x] Drawing backend decision (ADR): WebGL2 stack (ADR-0013) for blend modes, mattes, masks, the effect list and shaders, deterministic in workers (see CAPABILITIES.md, "Determinism") → ADR-0016: Skia CPU raster + own WebGL2 compositor
-- [ ] Draw shapes (fill, stroke, gradients, dashes), images, solids
+- [x] Draw shapes (fill, stroke, gradients, dashes), images, solids → ADR-0017: AE paint binding, PNG + JPEG, frame plan for the compositor
 - [ ] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit)
 - [ ] Masks, track mattes, blend modes
 - [ ] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels)

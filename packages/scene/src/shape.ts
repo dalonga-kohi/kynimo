@@ -211,7 +211,7 @@ const checkGroupDepth = (value: unknown, ctx: z.RefinementCtx): void => {
 };
 
 /**
- * Items are listed top-first, like layers. How fills and strokes bind to geometry is defined with the renderer (M2).
+ * Items are listed top-first, like layers. Fills and strokes paint the geometry listed above them, with After Effects semantics (ADR-0017).
  * The input side is `unknown` because the depth check runs first, so use `io: "output"` when exporting JSON Schema.
  */
 export const ShapeItemSchema: z.ZodType<ShapeItem> = z
