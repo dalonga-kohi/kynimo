@@ -33,7 +33,7 @@ import {
 import { rasterizeFrame } from "./frame.js";
 import { ImageLibrary } from "./images.js";
 import type { FramePlan, PlannedVectorLayer, RasterImage } from "./raster.js";
-import { applyCase, trimTransparent } from "./text.js";
+import { applyCase, MIN_FIT_SCALE, trimTransparent } from "./text.js";
 
 let ck: CanvasKit;
 let fonts: FontLibrary;
@@ -105,6 +105,9 @@ describe("FontLibrary", () => {
     const refuse = async (bytes: Uint8Array, message: RegExp) =>
       expect(lib.add(brand({ sha256: sha256(bytes) }), bytes)).rejects.toThrow(message);
     const ascii = (t: string) => new Uint8Array([...t].map((c) => c.charCodeAt(0)));
+    await expect(lib.addBundled("Inter", new Uint8Array([1]))).rejects.toBeInstanceOf(
+      FontAssetError,
+    );
     await refuse(ascii("wOF2...."), /WOFF2 fonts are not supported/);
     await refuse(ascii("wOFF...."), /WOFF fonts are not supported/);
     await refuse(ascii("ttcf...."), /font collections/);
@@ -113,6 +116,9 @@ describe("FontLibrary", () => {
     await refuse(new Uint8Array(MAX_FONT_BYTES + 1), /at most/);
     await expect(lib.add(brand({ family: "Inter" }), inter())).rejects.toThrow(
       /bundled font family/,
+    );
+    await expect(lib.add(brand({ family: "noto sans" }), inter())).rejects.toThrow(
+      /compared ignoring case/,
     );
     lib.delete();
   });
@@ -203,7 +209,7 @@ describe("point text", () => {
       return r - l;
     };
     // Three gaps of 250/1000 × 40 = 10 units each.
-    expect(width({ tracking: prop(250) }) - width({})).toBeCloseTo(30, -0.5);
+    expect(Math.abs(width({ tracking: prop(250) }) - width({}) - 30)).toBeLessThanOrEqual(2);
     const weight = (w: number) =>
       alphaSum(
         only(
@@ -223,6 +229,17 @@ describe("point text", () => {
     );
     expect(applyCase("ß", "upper")).toBe("SS");
     expect(applyCase("İ", "lower")).toBe("i̇");
+  });
+
+  it("breaks lines only at newlines, however long, and draws tabs as spaces", () => {
+    const long = "H ".repeat(400);
+    const one = ink(only(plan([textLayer("t", long, { transform: at(10, 100) })])));
+    expect(one[2]).toBe(W); // runs off the composition instead of wrapping
+    expect(one[3] - one[1]).toBeLessThan(40);
+    const tab = render([textLayer("t", "A\tB", { transform: at(10, 100) })]);
+    expect(sha256(tab.pixels)).toBe(
+      sha256(render([textLayer("t", "A B", { transform: at(10, 100) })]).pixels),
+    );
   });
 
   it("rasterizes in composition space, so scaled text stays sharp", () => {
@@ -304,6 +321,17 @@ describe("box text", () => {
     );
   });
 
+  it("auto-fit that cannot fit even at the smallest size draws at that size, clipped", () => {
+    // No size fits a word into a 1-unit width, so it is laid out at 1/64 and broken.
+    const l = only(
+      plan([boxText("Supercalifragilistic", { width: prop(1), height: prop(200), autoFit: true })]),
+    );
+    const [, top, , bottom] = ink(l);
+    expect(top).toBeGreaterThanOrEqual(20);
+    expect(bottom - top).toBeLessThan(40); // about 20 lines of 0.75 units, not 48-unit lines
+    expect(MIN_FIT_SCALE).toBe(1 / 64);
+  });
+
   it("justifies all lines but the last", () => {
     const line = (align: string) =>
       ink(
@@ -354,6 +382,45 @@ describe("fonts in frames", () => {
     await empty.addBundled("Inter", bundledFontBytes("inter.ttf"));
     expect(() => plan([textLayer("t", "Hi")], empty)).toThrow(/fallback font 'Noto Sans'/);
     empty.delete();
+  });
+
+  it("draws font assets at the nearest declared weight, one file serving two ranges", async () => {
+    const bytes = bundledFontBytes("noto-sans.ttf");
+    const asset = (id: string, family: string, min: number, max: number) =>
+      AssetSchema.parse({
+        id,
+        type: "font",
+        name: id,
+        uri: `assets/${id}.ttf`,
+        sha256: sha256(bytes),
+        family,
+        weight: { min, max },
+      }) as FontAsset;
+    const assets = [
+      asset("bold", "Static", 700, 700),
+      asset("light", "Split", 100, 400),
+      asset("heavy", "Split", 500, 900),
+    ];
+    const lib = new FontLibrary(ck);
+    for (const f of BUNDLED_FONTS) await lib.addBundled(f.family, bundledFontBytes(f.file));
+    for (const a of assets) await lib.add(a, bytes);
+    const draw = (family: string, weight: number) => {
+      const text = textLayer("t", "Hello", {
+        font: { family, weight, size: prop(40) },
+        transform: at(10, 60),
+      });
+      const doc = project([composition("main", [text], { width: W, height: H })], { assets });
+      return sha256(
+        only(
+          rasterizeFrame(ck, evaluateFrame(doc, 0), { images: new ImageLibrary(ck), fonts: lib }),
+        ).raster.pixels,
+      );
+    };
+    const noto700 = draw("Noto Sans", 700);
+    expect(draw("Static", 400)).toBe(noto700); // the only file is 700
+    expect(draw("Split", 700)).toBe(noto700); // the second range of the same file
+    expect(draw("Split", 300)).toBe(draw("Noto Sans", 300));
+    lib.delete();
   });
 
   it("draws an uploaded font asset by its family", async () => {

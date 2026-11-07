@@ -1,9 +1,4 @@
-import {
-  type Asset,
-  BUNDLED_FONT_FAMILIES,
-  type BundledFontFamily,
-  isBundledFontFamily,
-} from "@kynimo/scene";
+import { type Asset, BUNDLED_FONT_FAMILIES, type BundledFontFamily } from "@kynimo/scene";
 import type { CanvasKit, Typeface, TypefaceFontProvider } from "canvaskit-wasm";
 import { sha256Hex } from "./hash.js";
 
@@ -135,9 +130,10 @@ export class FontLibrary {
 
   /** Loads an uploaded font asset, checking hash, format and size. */
   async add(asset: FontAsset, bytes: Uint8Array): Promise<void> {
-    if (isBundledFontFamily(asset.family))
+    const lower = asset.family.toLowerCase();
+    if (BUNDLED_FONT_FAMILIES.some((f) => f.toLowerCase() === lower))
       throw new FontAssetError(
-        `asset '${asset.id}': '${asset.family}' is a bundled font family; give the uploaded font another family name`,
+        `asset '${asset.id}': '${asset.family}' is a bundled font family (names are compared ignoring case); give the uploaded font another family name`,
       );
     await this.#add(`asset '${asset.id}'`, asset.family, asset.weight, asset.sha256, bytes);
   }
@@ -176,8 +172,19 @@ export class FontLibrary {
     const hash = await sha256Hex(bytes, (m) => new FontAssetError(m));
     if (hash !== pin)
       throw new FontAssetError(`${what}: bytes hash to ${hash}, but the pin is ${pin}`);
-    // Adding the same file again (a host reloading assets) is a no-op.
-    if (this.#fonts.some((f) => f.family === family && f.sha256 === hash)) return;
+    // Adding the same file for the same family and weights again (a host reloading assets) is a
+    // no-op. The same file under other weights is a separate entry: one variable file may serve
+    // two disjoint ranges of a family.
+    if (
+      this.#fonts.some(
+        (f) =>
+          f.family === family &&
+          f.sha256 === hash &&
+          f.weight.min === weight.min &&
+          f.weight.max === weight.max,
+      )
+    )
+      return;
     const clash = this.#fonts.find(
       (f) => f.family === family && f.weight.min <= weight.max && weight.min <= f.weight.max,
     );

@@ -60,8 +60,9 @@ export interface SkippedLayer {
 }
 
 /**
- * Something drawn, but not as the document asked: characters drawn with the fallback font, or
- * with no font at all (missing-glyph boxes). Agents act on these (ADR-0018, fidelity).
+ * Content that draws, or would draw, other than the document asks: characters drawn with the
+ * fallback font, or with no font at all (missing-glyph boxes). Reported per layer content, even
+ * where this frame hides it. Agents act on these (ADR-0018, fidelity).
  */
 export interface RenderWarning {
   id: string;

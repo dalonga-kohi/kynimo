@@ -50,6 +50,10 @@ function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> 
   return layer.type !== "audio";
 }
 
+/** The bundled family `family` names, ignoring case, if any. */
+const bundledFamilyLike = (family: string) =>
+  BUNDLED_FONT_FAMILIES.find((f) => f.toLowerCase() === family.toLowerCase());
+
 type Issue = (path: Path, message: string) => void;
 
 /** Layer fields that hold free-form data rather than schema-defined tracks; the structural walk skips them. */
@@ -195,10 +199,11 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
   project.assets.forEach((asset, i) => {
     if (asset.type !== "font") return;
     fontFamilies.add(asset.family);
-    if (isBundledFontFamily(asset.family)) {
+    const bundled = bundledFamilyLike(asset.family);
+    if (bundled !== undefined) {
       issue(
         ["assets", i, "family"],
-        `'${asset.family}' is a bundled font family; give the uploaded font another family name`,
+        `'${asset.family}' is the bundled font family '${bundled}' (names are compared ignoring case); give the uploaded font another family name`,
       );
       return;
     }
@@ -288,11 +293,16 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
         }
         case "text": {
           const family = layer.font.family;
-          if (!isBundledFontFamily(family) && !fontFamilies.has(family))
+          if (!isBundledFontFamily(family) && !fontFamilies.has(family)) {
+            const uploaded = [...fontFamilies].sort();
+            const near = [...BUNDLED_FONT_FAMILIES, ...uploaded].find(
+              (f) => f.toLowerCase() === family.toLowerCase(),
+            );
             issue(
               at("font", "family"),
-              `font family '${family}' is neither bundled (${BUNDLED_FONT_FAMILIES.join(", ")}) nor a font asset of this project; use one of those or add a font asset`,
+              `font family '${family}' is neither bundled (${BUNDLED_FONT_FAMILIES.join(", ")}) nor a font asset of this project (${uploaded.length > 0 ? uploaded.join(", ") : "none"})${near === undefined ? "" : `; did you mean '${near}'?`} Use one of those or add a font asset`,
             );
+          }
           break;
         }
         case "precomp":

@@ -7,8 +7,8 @@ import type { RasterImage, RenderWarning } from "./raster.js";
 import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
 import { type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
 
-/** Point text lays out on one unbounded line per paragraph; wider than any composition can show. */
-const UNBOUNDED = 1e7;
+/** Point text lays out without a width limit, so lines break only at newlines. */
+const UNBOUNDED = Number.POSITIVE_INFINITY;
 /** Auto-fit never shrinks text below this fraction of its size, then clips like a plain box. */
 export const MIN_FIT_SCALE = 1 / 64;
 /** Bisection steps for auto-fit: a fixed count, so the chosen size is deterministic (1/4096 precision). */
@@ -227,6 +227,8 @@ const needsNoGlyph = (cp: number) => NO_GLYPH_RANGES.some(([a, b]) => cp >= a &&
 /**
  * Characters the layer's font lacks: drawn by the fallback font, or by no font (shown as a
  * missing-glyph box). Checked against each file's character map, so it is exact and cheap.
+ * Warnings describe the layer's content, not this frame's ink: characters in lines a box hides,
+ * or in a transparent layer, are reported too, so a problem shows up before it becomes visible.
  */
 export function textWarnings(
   ck: CanvasKit,

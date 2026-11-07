@@ -491,13 +491,16 @@ describe("ProjectSchema: integrity", () => {
         "compositions.0.layers.3.font.family",
         "compositions.0.layers.4.font.family",
       ]);
-      expect(found[1]?.message).toContain("Inter, Noto Sans");
+      expect(found[0]?.message).toContain("did you mean 'Inter'?");
+      expect(found[1]?.message).toContain("bundled (Inter, Noto Sans)");
+      expect(found[1]?.message).toContain("font asset of this project (Brand Sans)");
+      expect(found[1]?.message).not.toContain("did you mean");
     });
 
     it("rejects font assets that shadow a bundled family or overlap in weight", () => {
       const doc = project({
         assets: [
-          font("a", "Inter", 400, 400),
+          font("a", "inter", 400, 400),
           font("b", "Brand", 100, 400),
           font("c", "Brand", 500, 900),
           font("d", "Brand", 400, 500),
