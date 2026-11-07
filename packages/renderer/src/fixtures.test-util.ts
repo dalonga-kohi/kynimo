@@ -95,5 +95,9 @@ export const project = (compositions: Obj[], overrides: Obj = {}): Project =>
   });
 
 /** Evaluates frame 0 of a single 200×100 composition holding `layers`. */
-export const frameOf = (layers: Obj[], overrides: Obj = {}): ResolvedComposition =>
-  evaluateFrame(project([composition("main", layers, overrides)]), 0);
+export const frameOf = (
+  layers: Obj[],
+  overrides: Obj = {},
+  projectOverrides: Obj = {},
+): ResolvedComposition =>
+  evaluateFrame(project([composition("main", layers, overrides)], projectOverrides), 0);
