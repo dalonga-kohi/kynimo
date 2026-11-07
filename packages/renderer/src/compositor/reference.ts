@@ -8,6 +8,7 @@ import {
   matteChain,
   maxLevel,
   placement,
+  precompUses,
 } from "./pipeline.js";
 
 /** Premultiplied RGBA, 0..1, rows top to bottom. */
@@ -32,7 +33,7 @@ const blank = (width: number, height: number): FloatImage => ({
  * sRGB RGBA8. Slow (every layer touches every composition pixel); not the export path.
  */
 export function compositeReference(plan: FramePlan): RasterImage {
-  const acc = compositeFloat(plan, new Map());
+  const acc = compositeFloat(plan, { cache: new Map(), uses: precompUses(plan) });
   const out = new Uint8Array(acc.data.length);
   const bg = plan.background;
   for (let i = 0; i < acc.data.length; i += 4) {
@@ -46,22 +47,20 @@ export function compositeReference(plan: FramePlan): RasterImage {
   return { width: plan.width, height: plan.height, pixels: out };
 }
 
-type Nested = Map<FramePlan, FloatImage>;
+/** Composited precomps, each dropped after its last read (as the GPU frees its target). */
+type Nested = { cache: Map<FramePlan, FloatImage>; uses: Map<FramePlan, number> };
 
 function compositeFloat(plan: FramePlan, nested: Nested): FloatImage {
   const acc = blank(plan.width, plan.height);
+  const backdrop = new Float64Array(4);
   for (let i = plan.layers.length - 1; i >= 0; i--) {
     const layer = plan.layers[i];
     if (layer === undefined) continue;
     const src = placed(layer, plan, nested);
-    for (let p = 0; p < acc.data.length; p += 4)
-      blendPixel(
-        layer.blendMode,
-        acc.data.slice(p, p + 4),
-        src.data.subarray(p, p + 4),
-        acc.data,
-        p,
-      );
+    for (let p = 0; p < acc.data.length; p += 4) {
+      backdrop.set(acc.data.subarray(p, p + 4));
+      blendPixel(layer.blendMode, backdrop, src.data.subarray(p, p + 4), acc.data, p);
+    }
   }
   return acc;
 }
@@ -98,11 +97,14 @@ function placed(layer: PlannedLayer, comp: FramePlan, nested: Nested): FloatImag
 function source(layer: PlannedLayer, nested: Nested): FloatImage {
   let img: FloatImage;
   if (layer.type === "precomp") {
-    let frame = nested.get(layer.frame);
+    let frame = nested.cache.get(layer.frame);
     if (frame === undefined) {
       frame = compositeFloat(layer.frame, nested);
-      nested.set(layer.frame, frame);
+      nested.cache.set(layer.frame, frame);
     }
+    const left = (nested.uses.get(layer.frame) ?? 1) - 1;
+    nested.uses.set(layer.frame, left);
+    if (left <= 0) nested.cache.delete(layer.frame);
     img = { width: frame.width, height: frame.height, data: frame.data.slice() };
   } else {
     const { width, height, pixels } = layer.raster;
@@ -119,7 +121,7 @@ function source(layer: PlannedLayer, nested: Nested): FloatImage {
 }
 
 /** Next mip level: each texel is the mean of a 2×2 block; texels past the edge count as transparent. */
-export function downsample(src: FloatImage): FloatImage {
+function downsample(src: FloatImage): FloatImage {
   const width = Math.ceil(src.width / 2);
   const height = Math.ceil(src.height / 2);
   const out = blank(width, height);

@@ -7,6 +7,7 @@ import {
   matteChain,
   maxLevel,
   placement,
+  precompUses,
 } from "./pipeline.js";
 import { BLEND, DOWNSAMPLE, FINAL, PLACE, PREPARE, VERTEX } from "./shaders.js";
 
@@ -49,24 +50,44 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     debug === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(debug.UNMASKED_RENDERER_WEBGL),
   );
   const vao = gl.createVertexArray();
-  const programs = {
-    prepare: build(gl, PREPARE),
-    downsample: build(gl, DOWNSAMPLE),
-    place: build(gl, PLACE),
-    blend: build(gl, BLEND),
-    final: build(gl, FINAL),
+  const built: Program[] = [];
+  const program = (fragment: string) => {
+    const p = build(gl, fragment);
+    built.push(p);
+    return p;
   };
+  let programs: Record<"prepare" | "downsample" | "place" | "blend" | "final", Program>;
+  try {
+    programs = {
+      prepare: program(PREPARE),
+      downsample: program(DOWNSAMPLE),
+      place: program(PLACE),
+      blend: program(BLEND),
+      final: program(FINAL),
+    };
+  } catch (e) {
+    for (const p of built) gl.deleteProgram(p.program);
+    gl.deleteVertexArray(vao);
+    throw e;
+  }
   const empty = makeTexture(gl, 1, 1, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
 
   const composite = (plan: FramePlan): RasterImage => {
     const live = new Set<Target>();
-    const target = (width: number, height: number): Target => {
+    const fits = (width: number, height: number) => {
       if (width > maxSize || height > maxSize)
         throw new CompositorError(
           `a ${width}×${height} image exceeds this GPU's texture size limit of ${maxSize}`,
         );
-      const t = makeTarget(gl, width, height);
-      live.add(t);
+    };
+    const target = (width: number, height: number, bytes = false): Target => {
+      fits(width, height);
+      const texture = bytes
+        ? makeTexture(gl, width, height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null)
+        : makeTexture(gl, width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
+      const t: Target = { texture, framebuffer: null, width, height };
+      live.add(t); // registered before attaching, so a failed attach is still freed
+      t.framebuffer = attach(gl, texture);
       return t;
     };
     const free = (t: Target) => {
@@ -74,7 +95,14 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       gl.deleteTexture(t.texture);
       if (t.framebuffer !== null) gl.deleteFramebuffer(t.framebuffer);
     };
+    /** Registers a texture made outside `target`, so the frame frees it on every path. */
+    const track = (texture: WebGLTexture, width: number, height: number): Target => {
+      const t = { texture, framebuffer: null, width, height };
+      live.add(t);
+      return t;
+    };
     const upload = (raster: RasterImage): Target => {
+      fits(raster.width, raster.height);
       const texture = makeTexture(
         gl,
         raster.width,
@@ -84,9 +112,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         gl.UNSIGNED_BYTE,
         raster.pixels,
       );
-      const t = { texture, framebuffer: null, width: raster.width, height: raster.height };
-      live.add(t);
-      return t;
+      return track(texture, raster.width, raster.height);
     };
 
     const pass = (
@@ -109,6 +135,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     };
 
     const nested = new Map<FramePlan, Target>();
+    const uses = precompUses(plan);
 
     /** The layer's raster (or composited precomp) times its mask, RGBA16F at raster size. */
     const prepare = (layer: PlannedLayer): Target => {
@@ -117,6 +144,11 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       if (layer.type === "precomp") {
         src = nested.get(layer.frame) ?? compositeFloat(layer.frame);
         nested.set(layer.frame, src);
+        // Freed after its last read, so memory does not grow with the number of distinct precomps.
+        const left = (uses.get(layer.frame) ?? 1) - 1;
+        uses.set(layer.frame, left);
+        owned = left <= 0;
+        if (owned) nested.delete(layer.frame);
       } else {
         src = upload(layer.raster);
         owned = true;
@@ -125,25 +157,29 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const mask =
         layer.mask === null
           ? null
-          : makeTexture(
-              gl,
+          : track(
+              makeTexture(
+                gl,
+                layer.mask.width,
+                layer.mask.height,
+                gl.R8,
+                gl.RED,
+                gl.UNSIGNED_BYTE,
+                layer.mask.coverage,
+              ),
               layer.mask.width,
               layer.mask.height,
-              gl.R8,
-              gl.RED,
-              gl.UNSIGNED_BYTE,
-              layer.mask.coverage,
             );
       pass(
         programs.prepare,
         out,
         [
           ["u_src", src.texture],
-          ["u_mask", mask ?? empty],
+          ["u_mask", mask?.texture ?? empty],
         ],
         (u) => gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1),
       );
-      if (mask !== null) gl.deleteTexture(mask);
+      if (mask !== null) free(mask);
       if (owned) free(src);
       return out;
     };
@@ -224,9 +260,11 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return acc;
     };
 
+    // Errors left by the caller's own GL work would otherwise be reported as ours.
+    for (let i = 0; i < 16 && gl.getError() !== gl.NO_ERROR; i++);
     try {
       const acc = compositeFloat(plan);
-      const out = makeByteTarget(gl, plan.width, plan.height);
+      const out = target(plan.width, plan.height, true);
       const bg = plan.background;
       pass(programs.final, out, [["u_acc", acc.texture]], (u) =>
         bg === null
@@ -235,8 +273,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       );
       const pixels = new Uint8Array(plan.width * plan.height * 4);
       gl.readPixels(0, 0, plan.width, plan.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-      gl.deleteTexture(out.texture);
-      gl.deleteFramebuffer(out.framebuffer);
+      // A lost context or an out-of-memory allocation reads back zeros without throwing.
+      if (gl.isContextLost()) throw new CompositorError("the WebGL2 context was lost");
+      const error = gl.getError();
+      if (error !== gl.NO_ERROR)
+        throw new CompositorError(
+          `WebGL error 0x${error.toString(16)} while compositing (often out of GPU memory)`,
+        );
       return { width: plan.width, height: plan.height, pixels };
     } finally {
       for (const t of [...live]) free(t);
@@ -309,19 +352,11 @@ function attach(gl: WebGL2RenderingContext, texture: WebGLTexture): WebGLFramebu
   const framebuffer = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.deleteFramebuffer(framebuffer);
     throw new CompositorError("framebuffer incomplete");
+  }
   return framebuffer;
-}
-
-function makeTarget(gl: WebGL2RenderingContext, width: number, height: number): Target {
-  const texture = makeTexture(gl, width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
-  return { texture, framebuffer: attach(gl, texture), width, height };
-}
-
-function makeByteTarget(gl: WebGL2RenderingContext, width: number, height: number) {
-  const texture = makeTexture(gl, width, height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
-  return { texture, framebuffer: attach(gl, texture), width, height };
 }
 
 function clear(gl: WebGL2RenderingContext, t: Target): void {

@@ -1,5 +1,5 @@
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
-import type { PlannedLayer } from "../raster.js";
+import type { FramePlan, PlannedLayer } from "../raster.js";
 
 /**
  * Pipeline pieces shared by the reference and WebGL2 compositors, so both read the plan the same
@@ -86,3 +86,22 @@ export const BLEND_MODE_IDS: Readonly<Record<BlendMode, number>> = {
   "pin-light": 22,
   "hard-mix": 23,
 };
+
+/**
+ * How many times compositing `plan` reads each nested precomp frame: once per precomp layer
+ * along every drawn layer's matte chain, in every distinct plan (each is composited once). Lets a
+ * compositor free a nested result after its last use instead of holding all of them.
+ */
+export function precompUses(plan: FramePlan): Map<FramePlan, number> {
+  const uses = new Map<FramePlan, number>();
+  const stack = [plan];
+  for (let p = stack.pop(); p !== undefined; p = stack.pop())
+    for (const layer of p.layers)
+      for (const el of matteChain(layer).chain) {
+        if (el.type !== "precomp") continue;
+        const seen = uses.get(el.frame);
+        uses.set(el.frame, (seen ?? 0) + 1);
+        if (seen === undefined) stack.push(el.frame);
+      }
+  return uses;
+}

@@ -40,16 +40,17 @@ ADR-0016 split rendering into a CPU rasterizer (Skia) and our own WebGL2 composi
     - hard mix: 1 when `b + s ≥ 1`, else 0
 - **Tests compare the GPU against the reference** in the pinned Chromium on SwiftShader (ADR-0016 flags), driven by Playwright 1.63.0. Vite bundles the compositor for the test page.
   - **Coverage:** every blend mode; every matte mode, including chains and empty mattes; masks; sub-pixel, rotated, magnified and minified placement; degenerate transforms; nested transformed precomps.
-  - **Tolerance:** 2/255 per channel. In the blend-mode tests the measured gap is at most 1/255. Hard mix and the other stepped modes may flip a few pixels sitting exactly on a threshold (under 1%).
+  - **Tolerance:** 2/255 per channel. In the blend-mode tests the measured gap is at most 1/255. For the stepped modes (hard mix, divide, color dodge and burn, vivid light), a color channel may differ more only where nudging the inputs by 3/255 crosses a step; alpha must always match. Deliberately broken hard-mix and vivid-light thresholds fail the tests.
   - **Determinism:** the GPU result is byte-identical across runs and fresh browser launches.
   - CI installs the pinned Chromium.
-- **The compositor refuses what it cannot do** with a `CompositorError`: a context without float render targets, or an image above `MAX_TEXTURE_SIZE`. It reports `UNMASKED_RENDERER_WEBGL`, so workers can refuse to run anywhere but SwiftShader.
+- **The compositor refuses what it cannot do** with a `CompositorError`: a context without float render targets, an image above `MAX_TEXTURE_SIZE`, a lost context, or any GL error during the frame (an out-of-memory allocation would otherwise read back as a blank frame). It reports `UNMASKED_RENDERER_WEBGL`, so workers can refuse to run anywhere but SwiftShader.
+- **Nested precomp results are freed after their last read.** Before compositing, the compositor counts how often each nested frame plan is read (once per precomp along every drawn layer's matte chain), keeps a result while reads remain and frees it after the last. The reference does the same.
 
 ## Consequences
 
 - The reference and the GPU can only drift apart together with a failing test, and every formula is readable in one file (`blend.ts`).
-- The compositor keeps no state between frames and frees every texture it made, at the cost of re-uploading rasters each frame. Caching uploads and mip chains is an optimization for later.
-- GPU memory per frame is a few composition-size RGBA16F targets per nesting level (8 bytes per pixel). An 8192² composition needs about 0.5 GiB per target, so render workers need memory limits that match the frame pixel budget. Revisit when workers land (M7).
+- The compositor keeps no state between frames and frees every texture and framebuffer it made, also when a frame fails, at the cost of re-uploading rasters each frame. Caching uploads and mip chains is an optimization for later.
+- GPU memory per frame: a few composition-size RGBA16F targets (8 bytes per pixel) per nesting level, plus the nested results that still have reads left. Those are usually few, because a precomp is read where it is drawn, but a frame that shows many time-offset copies of a precomp in a matte chain can hold several at once. An 8192² composition needs about 0.5 GiB per target, so render workers need GPU memory limits that match the frame pixel budget. Revisit when workers land (M7).
 - `compositeReference` is slow: every layer touches every pixel. It serves tests and Node tools, never exports.
 - Golden hashes of whole frames and the PNG capture belong to the next item (headless capture). The worker CPU caveat of ADR-0016 still applies.
 - Adjustment layers (M4) will read the accumulator as their source; the pass structure allows it.

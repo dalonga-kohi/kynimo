@@ -1,7 +1,9 @@
 import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CoverageImage, FramePlan, PlannedLayer, RasterImage } from "../raster.js";
+import { blendColor } from "./blend.js";
 import { type GpuSession, launchGpu, maxDifference } from "./browser.test-util.js";
+import { precompUses } from "./pipeline.js";
 import { compositeReference } from "./reference.js";
 
 let gpu: GpuSession;
@@ -68,7 +70,7 @@ const plan = (layers: PlannedLayer[], overrides: Partial<FramePlan> = {}): Frame
   ...overrides,
 });
 
-/** Modes with discontinuities, where float differences can flip a few pixels to the other side. */
+/** Modes with discontinuities, where float differences can flip a pixel sitting on a step. */
 const STEPPED: ReadonlySet<BlendMode> = new Set([
   "hard-mix",
   "divide",
@@ -77,17 +79,52 @@ const STEPPED: ReadonlySet<BlendMode> = new Set([
   "vivid-light",
 ]);
 
-/** GPU and reference agree within 2/255 per channel (RGBA16F against float64). */
-async function expectMatches(p: FramePlan, mode: BlendMode = "normal") {
+const straight = (r: RasterImage, i: number): [number, number, number] => {
+  const a = r.pixels[i * 4 + 3] ?? 0;
+  const at = (k: number) => (a === 0 ? 0 : (r.pixels[i * 4 + k] ?? 0) / a);
+  return [at(0), at(1), at(2)];
+};
+
+/**
+ * Whether pixel `i` of a two-layer blend sits on a step of `mode`: nudging either input by 3/255
+ * moves some channel of B(Cb, Cs) by more than 0.05. Only there may the GPU and reference differ.
+ */
+function onStep(mode: BlendMode, backdrop: RasterImage, source: RasterImage, i: number): boolean {
+  const cb = straight(backdrop, i);
+  const cs = straight(source, i);
+  const base = blendColor(mode, cb, cs);
+  const d = 3 / 255;
+  for (const [db, ds] of [
+    [d, 0],
+    [-d, 0],
+    [0, d],
+    [0, -d],
+  ] as const) {
+    const nudged = blendColor(
+      mode,
+      cb.map((v) => Math.min(1, Math.max(0, v + db))) as [number, number, number],
+      cs.map((v) => Math.min(1, Math.max(0, v + ds))) as [number, number, number],
+    );
+    if (nudged.some((v, k) => Math.abs(v - (base[k] ?? 0)) > 0.05)) return true;
+  }
+  return false;
+}
+
+/**
+ * GPU and reference agree within 2/255 per channel (RGBA16F against float64), except on color
+ * channels of pixels `allowed` says sit on a step.
+ */
+async function expectMatches(p: FramePlan, allowed: (pixel: number) => boolean = () => false) {
   const ref = compositeReference(p);
   const out = await gpu.composite(p);
   expect([out.width, out.height]).toEqual([ref.width, ref.height]);
-  if (STEPPED.has(mode)) {
-    let off = 0;
-    for (let i = 0; i < ref.pixels.length; i++)
-      if (Math.abs((ref.pixels[i] ?? 0) - (out.pixels[i] ?? 0)) > 2) off++;
-    expect(off / ref.pixels.length).toBeLessThan(0.01);
-  } else expect(maxDifference(ref, out).diff).toBeLessThanOrEqual(2);
+  const bad: number[] = [];
+  for (let i = 0; i < ref.pixels.length; i++) {
+    if (Math.abs((ref.pixels[i] ?? 0) - (out.pixels[i] ?? 0)) <= 2) continue;
+    if (i % 4 !== 3 && allowed(Math.floor(i / 4))) continue;
+    bad.push(i);
+  }
+  expect(bad.slice(0, 8)).toEqual([]);
 }
 
 describe("WebGL2 compositor on SwiftShader", () => {
@@ -96,12 +133,12 @@ describe("WebGL2 compositor on SwiftShader", () => {
   });
 
   it.each(BLEND_MODES)("matches the reference for %s", async (mode) => {
-    const backdrop = solid("b", gradient(W, H, 1));
-    const source = solid("s", gradient(W, H, 2), { blendMode: mode, opacity: 0.8 });
-    await expectMatches(
-      plan([source, backdrop], { background: { r: 0.1, g: 0.2, b: 0.3, a: 1 } }),
-      mode,
-    );
+    const b = gradient(W, H, 1);
+    const s = gradient(W, H, 2);
+    const backdrop = solid("b", b);
+    const source = solid("s", s, { blendMode: mode, opacity: 0.8 });
+    const p = plan([source, backdrop], { background: { r: 0.1, g: 0.2, b: 0.3, a: 1 } });
+    await expectMatches(p, (i) => STEPPED.has(mode) && onStep(mode, b, s, i));
   });
 
   it("matches masks, mattes (every mode, chains, empty) and opacity", async () => {
@@ -164,6 +201,47 @@ describe("WebGL2 compositor on SwiftShader", () => {
       frame: inner,
     } as PlannedLayer;
     await expectMatches(plan([precomp, solid("bg", gradient(W, H, 12))]));
+  });
+
+  it("reuses one nested result for a precomp drawn twice and used as a matte source", async () => {
+    const inner = plan([
+      solid("a", gradient(W, H, 13), { blendMode: "screen" }),
+      solid("b", gradient(W, H, 14)),
+    ]);
+    const pre = (id: string, matrix: number[], overrides: Partial<PlannedLayer> = {}) =>
+      ({
+        id,
+        type: "precomp",
+        space: "layer",
+        opacity: 1,
+        blendMode: "normal",
+        mask: null,
+        matte: null,
+        matrix,
+        frame: inner,
+        ...overrides,
+      }) as PlannedLayer;
+    const source = pre("m", [1, 0, 0, 1, 0, 0]);
+    const p = plan([
+      solid("t", gradient(W, H, 15), { matte: { layerId: "m", mode: "luma", source } }),
+      pre("p1", [0.5, 0, 0, 0.5, 2, 3]),
+      source,
+      pre("p2", [0.7, 0.2, -0.2, 0.7, 20, 1], { blendMode: "difference" }),
+    ]);
+    expect(precompUses(p).get(inner)).toBe(4);
+    await expectMatches(p);
+  });
+
+  it("refuses an image larger than the GPU's texture size limit", async () => {
+    const limit = await gpu.page.evaluate(() =>
+      (
+        document.createElement("canvas").getContext("webgl2") as WebGL2RenderingContext
+      ).getParameter(WebGL2RenderingContext.MAX_TEXTURE_SIZE),
+    );
+    const wide = { width: limit + 1, height: 1, pixels: new Uint8Array((limit + 1) * 4) };
+    await expect(gpu.composite(plan([solid("w", wide)]))).rejects.toThrow(/texture size limit/);
+    // The compositor stays usable afterwards.
+    await expectMatches(plan([solid("ok", gradient(W, H, 1))]));
   });
 
   it("returns identical bytes for the same plan, also on a fresh browser", async () => {
