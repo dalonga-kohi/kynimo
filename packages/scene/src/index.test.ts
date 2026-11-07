@@ -3,6 +3,6 @@ import { SCENE_FORMAT_VERSION } from "./index.js";
 
 describe("@kynimo/scene", () => {
   it("exposes the current scene format version", () => {
-    expect(SCENE_FORMAT_VERSION).toBe(1);
+    expect(SCENE_FORMAT_VERSION).toBe(2);
   });
 });

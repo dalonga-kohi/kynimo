@@ -1,4 +1,5 @@
 import { clone } from "./changes.js";
+import { BUNDLED_FONT_FAMILIES } from "./fonts.js";
 import { type Project, ProjectSchema } from "./project.js";
 import { SCENE_FORMAT_VERSION } from "./version.js";
 
@@ -17,11 +18,35 @@ export interface Migration {
   readonly migrate: (doc: Json) => Json;
 }
 
+const isJson = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
+
 /**
- * Every step, ordered by `from`. Empty while the format is still version 1 (version 0 was a
- * placeholder with no documents). Any format change adds the step that upgrades the previous version.
+ * 1 → 2: version 2 checks that text layers name a known family, matched exactly. Version 1 said
+ * the family had to be bundled but did not check it, so bundled names spelled in another case
+ * ("inter") are corrected. Any other unknown family is left alone and fails validation with a
+ * message naming the available families: substituting a font silently would change the design.
  */
-export const MIGRATIONS: readonly Migration[] = [];
+function canonicalBundledFamilies(doc: Json): Json {
+  const canonical = new Map(BUNDLED_FONT_FAMILIES.map((f) => [f.toLowerCase(), f]));
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers) {
+      if (!isJson(layer) || layer.type !== "text" || !isJson(layer.font)) continue;
+      const family = layer.font.family;
+      if (typeof family !== "string") continue;
+      const fixed = canonical.get(family.toLowerCase());
+      if (fixed !== undefined) layer.font.family = fixed;
+    }
+  }
+  return doc;
+}
+
+/**
+ * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
+ * adds the step that upgrades the previous version.
+ */
+export const MIGRATIONS: readonly Migration[] = [{ from: 1, migrate: canonicalBundledFamilies }];
 
 export interface MigrationError {
   path: (string | number)[];

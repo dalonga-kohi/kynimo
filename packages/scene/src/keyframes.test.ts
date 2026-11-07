@@ -181,7 +181,7 @@ describe("hostile and out-of-range springs", () => {
       type: "text",
       content: { keyframes: [kf(0, "a"), kf(10, "b")] },
       box: { mode: "point" },
-      font: { family: "inter", weight: 400, size: prop(48) },
+      font: { family: "Inter", weight: 400, size: prop(48) },
       tracking: prop(0),
       leading: prop(1.2),
       align: "left",

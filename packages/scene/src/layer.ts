@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
 import { MAX_COMPOSITION_SIZE } from "./limits.js";
 import {
@@ -69,7 +70,7 @@ const TextBoxSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
-/** `family` must name a bundled, pinned font; that list is enforced with the renderer (M2). */
+/** `font.family` names a bundled family or a font asset of the project (ADR-0019). */
 export const TextLayerSchema = z.strictObject({
   ...visual,
   type: z.literal("text"),
@@ -80,8 +81,8 @@ export const TextLayerSchema = z.strictObject({
   content: z.strictObject({ value: z.string().max(10_000) }),
   box: TextBoxSchema,
   font: z.strictObject({
-    family: z.string().min(1).max(100),
-    weight: z.number().int().min(100).max(900).multipleOf(100),
+    family: FontFamilySchema,
+    weight: FontWeightSchema,
     size: animatable(PositiveSchema),
   }),
   /** Letter spacing in thousandths of an em. */
