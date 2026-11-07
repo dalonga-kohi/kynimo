@@ -2,7 +2,7 @@ import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CoverageImage, FramePlan, PlannedLayer, RasterImage } from "../raster.js";
 import { blendColor } from "./blend.js";
-import { type GpuSession, launchGpu, maxDifference } from "./browser.test-util.js";
+import { type GpuSession, launchGpu } from "./browser.test-util.js";
 import { precompUses } from "./pipeline.js";
 import { compositeReference } from "./reference.js";
 

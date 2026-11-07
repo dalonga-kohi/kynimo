@@ -89,17 +89,3 @@ export async function launchGpu(): Promise<GpuSession> {
     close: () => browser.close(),
   };
 }
-
-/** Largest per-channel difference between two equally sized rasters, and where it is. */
-export function maxDifference(a: RasterImage, b: RasterImage): { diff: number; at: number } {
-  let diff = 0;
-  let at = -1;
-  for (let i = 0; i < a.pixels.length; i++) {
-    const d = Math.abs((a.pixels[i] ?? 0) - (b.pixels[i] ?? 0));
-    if (d > diff) {
-      diff = d;
-      at = i;
-    }
-  }
-  return { diff, at };
-}
