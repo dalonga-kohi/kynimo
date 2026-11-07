@@ -20,7 +20,7 @@ import {
   stroke,
   transform,
 } from "./fixtures.test-util.js";
-import { rasterizeFrame } from "./frame.js";
+import { MAX_FRAME_RASTER_PIXELS, rasterizeFrame } from "./frame.js";
 import { type ImageAsset, ImageAssetError, ImageLibrary } from "./images.js";
 import type { FramePlan, PlannedLayer, RasterImage } from "./raster.js";
 
@@ -378,6 +378,25 @@ describe("precomps and unsupported layers", () => {
     expect(p.skipped).toEqual([
       { id: "t", type: "text", reason: expect.stringContaining("M2 text") },
     ]);
+  });
+});
+
+describe("raster budget", () => {
+  it("refuses a frame, precomps included, once it would pass the pixel limit", () => {
+    const doc = project([
+      composition("main", [
+        layer("p", "precomp", { compositionId: "inner" }),
+        layer("s", "solid", { width: 10, height: 10, color: "#ff0000" }),
+      ]),
+      composition("inner", [layer("t", "solid", { width: 10, height: 10, color: "#ff0000" })]),
+    ]);
+    const frame = evaluateFrame(doc, 0);
+    const images = new ImageLibrary(ck);
+    expect(rasterizeFrame(ck, frame, images, { maxRasterPixels: 200 }).layers).toHaveLength(2);
+    expect(() => rasterizeFrame(ck, frame, images, { maxRasterPixels: 199 })).toThrow(
+      /needs more than 199 raster pixels/,
+    );
+    expect(MAX_FRAME_RASTER_PIXELS).toBe(2 ** 28);
   });
 });
 

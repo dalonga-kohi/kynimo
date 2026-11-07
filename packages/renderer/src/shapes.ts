@@ -18,6 +18,8 @@ export function rasterizeShapeLayer(
   layer: ResolvedShapeLayer,
   width: number,
   height: number,
+  /** Called with the raster size before it is allocated; may throw to refuse it. */
+  reserve: (width: number, height: number) => void = () => {},
 ): { x: number; y: number; raster: RasterImage } | null {
   return scoped((own) => {
     const draws: { path: Path; paint: Paint; matrix: Affine }[] = [];
@@ -42,6 +44,7 @@ export function rasterizeShapeLayer(
     const x1 = Math.min(width, Math.ceil(bounds[2] + AA_PAD));
     const y1 = Math.min(height, Math.ceil(bounds[3] + AA_PAD));
     if (x1 <= x0 || y1 <= y0) return null;
+    reserve(x1 - x0, y1 - y0);
     const raster = rasterize(ck, x1 - x0, y1 - y0, (canvas) => {
       for (const draw of draws) {
         canvas.save();
