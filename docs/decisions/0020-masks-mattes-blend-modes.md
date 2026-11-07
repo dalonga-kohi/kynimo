@@ -25,7 +25,7 @@ The capability map puts blend modes, track mattes (alpha, luma, inverted, from a
   - Expansion is the union with (or difference from) the path's stroke of twice that width, with round joins.
 - **Masks are computed on the CPU, in the layer's raster space** (amends ADR-0016). Skia fills each mask's expanded path and blurs it with a paint image filter, which runs in the draw's local space, so feather stays a layer-space width under rotation and scale. JavaScript combines the masks into one 8-bit coverage raster the size of the layer's raster: the crop for shape and text layers, the layer itself for solids and images, the nested composition for precomps. The compositor only multiplies by it. Reasons: it is tested in Node like the rest of the rasterizer, reuses Skia's anti-aliasing and blur, and the cost is bounded by the layer's raster, which the frame's pixel budget already counts (each mask raster is charged too).
 - **The frame plan** carries `blendMode`, `mask` and `matte` per layer. A matte source is planned once, even when hidden, and is the same object when it also draws. A layer its masks remove completely is left out, and masks that keep every pixel become `mask: null`.
-- **`compositeReference` applies masks and throws on blend modes and mattes.** It cannot draw them correctly, and drawing them as normal would be silently wrong. The compositor PR replaces it for those.
+- **`compositeReference` applies masks and throws on blend modes and mattes.** It cannot draw them correctly, and drawing them as normal would be silently wrong. The compositor PR replaces it for those. (Done in ADR-0021: it is now a full JavaScript compositor.)
 
 ## Consequences
 

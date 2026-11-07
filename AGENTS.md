@@ -10,6 +10,7 @@ Read as needed: [PRODUCT.md](PRODUCT.md) (what and for whom) · [docs/ARCHITECTU
 
 ```bash
 pnpm install
+pnpm --filter @kynimo/renderer exec playwright install chromium   # once: the pinned Chromium for compositor tests
 pnpm check      # biome + build + typecheck + test — exactly what CI runs
 ```
 

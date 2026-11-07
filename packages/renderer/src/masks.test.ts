@@ -3,7 +3,7 @@ import { evaluateFrame } from "@kynimo/engine";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit } from "./canvaskit.js";
 import { bundledFonts, canvasKit, freshCanvasKit, pixel } from "./canvaskit.test-util.js";
-import { compositeReference } from "./composite.js";
+import { compositeReference } from "./compositor/reference.js";
 import {
   composition,
   fill,
@@ -206,7 +206,7 @@ describe("rasterizeFrame: masks", () => {
     const s = only(plan);
     expect(s.mask).toMatchObject({ width: 40, height: 20 });
     expect([at(s.mask, 10, 10), at(s.mask, 30, 10)]).toEqual([255, 0]);
-    const out = compositeReference(ck, plan);
+    const out = compositeReference(plan);
     expect(pixel(out, 110, 60)).toEqual([255, 255, 255, 255]);
     expect(pixel(out, 130, 60)).toEqual([0, 0, 0, 0]);
   });
@@ -222,7 +222,7 @@ describe("rasterizeFrame: masks", () => {
     const sh = only(plan);
     if (sh.space !== "composition") throw new Error("expected a composition-space layer");
     expect(sh.mask).toMatchObject({ width: sh.raster.width, height: sh.raster.height });
-    const out = compositeReference(ck, plan);
+    const out = compositeReference(plan);
     expect(pixel(out, 108, 50)).toEqual([255, 0, 0, 255]);
     expect(pixel(out, 92, 50)).toEqual([0, 0, 0, 0]);
   });
@@ -251,7 +251,7 @@ describe("rasterizeFrame: masks", () => {
     });
     const p = only(plan);
     expect(p.mask).toMatchObject({ width: 50, height: 50 });
-    const out = compositeReference(ck, plan);
+    const out = compositeReference(plan);
     expect(pixel(out, 10, 10)).toEqual([255, 255, 255, 255]);
     expect(pixel(out, 40, 10)).toEqual([0, 0, 0, 0]);
   });
@@ -337,14 +337,47 @@ describe("rasterizeFrame: blend modes and track mattes", () => {
     ]);
   });
 
-  it("refuses to draw blend modes or mattes in the reference composite", () => {
-    expect(() => compositeReference(ck, planOf([solid("s", { blendMode: "multiply" })]))).toThrow(
-      /'multiply' blend mode/,
-    );
-    const matted = planOf([
-      solid("t", { matte: { layerId: "m", mode: "alpha" } }),
-      solid("m", { hidden: true }),
+  it("composites alpha, luma and inverted mattes, with an empty matte for a missing source", () => {
+    // Matte: left half white and opaque, right half transparent; a 50% grey solid over all.
+    const target = (mode: string, source = "m") =>
+      solid("t", { color: "#ff0000", matte: { layerId: source, mode } });
+    const matteSource = solid("m", {
+      hidden: true,
+      color: "#808080",
+      masks: [maskObj(box(0, 0, 20, 20))],
+    });
+    const at = (mode: string, x: number) =>
+      pixel(compositeReference(planOf([target(mode), matteSource])), x, 10);
+    expect(at("alpha", 5)).toEqual([255, 0, 0, 255]);
+    expect(at("alpha", 30)).toEqual([0, 0, 0, 0]);
+    expect(at("alpha-inverted", 5)).toEqual([0, 0, 0, 0]);
+    expect(at("alpha-inverted", 30)).toEqual([255, 0, 0, 255]);
+    // Luma of #808080 is 128/255.
+    expect(at("luma", 5)).toEqual([128, 0, 0, 128]);
+    expect(at("luma-inverted", 5)).toEqual([127, 0, 0, 127]);
+    expect(at("luma-inverted", 30)).toEqual([255, 0, 0, 255]);
+    const outOfRange = solid("m", { inFrame: 5 });
+    expect(pixel(compositeReference(planOf([target("alpha"), outOfRange])), 5, 10)).toEqual([
+      0, 0, 0, 0,
     ]);
-    expect(() => compositeReference(ck, matted)).toThrow(/track matte/);
+    expect(
+      pixel(compositeReference(planOf([target("alpha-inverted"), outOfRange])), 5, 10),
+    ).toEqual([255, 0, 0, 255]);
+  });
+
+  it("applies the matte source's own matte and opacity, but not its blend mode", () => {
+    const plan = planOf([
+      solid("t", { matte: { layerId: "m", mode: "alpha" } }),
+      solid("m", {
+        hidden: true,
+        blendMode: "multiply",
+        transform: transform({ opacity: prop(0.5) }),
+        matte: { layerId: "n", mode: "alpha" },
+      }),
+      solid("n", { hidden: true, masks: [maskObj(box(0, 0, 20, 20))] }),
+    ]);
+    const out = compositeReference(plan);
+    expect(pixel(out, 5, 10)).toEqual([128, 128, 128, 128]);
+    expect(pixel(out, 30, 10)).toEqual([0, 0, 0, 0]);
   });
 });
