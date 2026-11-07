@@ -32,6 +32,10 @@ The author is usually another AI session. Your job is to catch what it missed be
 - User- or agent-authored component and shader code runs sandboxed and under resource limits; it never gets host, filesystem, network, secret or wall-clock access, and it enters a document only as scene-graph nodes with declared props (ADR-0012).
 - Quality is enforced in code: guideline rules live in `@kynimo/guidelines` as code and produce a machine-readable report (rule id, severity, scene location, suggested fix). A quality rule that exists only in a prompt, doc or comment is not enforced.
 
+**Agent contracts** (ADR-0018)
+
+- Render paths report what they skip; nothing unsupported is dropped silently. Render tools declare and enforce their limits. Every mutating tool takes an idempotency key scoped to project + actor. Importers and exporters return a fidelity report. A PR that adds or changes reference PNGs shows them, and the reviewer opens each changed PNG.
+
 **Security**
 
 - Input validation at every boundary (MCP tools, HTTP, uploads). AuthN/AuthZ on every project access. No secrets in code, logs, error messages or fixtures. No injection (shell, SQL, path traversal, HTML).

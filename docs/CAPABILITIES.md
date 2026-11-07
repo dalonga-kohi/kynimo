@@ -53,6 +53,7 @@ Status:
 | 3D compositing: 3D layers (Z), cameras, lights, depth     | 3D               | v1.x   |
 | 3D model layer (glTF / GLB), shader materials             | 3D models        | v1.x   |
 | Lottie import → editable layers (unsupported reported)    | —                | v1.x   |
+| After Effects project (`.aep`) import                     | Open project     | no     |
 | Stable layer ids, human-readable names                    | —                | beta   |
 | Render switches: hidden, solo                             | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color              | Layer switches   | beta   |
@@ -191,21 +192,25 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 8. **Optimistic concurrency.** Writes carry the base version, so agent edits and edits in the open editor never silently overwrite each other. The editor shows agent edits live.
 9. **Per-actor undo.** `undo` reverts the caller's own most recent batch, not whatever changed last. It's version-checked: if a later edit by someone else touches the same properties, undo fails with a conflict instead of discarding that edit. Property edits are checked per property; adding or removing a layer or marker is checked on the whole item, and reordering on the layer's position.
 10. **Versioned contracts.** Schema-validated input and output on every tool; breaking change → new tool name.
+11. **Honest capabilities.** A capability manifest generated from code says what this build renders, accepts without rendering (and why), or lacks. Every render result lists what it skipped. Nothing is dropped silently (ADR-0018).
+12. **Retry-safe writes.** Every mutating tool takes an idempotency key: a retry after a dropped connection returns the original result instead of applying twice, and `get_write_outcome` tells the agent whether a write landed (ADR-0018).
+13. **Bounded renders.** Render tools declare their limits in their schemas and reject oversized requests with values that fit. Deterministic results are cached; long renders are cancellable jobs with progress (ADR-0018).
+14. **Fidelity reports.** Imports and exports report missing assets and fonts, dropped, flattened and approximated features. Imports support a dry run (ADR-0018).
 
 ### Tool groups (target)
 
-| Group    | Tools                                                                                                            | Milestone |
-| -------- | ---------------------------------------------------------------------------------------------------------------- | --------- |
-| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                  | M3        |
-| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary)          | M3        |
-| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo` | M3        |
-| Precise  | `add_effect`, `add_behavior`                                                                                     | M4        |
-| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                   | M4        |
-| Intent   | `add_component`, `build_from_brief`                                                                              | M6        |
-| Code     | `define_component`, `define_shader`, `list_definitions`                                                          | M6        |
-| Intent   | `sync_to_beats`                                                                                                  | M7        |
-| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                      | M5        |
-| Feedback | `render_frames`, `render_contact_sheet`                                                                          | M3        |
-| Output   | `render_preview_clip`, `export`, `get_export_status`, `get_preview_link`                                         | M7        |
+| Group    | Tools                                                                                                                                            | Milestone |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                  | M3        |
+| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome` | M3        |
+| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`                                 | M3        |
+| Precise  | `add_effect`, `add_behavior`                                                                                                                     | M4        |
+| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                   | M4        |
+| Intent   | `add_component`, `build_from_brief`                                                                                                              | M6        |
+| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                          | M6        |
+| Intent   | `sync_to_beats`                                                                                                                                  | M7        |
+| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                      | M5        |
+| Feedback | `render_frames`, `render_contact_sheet`                                                                                                          | M3        |
+| Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                        | M7        |
 
-MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog and the shader catalog (built-in and project definitions), so agents can look things up instead of guessing.
+MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing.
