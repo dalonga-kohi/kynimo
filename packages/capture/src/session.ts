@@ -4,11 +4,17 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { BUNDLED_FONTS, type RenderWarning, type SkippedLayer } from "@kynimo/renderer";
 import { migrateProject } from "@kynimo/scene";
-import { type Browser, chromium, type Route } from "playwright";
+import { type Browser, chromium, type Page, type Route } from "playwright";
 import { ORIGIN, type PageApi, type PageRequest, type PageResponse } from "./protocol.js";
 
+/**
+ * Frames one call may request. Every PNG of a call crosses back in one response, so callers
+ * (`render_frames`, workers) chunk longer ranges into several calls (ADR-0018: declared limits).
+ */
+export const MAX_FRAMES_PER_CALL = 64;
+
 /** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
-export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
+const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
 
 export class CaptureError extends Error {
   override name = "CaptureError";
@@ -56,8 +62,9 @@ export interface CaptureSession {
   /** `UNMASKED_RENDERER_WEBGL`; always a SwiftShader renderer. */
   readonly gpu: string;
   /**
-   * Renders `frames` of a document to PNG. The document is migrated and validated first.
-   * Calls on one session run one at a time. Throws {@link CaptureError}.
+   * Renders `frames` (at most {@link MAX_FRAMES_PER_CALL}) of a document to PNG. The document is
+   * migrated and validated first. Calls on one session run one at a time. Throws
+   * {@link CaptureError}, also once the browser is gone: a closed or crashed session stays closed.
    */
   captureFrames(
     document: unknown,
@@ -107,9 +114,39 @@ interface StaticFile {
  * refuses to run on any other GPU (ADR-0016). One session renders any number of documents; close
  * it when done.
  */
-export async function launchCapture({ pageScript }: LaunchOptions = {}): Promise<CaptureSession> {
+export async function launchCapture(options: LaunchOptions = {}): Promise<CaptureSession> {
+  const { browser, page, gpu, serve } = await openCapturePage(options);
+  return session(browser, gpu, async (request, assets) => {
+    serve(assets);
+    try {
+      // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
+      return await page.evaluate(
+        (json) =>
+          (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.render(
+            JSON.parse(json),
+          ),
+        JSON.stringify(request),
+      );
+    } catch (error) {
+      throw new CaptureError(`the capture page failed: ${message(error)}`);
+    } finally {
+      serve(new Map());
+    }
+  });
+}
+
+/**
+ * @internal The browser with the capture page loaded and initialized. The page reaches only
+ * {@link ORIGIN}, answered from memory: other HTTP(S) requests are aborted, WebSockets closed and
+ * service workers blocked. `serve` sets the asset bytes answered at `/assets/<id>`.
+ */
+export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promise<{
+  browser: Browser;
+  page: Page;
+  gpu: string;
+  serve(assets: ReadonlyMap<string, Uint8Array>): void;
+}> {
   const files = await staticFiles(pageScript);
-  /** Asset bytes of the call in progress, served at `/assets/<id>`. */
   let assets: ReadonlyMap<string, Uint8Array> = new Map();
 
   const answer = (route: Route) => {
@@ -118,58 +155,74 @@ export async function launchCapture({ pageScript }: LaunchOptions = {}): Promise
     const file = files.get(url.pathname);
     if (file !== undefined)
       return route.fulfill({ status: 200, contentType: file.type, body: file.body });
-    if (url.pathname.startsWith("/assets/")) {
-      const bytes = assets.get(decodeURIComponent(url.pathname.slice("/assets/".length)));
-      if (bytes !== undefined)
-        return route.fulfill({
-          status: 200,
-          contentType: "application/octet-stream",
-          body: Buffer.from(bytes),
-        });
-    }
+    const bytes = url.pathname.startsWith("/assets/")
+      ? assets.get(decodePath(url.pathname.slice("/assets/".length)))
+      : undefined;
+    if (bytes !== undefined)
+      return route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: Buffer.from(bytes),
+      });
     return route.fulfill({ status: 404, body: "" });
   };
 
-  const browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
-  let gpu: string;
+  let browser: Browser;
   try {
-    const context = await browser.newContext();
+    browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
+  } catch (error) {
+    throw new CaptureError(`could not launch the pinned Chromium: ${message(error)}`);
+  }
+  try {
+    // Service workers could answer requests without passing through the routes.
+    const context = await browser.newContext({ serviceWorkers: "block" });
     await context.route("**/*", answer);
+    await context.routeWebSocket(/.*/, (ws) => ws.close());
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/`);
-    gpu = await page.evaluate(() =>
+    const gpu = await page.evaluate(() =>
       (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.init(),
     );
     if (!/swiftshader/i.test(gpu))
       throw new CaptureError(
         `capture runs only on SwiftShader (ADR-0016), but WebGL2 reports '${gpu}'`,
       );
-    return session(browser, gpu, async (request, bytes) => {
-      assets = bytes;
-      try {
-        // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
-        return await page.evaluate(
-          (json) =>
-            (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.render(
-              JSON.parse(json),
-            ),
-          JSON.stringify(request),
-        );
-      } finally {
-        assets = new Map();
-      }
-    });
+    return {
+      browser,
+      page,
+      gpu,
+      serve(next) {
+        assets = next;
+      },
+    };
   } catch (error) {
     await browser.close();
-    throw error;
+    throw error instanceof CaptureError
+      ? error
+      : new CaptureError(`could not start the capture page: ${message(error)}`);
   }
 }
+
+/** A path segment decoded, or `""` (never an asset id) when it is malformed. */
+function decodePath(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return "";
+  }
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 function session(
   browser: Browser,
   gpu: string,
   render: (request: PageRequest, assets: ReadonlyMap<string, Uint8Array>) => Promise<PageResponse>,
 ): CaptureSession {
+  let closed = false;
+  browser.on("disconnected", () => {
+    closed = true;
+  });
   let queue: Promise<unknown> = Promise.resolve();
   const serialized = <T>(task: () => Promise<T>): Promise<T> => {
     const run = queue.then(task, task);
@@ -182,6 +235,7 @@ function session(
     gpu,
     captureFrames(document, frames, { composition, assets = new Map() } = {}) {
       return serialized(async () => {
+        if (closed) throw new CaptureError("the capture session is closed");
         const migrated = migrateProject(document);
         if (!migrated.ok)
           throw new CaptureError(
@@ -190,7 +244,10 @@ function session(
               .join("; ")}`,
           );
         const project = migrated.doc;
-        if (frames.length === 0) throw new CaptureError("frames must list at least one frame");
+        if (frames.length === 0 || frames.length > MAX_FRAMES_PER_CALL)
+          throw new CaptureError(
+            `frames must list 1 to ${MAX_FRAMES_PER_CALL} frames (got ${frames.length}); split longer ranges into several calls`,
+          );
         for (const id of assets.keys()) {
           const asset = project.assets.find((a) => a.id === id);
           if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
@@ -216,6 +273,9 @@ function session(
         });
       });
     },
-    close: () => browser.close(),
+    async close() {
+      closed = true;
+      await browser.close();
+    },
   };
 }

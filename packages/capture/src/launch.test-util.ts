@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 let bundle: Promise<string> | undefined;
 
 /** The page bundled from the current sources, so tests never run a stale `dist`. */
-function pageScript(): Promise<string> {
+export function testPageScript(): Promise<string> {
   bundle ??= (async () => {
     const result = await build({ root, logLevel: "silent", build: { write: false } });
     for (const output of Array.isArray(result) ? result : [result])
@@ -18,4 +18,4 @@ function pageScript(): Promise<string> {
 }
 
 export const launchTestCapture = async (): Promise<CaptureSession> =>
-  launchCapture({ pageScript: await pageScript() });
+  launchCapture({ pageScript: await testPageScript() });

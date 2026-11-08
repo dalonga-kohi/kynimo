@@ -3,7 +3,7 @@ export {
   CaptureError,
   type CaptureOptions,
   type CaptureSession,
-  CHROMIUM_ARGS,
   type LaunchOptions,
   launchCapture,
+  MAX_FRAMES_PER_CALL,
 } from "./session.js";

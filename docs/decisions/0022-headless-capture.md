@@ -14,8 +14,9 @@ ADR-0016 guarantees bit-identical frames only for the pinned Chromium on SwiftSh
   - The page does `evaluateFrame` → `rasterizeFrame` (CanvasKit) → the WebGL2 compositor → CanvasKit's PNG encoder, then a SHA-256 of the composited pixels.
   - Only the validated document, asset bytes and the result cross the process boundary. Frame plans, which are large, never cross it.
   - Vite bundles the page into `dist/page/capture.js` at build time. Tests bundle it from source instead, so they never run a stale build.
-- **No network, by construction.**
-  - The page lives at `https://capture.kynimo.invalid`. The host answers every request to that origin from memory: the page, CanvasKit's wasm, the bundled fonts, and the asset bytes of the call in progress. It aborts every request to any other origin.
+- **No network from the page.**
+  - The page lives at `https://capture.kynimo.invalid`. The host answers every request to that origin from memory: the page, CanvasKit's wasm, the bundled fonts, and the asset bytes of the call in progress. It aborts HTTP(S) requests to any other origin, closes every WebSocket and blocks service workers. A test checks this from inside the page.
+  - WebRTC is not routed. Today only our own code runs in the page; before agent-authored components or shaders run there (ADR-0012), the M6 sandbox ADR must close that path too.
   - `.invalid` never resolves. Https makes the page a secure context, which Web Crypto needs.
   - The caller passes asset bytes by asset id. Capture never fetches, and the renderer still checks every file against its pin.
 - **Launch.**
@@ -26,8 +27,9 @@ ADR-0016 guarantees bit-identical frames only for the pinned Chromium on SwiftSh
   - `launchCapture()` returns a session.
   - `session.captureFrames(document, frames, { composition, assets })` first migrates and validates the document (`migrateProject`).
   - It returns, per frame: the PNG, `pixelsSha256`, `pngSha256`, the skipped layers and the warnings of the frame and every nested precomp.
-  - Calls on one session run one at a time.
-  - Errors are a `CaptureError`. When the error came from the page, its `pageError` keeps the original name: `RenderError`, `ImageAssetError`, `RangeError` and so on.
+  - Calls on one session run one at a time, so each call sees only its own asset bytes.
+  - One call renders at most `MAX_FRAMES_PER_CALL` (64) frames, because all of its PNGs come back in one response. Callers (`render_frames`, workers) split longer ranges into several calls (ADR-0018).
+  - Errors are a `CaptureError`. When the error came from the page, its `pageError` keeps the original name: `RenderError`, `ImageAssetError`, `RangeError` and so on. A failed launch, a crashed page and a call after `close()` are `CaptureError`s too. A session whose browser disconnected stays closed.
 - **What the invariant is stated on.**
   - `pixelsSha256` hashes the composited premultiplied sRGB RGBA8 bytes. This is the determinism invariant itself.
   - `pngSha256` hashes the file, which straight alpha encodes losslessly only where pixels are opaque or fully transparent. It is pinned too, by CanvasKit's encoder.
@@ -46,4 +48,5 @@ ADR-0016 guarantees bit-identical frames only for the pinned Chromium on SwiftSh
 - Asset bytes and PNGs cross Playwright's channel as base64, about a third larger than raw. That is fine for previews; exports at scale may want a binary channel, and M7 revisits it.
 - **The golden hashes so far have been produced on one x86-64 host.** Whether CI's runners match is the first test of ADR-0016's CPU-family caveat. If they differ, workers and CI must be pinned to one CPU family, and the golden file records which one.
 - Reference scenes with approved PNGs (ADR-0018) are the next roadmap item. They reuse this session and test layout, and add PNGs a person reviews.
-- `CHROMIUM_ARGS` now exists here and in the renderer's compositor test helper. The renderer cannot depend on capture, so the duplicate stays until the worker app owns the launch.
+- The launch flags now exist twice: privately in capture and in the renderer's compositor test helper. The renderer cannot depend on capture, so the duplicate stays until the worker app owns the launch.
+- `page.evaluate` has no timeout yet. The pixel budget bounds a frame's memory, but not its time. Job timeouts and cancellation arrive with the workers (M7).

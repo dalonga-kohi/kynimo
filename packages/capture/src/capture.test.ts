@@ -4,9 +4,15 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { loadCanvasKit } from "@kynimo/renderer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { launchTestCapture } from "./launch.test-util.js";
+import { launchTestCapture, testPageScript } from "./launch.test-util.js";
 import { DETERMINISM_ASSETS, DETERMINISM_SCENE } from "./scene.test-util.js";
-import { type CapturedFrame, CaptureError, type CaptureSession } from "./session.js";
+import {
+  type CapturedFrame,
+  CaptureError,
+  type CaptureSession,
+  MAX_FRAMES_PER_CALL,
+  openCapturePage,
+} from "./session.js";
 
 /**
  * Golden hashes of the determinism scene (ADR-0016). They hold only for the pins they record:
@@ -132,7 +138,7 @@ describe("captureFrames: errors", () => {
   });
 
   it("refuses an empty frame list, out-of-range frames and unknown compositions", async () => {
-    await fails(render([]), /at least one frame/, null);
+    await fails(render([]), /1 to \d+ frames \(got 0\)/, null);
     await fails(render([30]), /frame must be an integer from 0 to 29/, "RangeError");
     await fails(
       capture.captureFrames(DETERMINISM_SCENE, [0], { composition: "nope" }),
@@ -166,9 +172,60 @@ describe("captureFrames: errors", () => {
     );
   });
 
-  it("keeps working after a failed call, and runs concurrent calls one at a time", async () => {
-    const [a, b] = await Promise.all([render([0]), render([29]), render([]).catch(() => null)]);
-    const [c] = await render([0, 29]).then((f) => [hashes(f)]);
-    expect({ ...hashes(a ?? []), ...hashes(b ?? []) }).toEqual(c);
+  it("runs concurrent calls one at a time, each with its own assets", async () => {
+    // Without the queue, one call's cleanup would drop the asset bytes another is still loading.
+    const [a, missing, b] = await Promise.allSettled([
+      render([0]),
+      capture.captureFrames(DETERMINISM_SCENE, [0]),
+      render([29]),
+    ]);
+    const golden = (await render([0, 29])).map((f) => f.pixelsSha256);
+    expect(a.status === "fulfilled" && a.value[0]?.pixelsSha256).toBe(golden[0]);
+    expect(b.status === "fulfilled" && b.value[0]?.pixelsSha256).toBe(golden[1]);
+    expect(missing.status === "rejected" && (missing.reason as CaptureError).pageError).toBe(
+      "RenderError",
+    );
+  }, 60_000);
+
+  it("keeps working after a failure in the page", async () => {
+    await fails(render([30]), /frame must be an integer/, "RangeError");
+    expect((await render([12]))[0]?.pixelsSha256).toBe(
+      (JSON.parse(readFileSync(GOLDEN_FILE, "utf8")) as Golden).frames["12"]?.pixelsSha256,
+    );
+  }, 60_000);
+
+  it("refuses more than MAX_FRAMES_PER_CALL frames", async () => {
+    const many = Array.from({ length: MAX_FRAMES_PER_CALL + 1 }, () => 0);
+    await fails(render(many), new RegExp(`1 to ${MAX_FRAMES_PER_CALL} frames`), null);
+  });
+
+  it("refuses every call once the session is closed", async () => {
+    const session = await launchTestCapture();
+    await session.close();
+    await fails(render([0], session), /session is closed/, null);
+  }, 60_000);
+});
+
+describe("the capture page: no network", () => {
+  it("aborts requests to any other origin and closes WebSockets", async () => {
+    const { browser, page } = await openCapturePage({ pageScript: await testPageScript() });
+    try {
+      const result = await page.evaluate(async () => {
+        const http = await fetch("https://example.com/").then(
+          () => "reached",
+          () => "blocked",
+        );
+        const ws = await new Promise<string>((resolve) => {
+          const socket = new WebSocket("wss://example.com/");
+          socket.onopen = () => resolve("open");
+          socket.onclose = () => resolve("closed");
+        });
+        const own = (await fetch("/fonts/inter.ttf")).status;
+        return { http, ws, own };
+      });
+      expect(result).toEqual({ http: "blocked", ws: "closed", own: 200 });
+    } finally {
+      await browser.close();
+    }
   }, 60_000);
 });
