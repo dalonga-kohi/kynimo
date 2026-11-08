@@ -138,6 +138,16 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
 const rejectionError = (o: Extract<WriteOutcome, { status: "rejected" }>) =>
   new ToolError(o.kind, o.message, o.errors, o.currentVersion);
 
+/** Maps a document path from the generated project back to the create_project field. */
+const CREATE_FIELDS: Record<string, string> = { durationFrames: "duration_frames" };
+const seg = (s: PropertyKey): string | number => (typeof s === "number" ? s : String(s));
+function inputPath(path: readonly PropertyKey[]): (string | number)[] {
+  const [first, , field] = path;
+  if (first === "compositions" && typeof field === "string")
+    return [CREATE_FIELDS[field] ?? field, ...path.slice(3).map(seg)];
+  return path.map(seg);
+}
+
 const keep = (records: WriteRecord[]) => records.slice(-MAX_WRITE_KEYS);
 
 /**
@@ -214,15 +224,21 @@ export class KynimoService {
         ],
       };
       const parsed = ProjectSchema.safeParse(doc);
-      if (!parsed.success)
-        throw new ToolError(
-          "invalid",
-          "the project settings are invalid",
-          parsed.error.issues.map((i) => ({
-            path: ["doc", ...i.path.map((s) => (typeof s === "number" ? s : String(s)))],
-            message: i.message,
-          })),
+      if (!parsed.success) {
+        const outcome: WriteOutcome = {
+          status: "rejected",
+          kind: "invalid",
+          message: "the project settings are invalid; nothing was created",
+          errors: parsed.error.issues.map((i) => ({ path: inputPath(i.path), message: i.message })),
+          currentVersion: 0,
+        };
+        await this.store.putCreateRecords(
+          keep([...records, { actor: this.actor, key, fingerprint: print, outcome }]),
         );
+        throw rejectionError(outcome);
+      }
+      // Two writes: a crash between them leaves a project without its key, so a retry creates a
+      // second project. The database store writes both in one transaction.
       const id = this.makeId();
       await this.store.put({
         id,

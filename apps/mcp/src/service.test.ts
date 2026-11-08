@@ -275,4 +275,19 @@ describe("KynimoService", () => {
   it("reports unknown projects as not found", async () => {
     expect((await rejection(svc.getProject("p-missing"))).kind).toBe("not_found");
   });
+
+  it("records a rejected create_project with paths named after its inputs", async () => {
+    const e = await rejection(
+      svc.createProject({
+        name: "Bad",
+        idempotency_key: "c2",
+        ...settings,
+        fps: { num: 1000, den: 1 },
+      }),
+    );
+    expect(e.kind).toBe("invalid");
+    expect(e.errors[0]?.path[0]).toBe("fps");
+    expect(await svc.getWriteOutcome("c2")).toMatchObject({ status: "rejected", kind: "invalid" });
+    expect(await svc.listProjects()).toHaveLength(1);
+  });
 });

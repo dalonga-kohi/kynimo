@@ -75,6 +75,8 @@ const WRITE = {
   idempotentHint: true,
   openWorldHint: false,
 } as const;
+/** Writes that can remove layers or discard work: clients should not auto-approve them. */
+const DESTRUCTIVE = { ...WRITE, destructiveHint: true } as const;
 
 /** Schemas for `get_layer_schema`, computed once: a layer type without its id. */
 const layerSchemaCache = new Map<string, Record<string, unknown>>();
@@ -222,7 +224,7 @@ export function createServer(service: KynimoService): McpServer {
         "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker. Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
-      annotations: WRITE,
+      annotations: DESTRUCTIVE,
     },
     guard(async (a) => ({ ...(await service.write(meta(a), { kind: "ops", ops: a.ops })) })),
   );
@@ -294,7 +296,7 @@ export function createServer(service: KynimoService): McpServer {
         "Reverts your own most recent write. Fails with a conflict, changing nothing, if a later edit touched the same properties.",
       inputSchema: UndoRedoInput,
       outputSchema: WriteOutput,
-      annotations: WRITE,
+      annotations: DESTRUCTIVE,
     },
     guard(async (a) => ({ ...(await service.write(meta(a), { kind: "undo" })) })),
   );
@@ -306,7 +308,7 @@ export function createServer(service: KynimoService): McpServer {
       description: "Re-applies the write you last undid, if the document still matches it.",
       inputSchema: UndoRedoInput,
       outputSchema: WriteOutput,
-      annotations: WRITE,
+      annotations: DESTRUCTIVE,
     },
     guard(async (a) => ({ ...(await service.write(meta(a), { kind: "redo" })) })),
   );

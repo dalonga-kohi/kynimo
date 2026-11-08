@@ -212,4 +212,28 @@ describe("MCP server", () => {
       error: "not_found",
     });
   });
+
+  it("replays an add_layer retry with the same key instead of adding twice", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    const args = {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    };
+    const first = await call(client, "add_layer", args);
+    const retry = await call(client, "add_layer", args);
+    expect(retry).toEqual({ ...first, replayed: true });
+    expect(await call(client, "get_project", { project_id })).toMatchObject({ version: 2 });
+  });
+
+  it("marks writes that can remove work as destructive", async () => {
+    const { tools } = await client.listTools();
+    const destructive = tools.filter((t) => t.annotations?.destructiveHint).map((t) => t.name);
+    expect(destructive.sort()).toEqual(["apply_ops", "redo", "undo"]);
+  });
 });

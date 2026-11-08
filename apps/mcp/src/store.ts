@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Change, migrateProject, type OpError, type Project } from "@kynimo/scene";
 
@@ -114,6 +114,16 @@ async function writeAtomic(path: string, data: string): Promise<void> {
   await rename(tmp, path);
 }
 
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM: the process exists but belongs to someone else.
+    return (e as { code?: unknown }).code === "EPERM";
+  }
+};
+
 const isMissing = (e: unknown) =>
   typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT";
 
@@ -123,7 +133,39 @@ const isMissing = (e: unknown) =>
  * records describe the old format.
  */
 export class FileStore implements ProjectStore {
-  constructor(private readonly dir: string) {}
+  private constructor(private readonly dir: string) {}
+
+  /**
+   * Opens `dir` for this process only. The service's write lock is in memory, so two processes on
+   * one folder could both pass a version check and lose a write; `<dir>/.lock` (holding the owner's
+   * pid) refuses a second live owner. A lock left by a process that is gone is taken over.
+   */
+  static async open(dir: string, pid: number = process.pid): Promise<FileStore> {
+    await mkdir(dir, { recursive: true });
+    const lock = join(dir, ".lock");
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const handle = await open(lock, "wx");
+        await handle.writeFile(String(pid));
+        await handle.close();
+        return new FileStore(dir);
+      } catch (e) {
+        if ((e as { code?: unknown }).code !== "EEXIST") throw e;
+        const owner = Number.parseInt(await readFile(lock, "utf8").catch(() => ""), 10);
+        if (Number.isInteger(owner) && owner !== pid && isAlive(owner))
+          throw new Error(
+            `${dir} is in use by another kynimo-mcp process (pid ${owner}); use a different --dir or stop that process`,
+          );
+        await rm(lock, { force: true });
+      }
+    }
+    throw new Error(`could not lock ${dir}`);
+  }
+
+  /** Releases the folder lock. */
+  async close(): Promise<void> {
+    await rm(join(this.dir, ".lock"), { force: true });
+  }
 
   private projectsDir = () => join(this.dir, "projects");
   private projectPath = (id: string) => join(this.projectsDir(), `${id}.json`);
@@ -140,8 +182,12 @@ export class FileStore implements ProjectStore {
     for (const name of names.sort()) {
       const id = name.endsWith(".json") ? name.slice(0, -5) : "";
       if (!PROJECT_ID_PATTERN.test(id)) continue;
-      const p = await this.get(id);
-      if (p) metas.push({ id: p.id, name: p.doc.name, version: p.version });
+      try {
+        const p = await this.get(id);
+        if (p) metas.push({ id: p.id, name: p.doc.name, version: p.version });
+      } catch {
+        // One unreadable file must not hide every other project; get_project reports it by id.
+      }
     }
     return metas;
   }
@@ -155,7 +201,14 @@ export class FileStore implements ProjectStore {
       if (isMissing(e)) return undefined;
       throw e;
     }
-    const stored = JSON.parse(raw) as StoredProject;
+    let stored: StoredProject;
+    try {
+      stored = JSON.parse(raw) as StoredProject;
+    } catch (e) {
+      throw new Error(
+        `project ${id} on disk is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
     const migrated = migrateProject(stored.doc);
     if (!migrated.ok)
       throw new Error(

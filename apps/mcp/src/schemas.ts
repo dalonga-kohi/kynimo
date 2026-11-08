@@ -36,16 +36,20 @@ export const TrackBodySchema = z
   );
 
 type AnyOp = (typeof OpSchema.options)[number];
+/** The op name of an option; setTransformTrack is itself a union of per-property variants. */
+const opName = (o: AnyOp): string =>
+  "shape" in o ? o.shape.op.value : (o.options[0]?.shape.op.value ?? "");
 const compactOptions = OpSchema.options.map((o: AnyOp) => {
-  if (!("shape" in o))
-    // setTransformTrack: one variant per property, collapsed to one with a loose track.
+  const name = opName(o);
+  // setTransformTrack: one variant per property, collapsed to one with a loose track.
+  if (name === "setTransformTrack")
     return z.strictObject({
       op: z.literal("setTransformTrack"),
       layer: LayerSelectorSchema,
       property: z.enum(TRANSFORM_PROPERTIES),
       track: TrackBodySchema,
     });
-  return o.shape.op.value === "addLayer"
+  return name === "addLayer"
     ? (o as z.ZodObject<z.ZodRawShape>).extend({ layer: LayerBodySchema })
     : o;
 }) as unknown as [AnyOp, ...AnyOp[]];
@@ -97,7 +101,7 @@ export const AddLayerInput = z.object({
   ...writeMeta,
   composition: z.string().min(1).max(64).describe("Composition id, e.g. 'main'."),
   layer: LayerBodySchema.describe(
-    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no matte, no masks. Type-specific fields (e.g. shape `contents`, text `content`/`font`) must be given; see get_layer_schema.",
+    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no matte, no masks. Type-specific fields (e.g. shape `contents`, text `content`, `box`, `font`, `tracking`, `leading`, `align`, `textCase`, `fill`) must be given; see get_layer_schema.",
   ),
   id: z.string().min(1).max(64).optional().describe("Optional layer id; generated when omitted."),
   index: z
@@ -138,12 +142,16 @@ export const CreateProjectInput = z.object({
     .describe("Hex color, or null for transparent."),
 });
 
-const ErrorItem = z.object({
+/**
+ * Outputs are open objects: a later field is an addition clients must tolerate, and every field
+ * added after v1 is optional, so stored outcomes from older builds still validate (ADR-0024).
+ */
+const ErrorItem = z.looseObject({
   path: z.array(z.union([z.string(), z.number()])),
   message: z.string(),
 });
 
-export const WriteOutput = z.object({
+export const WriteOutput = z.looseObject({
   project_id: z.string(),
   version: z.number().int(),
   changed: z.boolean(),
@@ -155,23 +163,27 @@ export const WriteOutput = z.object({
   replayed: z.boolean(),
 });
 
-const ProjectMetaOutput = z.object({ id: z.string(), name: z.string(), version: z.number().int() });
+const ProjectMetaOutput = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  version: z.number().int(),
+});
 
 export const CreateProjectOutput = ProjectMetaOutput.extend({ replayed: z.boolean() });
-export const ListProjectsOutput = z.object({ projects: z.array(ProjectMetaOutput) });
+export const ListProjectsOutput = z.looseObject({ projects: z.array(ProjectMetaOutput) });
 
-const Fps = z.object({ num: z.number(), den: z.number() });
+const Fps = z.looseObject({ num: z.number(), den: z.number() });
 
-export const GetProjectOutput = z.object({
+export const GetProjectOutput = z.looseObject({
   project_id: z.string(),
   name: z.string(),
   version: z.number().int(),
   format_version: z.number().int(),
   main_composition_id: z.string(),
-  style: z.object({ packId: z.string(), version: z.string() }).nullable(),
+  style: z.looseObject({ packId: z.string(), version: z.string() }).nullable(),
   assets: z.number().int(),
   compositions: z.array(
-    z.object({
+    z.looseObject({
       id: z.string(),
       name: z.string(),
       width: z.number(),
@@ -183,7 +195,7 @@ export const GetProjectOutput = z.object({
   ),
 });
 
-const LayerSummaryOutput = z.object({
+const LayerSummaryOutput = z.looseObject({
   id: z.string(),
   name: z.string(),
   type: z.enum(LAYER_TYPES),
@@ -194,7 +206,7 @@ const LayerSummaryOutput = z.object({
   start_frame: z.number(),
   hidden: z.boolean(),
   animated: z.array(
-    z.object({
+    z.looseObject({
       property: z.string(),
       keyframes: z.number().int(),
       first_frame: z.number(),
@@ -203,13 +215,13 @@ const LayerSummaryOutput = z.object({
   ),
 });
 
-export const GetSceneOutput = z.object({
+export const GetSceneOutput = z.looseObject({
   project_id: z.string(),
   version: z.number().int(),
   detail: z.enum(["summary", "full"]),
   compositions: z
     .array(
-      z.object({
+      z.looseObject({
         id: z.string(),
         name: z.string(),
         main: z.boolean(),
@@ -225,12 +237,12 @@ export const GetSceneOutput = z.object({
   document: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const FindLayersOutput = z.object({
+export const FindLayersOutput = z.looseObject({
   project_id: z.string(),
   version: z.number().int(),
   total: z.number().int(),
   layers: z.array(
-    z.object({
+    z.looseObject({
       id: z.string(),
       name: z.string(),
       type: z.enum(LAYER_TYPES),
@@ -240,7 +252,7 @@ export const FindLayersOutput = z.object({
   ),
 });
 
-export const GetLayerOutput = z.object({
+export const GetLayerOutput = z.looseObject({
   project_id: z.string(),
   version: z.number().int(),
   composition: z.string(),
@@ -248,12 +260,12 @@ export const GetLayerOutput = z.object({
   layer: z.record(z.string(), z.unknown()),
 });
 
-export const GetLayerSchemaOutput = z.object({
+export const GetLayerSchemaOutput = z.looseObject({
   type: z.enum(LAYER_TYPES),
   schema: z.record(z.string(), z.unknown()),
 });
 
-export const WriteOutcomeOutput = z.object({
+export const WriteOutcomeOutput = z.looseObject({
   status: z.enum(["applied", "rejected", "expired", "unknown"]),
   version: z.number().int().optional(),
   result: WriteOutput.omit({ replayed: true }).optional(),
