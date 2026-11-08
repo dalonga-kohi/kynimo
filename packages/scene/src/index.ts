@@ -13,7 +13,12 @@ export * from "./migrations.js";
 export * from "./ops.js";
 export * from "./primitives.js";
 export * from "./project.js";
-export { type LayerSelector, LayerSelectorSchema } from "./selectors.js";
+export {
+  type LayerRef,
+  type LayerSelector,
+  LayerSelectorSchema,
+  matchLayers,
+} from "./selectors.js";
 export * from "./shape.js";
 export * from "./spring.js";
 export * from "./transform.js";

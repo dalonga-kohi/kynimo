@@ -87,7 +87,7 @@ Simple editor in v1: sign in, project list, viewer with timeline scrubbing, laye
 | `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators | M1               |
 | `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                            | M2               |
 | `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022) | M2               |
-| `apps/mcp`            | MCP server                                                                                      | M3               |
+| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project store interface (ADR-0024)     | M3 (local stdio) |
 | `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                             | M5               |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                              | M6               |
 | `apps/worker`         | render/export workers                                                                           | M7               |
