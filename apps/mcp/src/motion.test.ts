@@ -1,13 +1,13 @@
-import { type Composition, ProjectSchema, springSettleFrames } from "@kynimo/scene";
+import { type Project, ProjectSchema, springSettleFrames } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
-import { describeMotion, summarizeValue } from "./motion.js";
+import { describeMotion, type MotionOptions, summarizeValue } from "./motion.js";
 
 const SIZE = { width: 1920, height: 1080, durationFrames: 90 } as never;
 
-/** A validated composition built from layers given as add_layer bodies (ids filled in). */
-function comp(layers: Record<string, unknown>[]): Composition {
-  const project = ProjectSchema.parse({
+/** A validated project whose main composition holds these add_layer bodies (ids l0, l1, …). */
+function comp(layers: Record<string, unknown>[], innerFps = 30): Project {
+  return ProjectSchema.parse({
     formatVersion: 3,
     name: "M",
     mainCompositionId: "main",
@@ -30,7 +30,7 @@ function comp(layers: Record<string, unknown>[]): Composition {
         name: "Inner",
         width: 100,
         height: 100,
-        fps: { num: 30, den: 1 },
+        fps: { num: innerFps, den: 1 },
         durationFrames: 30,
         background: null,
         markers: [],
@@ -38,8 +38,11 @@ function comp(layers: Record<string, unknown>[]): Composition {
       },
     ],
   });
-  return project.compositions[0] as Composition;
 }
+
+/** describe_motion of the main composition. */
+const describe_ = (doc: Project, options?: MotionOptions) =>
+  describeMotion(doc, doc.compositions[0] as Project["compositions"][number], options);
 
 const solid = (extra: Record<string, unknown> = {}) => ({
   type: "solid",
@@ -68,7 +71,7 @@ describe("describeMotion", () => {
         },
       }),
     ]);
-    const [layer] = describeMotion(c).layers;
+    const [layer] = describe_(c).layers;
     expect(layer).toMatchObject({ id: "l0", name: "Box", index: 0, in_frame: 0, out_frame: 90 });
     expect(layer?.properties).toEqual([
       {
@@ -117,7 +120,7 @@ describe("describeMotion", () => {
         },
       }),
     ]);
-    const props = describeMotion(c).layers[0]?.properties;
+    const props = describe_(c).layers[0]?.properties;
     expect(props).toEqual([
       {
         property: "transform.position",
@@ -154,20 +157,18 @@ describe("describeMotion", () => {
       }),
       { type: "precomp", name: "Inner", compositionId: "inner", startFrame: 30 },
     ]);
-    const all = describeMotion(c);
+    const all = describe_(c);
     expect(all.layers[0]?.properties[0]?.segments.map((s) => s.outside_layer_range)).toEqual([
       true,
       undefined,
     ]);
     expect(all.layers[1]).toMatchObject({ precomp: { composition: "inner", time_offset: 30 } });
 
-    const windowed = describeMotion(c, { from_frame: 40, to_frame: 89 });
+    const windowed = describe_(c, { from_frame: 40, to_frame: 89 });
     expect(windowed.layers[0]?.properties[0]?.segments.map((s) => s.from_frame)).toEqual([20]);
-    expect(describeMotion(c, { layers: new Set(["l1"]) }).layers.map((l) => l.id)).toEqual(["l1"]);
-    // A layer that ends before the window is left out.
-    expect(describeMotion(c, { from_frame: 0, to_frame: 10 }).layers.map((l) => l.id)).toEqual([
-      "l1",
-    ]);
+    expect(describe_(c, { layers: new Set(["l1"]) }).layers.map((l) => l.id)).toEqual(["l1"]);
+    // A layer that starts after the window is left out.
+    expect(describe_(c, { from_frame: 0, to_frame: 10 }).layers.map((l) => l.id)).toEqual(["l1"]);
   });
 
   it("caps the listed segments and counts the rest", () => {
@@ -177,9 +178,143 @@ describe("describeMotion", () => {
       interpolation: { type: "linear" },
     }));
     const c = comp([solid({ transform: { rotation: { keyframes } } })]);
-    const d = describeMotion(c, { maxSegments: 4 });
+    const d = describe_(c, { maxSegments: 4 });
     expect(d.layers[0]?.properties[0]?.segments).toHaveLength(4);
     expect(d.truncated_segments).toBe(6);
+  });
+});
+
+describe("describeMotion: review regressions", () => {
+  const linear = { type: "linear" };
+
+  it("gives a spring's settle frame in composition frames", () => {
+    const spring = { damping: 0.6, response: 0.4 };
+    const c = comp([
+      solid({
+        startFrame: 10,
+        transform: {
+          rotation: {
+            keyframes: [
+              { frame: 20, value: 0, interpolation: { type: "spring", ...spring } },
+              { frame: 60, value: 90, interpolation: linear },
+            ],
+          },
+        },
+      }),
+    ]);
+    const [segment] = describe_(c).layers[0]?.properties[0]?.segments ?? [];
+    expect(segment?.from_frame).toBe(30);
+    expect(segment?.easing).toEqual({
+      type: "spring",
+      ...spring,
+      settle_frame: 30 + springSettleFrames(spring, { num: 30, den: 1 }),
+    });
+  });
+
+  it("keeps the parents that move listed layers, even off screen or filtered out", () => {
+    const c = comp([
+      {
+        type: "null",
+        name: "Rig",
+        outFrame: 10,
+        transform: {
+          position: {
+            keyframes: [
+              { frame: 20, value: [0, 0], interpolation: linear },
+              { frame: 60, value: [100, 0], interpolation: linear },
+            ],
+          },
+        },
+      },
+      solid({ name: "Logo", parent: "l0" }),
+      solid({ name: "Other" }),
+    ]);
+    const windowed = describe_(c, { from_frame: 20, to_frame: 60 });
+    expect(windowed.layers.map((l) => [l.id, l.parent_of_listed])).toEqual([
+      ["l0", true],
+      ["l1", undefined],
+      ["l2", undefined],
+    ]);
+    expect(windowed.layers[0]?.properties[0]?.segments).toHaveLength(1);
+    const selected = describe_(c, { layers: new Set(["l1"]) });
+    expect(selected.layers.map((l) => l.id)).toEqual(["l0", "l1"]);
+  });
+
+  it("leaves out a layer that ends before the window", () => {
+    const c = comp([solid({ outFrame: 10 }), solid({ name: "B" })]);
+    expect(describe_(c, { from_frame: 10 }).layers.map((l) => l.id)).toEqual(["l1"]);
+  });
+
+  it("flags curves from either tangent, and not zero tangents", () => {
+    const kf = (frame: number, spatial: { inTangent: number[]; outTangent: number[] }) => ({
+      frame,
+      value: [frame, 0],
+      interpolation: linear,
+      spatial,
+    });
+    const zero = { inTangent: [0, 0], outTangent: [0, 0] };
+    const c = comp([
+      solid({
+        transform: {
+          position: {
+            keyframes: [
+              kf(0, zero),
+              kf(10, { inTangent: [5, 0], outTangent: [0, 0] }),
+              kf(20, zero),
+            ],
+          },
+        },
+      }),
+    ]);
+    expect(describe_(c).layers[0]?.properties[0]?.segments.map((s) => s.curved)).toEqual([
+      true,
+      undefined,
+    ]);
+  });
+
+  it("flags a segment ending where the layer starts, and gives the nested frame rate", () => {
+    const c = comp(
+      [
+        solid({
+          inFrame: 20,
+          transform: {
+            opacity: {
+              keyframes: [
+                { frame: 0, value: 0, interpolation: linear },
+                { frame: 20, value: 1, interpolation: linear },
+                { frame: 40, value: 0, interpolation: linear },
+              ],
+            },
+          },
+        }),
+        { type: "precomp", name: "Inner", compositionId: "inner", startFrame: 5 },
+      ],
+      60,
+    );
+    const d = describe_(c);
+    expect(d.layers[0]?.properties[0]?.segments.map((s) => s.outside_layer_range)).toEqual([
+      true,
+      undefined,
+    ]);
+    expect(d.layers[1]?.precomp).toEqual({
+      composition: "inner",
+      time_offset: 5,
+      fps: { num: 60, den: 1 },
+    });
+  });
+
+  it("keeps cut properties with their own truncated count", () => {
+    const keyframes = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ frame: i * 5, value: i, interpolation: linear }));
+    const c = comp([
+      solid({ transform: { rotation: { keyframes: keyframes(4) } } }),
+      solid({ name: "B", transform: { rotation: { keyframes: keyframes(3) } } }),
+    ]);
+    const d = describe_(c, { maxSegments: 2 });
+    expect(d.truncated_segments).toBe(3);
+    expect(
+      d.layers.map((l) => l.properties.map((p) => [p.segments.length, p.truncated_segments])),
+    ).toEqual([[[2, 1]], [[0, 2]]]);
   });
 });
 

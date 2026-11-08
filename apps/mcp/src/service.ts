@@ -512,7 +512,7 @@ export class KynimoService {
     return {
       project_id: p.id,
       version: p.version,
-      ...describeMotion(comp, {
+      ...describeMotion(p.doc, comp, {
         from_frame: from,
         to_frame: to,
         ...(layers === undefined ? {} : { layers }),

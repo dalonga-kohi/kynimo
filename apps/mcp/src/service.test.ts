@@ -328,6 +328,12 @@ describe("KynimoService", () => {
       );
       const none = await rejection(svc.describeMotion(project, { layer: { name: "Nope" } }));
       expect(none.kind).toBe("not_found");
+      await write(1, "pre", [addSolid("Moved", "moved")]);
+      await write(2, "pc", [{ op: "precompose", layers: ["moved"], id: "inner" }]);
+      const elsewhere = await rejection(svc.describeMotion(project, { layer: "moved" }));
+      expect(elsewhere.message).toMatch(/matches exist in inner \(pass composition\)/);
+      const inner = await svc.describeMotion(project, { composition: "inner", layer: "moved" });
+      expect(inner.layers.map((l) => l.id)).toEqual(["moved"]);
     });
   });
 });

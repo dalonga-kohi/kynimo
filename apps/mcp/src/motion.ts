@@ -1,4 +1,4 @@
-import { type Composition, type Layer, springSettleFrames } from "@kynimo/scene";
+import { type Composition, type Layer, type Project, springSettleFrames } from "@kynimo/scene";
 import { type RawKeyframe, walkTracks } from "./summary.js";
 
 /** Segments one `describe_motion` reply lists; the rest are counted in `truncated_segments`. */
@@ -11,7 +11,13 @@ export type Easing =
   | { type: "linear" }
   | { type: "hold" }
   | { type: "bezier"; x1: number; y1: number; x2: number; y2: number }
-  | { type: "spring"; damping: number; response: number; settle_frame: number };
+  | {
+      type: "spring";
+      damping: number;
+      response: number;
+      /** The composition frame the spring comes to rest on; the next keyframe sits at or after it. */
+      settle_frame: number;
+    };
 
 export interface MotionSegment {
   /** Composition frames. The value moves from `from` at `from_frame` to `to` at `to_frame`. */
@@ -24,7 +30,7 @@ export interface MotionSegment {
   easing: Easing;
   /** Position only: the segment follows a curved spatial path. */
   curved?: true;
-  /** The segment lies entirely outside the layer's in/out range, so it never shows. */
+  /** None of the segment's motion falls inside the layer's in/out range, so it never shows. */
   outside_layer_range?: true;
 }
 
@@ -34,6 +40,8 @@ export interface MotionProperty {
   segments: MotionSegment[];
   /** One keyframe: the property is constant at this value. */
   constant?: unknown;
+  /** Segments of this property in the window left out by the segment cap. */
+  truncated_segments?: number;
 }
 
 export interface LayerMotion {
@@ -47,8 +55,13 @@ export interface LayerMotion {
   /** Composition frames the layer shows on: in_frame up to (not including) out_frame. */
   in_frame: number;
   out_frame: number;
-  /** Precomp layers: composition frame f shows frame f - time_offset of `composition`. */
-  precomp?: { composition: string; time_offset: number };
+  /**
+   * Precomp layers: composition frame f shows `composition` at (f - time_offset) of this
+   * composition's frames, converted to the nested frame rate `fps` and floored.
+   */
+  precomp?: { composition: string; time_offset: number; fps: { num: number; den: number } };
+  /** Left out by the filters, but listed because it parents a listed layer and moves it. */
+  parent_of_listed?: true;
   properties: MotionProperty[];
 }
 
@@ -104,7 +117,7 @@ function roundDeep(value: unknown): unknown {
   return value;
 }
 
-function easing(kf: RawKeyframe, fps: Composition["fps"]): Easing {
+function easing(kf: RawKeyframe, fromFrame: number, fps: Composition["fps"]): Easing {
   const i = kf.interpolation;
   switch (i.type) {
     case "hold":
@@ -119,7 +132,11 @@ function easing(kf: RawKeyframe, fps: Composition["fps"]): Easing {
       };
     case "spring": {
       const spring = { damping: i.damping as number, response: i.response as number };
-      return { type: "spring", ...spring, settle_frame: springSettleFrames(spring, fps) };
+      return {
+        type: "spring",
+        ...spring,
+        settle_frame: fromFrame + springSettleFrames(spring, fps),
+      };
     }
     default:
       return { type: "linear" };
@@ -137,7 +154,11 @@ const tangent = (kf: RawKeyframe, side: "inTangent" | "outTangent"): boolean => 
  * segments between consecutive keyframes in composition frames and seconds, with their values and
  * easing. Exact and cheap; nothing is evaluated or rendered.
  */
-export function describeMotion(comp: Composition, options: MotionOptions = {}): MotionDescription {
+export function describeMotion(
+  doc: Project,
+  comp: Composition,
+  options: MotionOptions = {},
+): MotionDescription {
   const fps = comp.fps;
   const seconds = (frame: number) => round((frame * fps.den) / fps.num);
   const from = options.from_frame ?? 0;
@@ -146,11 +167,27 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
   let listed = 0;
   let truncated = 0;
 
+  // The selected layers on screen during the window, plus every parent above them: parents move
+  // their children whether or not they show themselves.
+  const selected = new Set<string>(
+    comp.layers
+      .filter((l) => !options.layers || options.layers.has(l.id))
+      .filter((l) => l.outFrame > from && l.inFrame <= to)
+      .map((l) => l.id),
+  );
+  const byId = new Map<string, Layer>(comp.layers.map((l) => [l.id, l]));
+  const parents = new Set<string>();
+  for (const id of selected)
+    for (
+      let p = parentOf(byId.get(id));
+      p !== null && !selected.has(p) && !parents.has(p);
+      p = parentOf(byId.get(p))
+    )
+      parents.add(p);
+
   const layers: LayerMotion[] = [];
   comp.layers.forEach((layer, index) => {
-    if (options.layers && !options.layers.has(layer.id)) return;
-    // Layers not on screen during the window are left out.
-    if (layer.outFrame <= from || layer.inFrame > to) return;
+    if (!selected.has(layer.id) && !parents.has(layer.id)) return;
     const properties: MotionProperty[] = [];
     walkTracks(layer, (property, keyframes) => {
       const first = keyframes[0] as RawKeyframe;
@@ -159,6 +196,7 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
         return;
       }
       const segments: MotionSegment[] = [];
+      let cut = 0;
       for (let k = 0; k + 1 < keyframes.length; k++) {
         const a = keyframes[k] as RawKeyframe;
         const b = keyframes[k + 1] as RawKeyframe;
@@ -166,7 +204,7 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
         const toFrame = layer.startFrame + b.frame;
         if (toFrame < from || fromFrame > to) continue;
         if (listed >= max) {
-          truncated++;
+          cut++;
           continue;
         }
         listed++;
@@ -177,14 +215,16 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
           to_seconds: seconds(toFrame),
           from: summarizeValue(a.value),
           to: summarizeValue(b.value),
-          easing: easing(a, fps),
+          easing: easing(a, fromFrame, fps),
           ...(tangent(a, "outTangent") || tangent(b, "inTangent") ? { curved: true as const } : {}),
-          ...(toFrame < layer.inFrame || fromFrame >= layer.outFrame
+          ...(toFrame <= layer.inFrame || fromFrame >= layer.outFrame
             ? { outside_layer_range: true as const }
             : {}),
         });
       }
-      if (segments.length > 0) properties.push({ property, segments });
+      truncated += cut;
+      if (segments.length > 0 || cut > 0)
+        properties.push({ property, segments, ...(cut > 0 ? { truncated_segments: cut } : {}) });
     });
     layers.push({
       id: layer.id,
@@ -196,8 +236,15 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
       in_frame: layer.inFrame,
       out_frame: layer.outFrame,
       ...(layer.type === "precomp"
-        ? { precomp: { composition: layer.compositionId, time_offset: layer.startFrame } }
+        ? {
+            precomp: {
+              composition: layer.compositionId,
+              time_offset: layer.startFrame,
+              fps: doc.compositions.find((c) => c.id === layer.compositionId)?.fps ?? fps,
+            },
+          }
         : {}),
+      ...(parents.has(layer.id) ? { parent_of_listed: true as const } : {}),
       properties,
     });
   });
@@ -213,3 +260,6 @@ export function describeMotion(comp: Composition, options: MotionOptions = {}): 
     truncated_segments: truncated,
   };
 }
+
+const parentOf = (layer: Layer | undefined): string | null =>
+  layer !== undefined && "parent" in layer ? layer.parent : null;

@@ -493,7 +493,9 @@ export const RenderContactSheetOutput = z.looseObject({
 export const DescribeMotionInput = z.object({
   project_id: ProjectIdSchema,
   composition: CompositionField,
-  layer: LayerSelectorSchema.optional().describe("Only the layers this selector matches."),
+  layer: LayerSelectorSchema.optional().describe(
+    "Only the layers this selector matches (plus the parents that move them).",
+  ),
   from_frame: FrameSchema.optional().describe(
     "Start of the window (composition frame). Default 0.",
   ),
@@ -522,11 +524,15 @@ export const DescribeMotionOutput = z.looseObject({
       hidden: z.boolean(),
       in_frame: z.number().int(),
       out_frame: z.number().int(),
-      precomp: z.looseObject({ composition: z.string(), time_offset: z.number().int() }).optional(),
+      precomp: z
+        .looseObject({ composition: z.string(), time_offset: z.number().int(), fps: Fps })
+        .optional(),
+      parent_of_listed: z.literal(true).optional(),
       properties: z.array(
         z.looseObject({
           property: z.string(),
           constant: MotionValue.optional(),
+          truncated_segments: z.number().int().optional(),
           segments: z.array(
             z.looseObject({
               from_frame: z.number().int(),
