@@ -17,6 +17,12 @@ The test fails and writes the new frames to `renders/reference/<scene>/`. Look a
 KYNIMO_UPDATE_GOLDEN=1 pnpm --filter @kynimo/capture test
 ```
 
+In PowerShell:
+
+```powershell
+$env:KYNIMO_UPDATE_GOLDEN=1; pnpm --filter @kynimo/capture test; Remove-Item Env:KYNIMO_UPDATE_GOLDEN
+```
+
 This also rewrites `golden/determinism.json`. Look at every changed PNG before committing, and say in the PR why the frames moved.
 
 ## Adding a scene

@@ -103,6 +103,7 @@ describe("reference scenes (ADR-0018)", () => {
       });
       if (changed.length > 0) {
         const out = new URL(`${scene}/`, RENDERS);
+        rmSync(out, { recursive: true, force: true }); // Never leave an older run's frames to look at.
         mkdirSync(out, { recursive: true });
         for (const f of changed) writeFileSync(new URL(frameFile(f.frame), out), f.png);
       }
