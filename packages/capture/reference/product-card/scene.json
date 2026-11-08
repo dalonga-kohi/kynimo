@@ -1,0 +1,1039 @@
+{
+  "formatVersion": 3,
+  "name": "Reference: product card",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [
+    {
+      "id": "bottle",
+      "name": "bottle",
+      "type": "image",
+      "uri": "assets/bottle.png",
+      "sha256": "9c0242a54a9ab13d05ec5ce84bccf60a6082b9a5006f879f5c87213b65d8ca04",
+      "width": 240,
+      "height": 320
+    }
+  ],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 640,
+      "height": 360,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 60,
+      "background": "#ece6dc",
+      "markers": [],
+      "layers": [
+        {
+          "id": "badge-text",
+          "name": "badge-text",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "badge",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 4]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "NEW"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 800,
+            "size": {
+              "value": 12
+            }
+          },
+          "tracking": {
+            "value": 80
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "center",
+          "textCase": "none",
+          "fill": {
+            "value": "#1b1b1f"
+          }
+        },
+        {
+          "id": "badge",
+          "name": "badge",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [262, 92]
+            },
+            "scale": {
+              "keyframes": [
+                {
+                  "frame": 10,
+                  "value": [0, 0],
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.5,
+                    "response": 0.45
+                  }
+                },
+                {
+                  "frame": 41,
+                  "value": [1, 1],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotation": {
+              "keyframes": [
+                {
+                  "frame": 10,
+                  "value": -90,
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.5,
+                    "response": 0.45
+                  }
+                },
+                {
+                  "frame": 41,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "star-1",
+              "name": "star",
+              "type": "star",
+              "position": {
+                "value": [0, 0]
+              },
+              "points": 12,
+              "outerRadius": {
+                "value": 30
+              },
+              "innerRadius": {
+                "value": 25
+              },
+              "rotation": {
+                "value": 0
+              }
+            },
+            {
+              "id": "fill-2",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#ffd84d"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "cta-label",
+          "name": "cta-label",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "cta",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 5]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 22,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 36,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "Add to bag"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 600,
+            "size": {
+              "value": 15
+            }
+          },
+          "tracking": {
+            "value": 0
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "center",
+          "textCase": "none",
+          "fill": {
+            "value": "#ffffff"
+          }
+        },
+        {
+          "id": "cta",
+          "name": "cta",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [466, 262]
+            },
+            "scale": {
+              "keyframes": [
+                {
+                  "frame": 22,
+                  "value": [0.9, 0.9],
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.7,
+                    "response": 0.5
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": [1, 1],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 22,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 36,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-3",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [148, 44]
+              },
+              "cornerRadius": {
+                "value": 22
+              }
+            },
+            {
+              "id": "fill-4",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#1b1b1f"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "price",
+          "name": "price",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [392, 214]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 16,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 30,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "€84"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 600,
+            "size": {
+              "value": 34
+            }
+          },
+          "tracking": {
+            "value": 0
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#1b1b1f"
+          }
+        },
+        {
+          "id": "meta",
+          "name": "meta",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [392, 160]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 10,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 24,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "Eau de parfum · 50 ml"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 400,
+            "size": {
+              "value": 15
+            }
+          },
+          "tracking": {
+            "value": 0
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#6b6b75"
+          }
+        },
+        {
+          "id": "name",
+          "name": "name",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 6,
+                  "value": [392, 150],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 24,
+                  "value": [392, 136],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 6,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 20,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "Aster No. 7"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 700,
+            "size": {
+              "value": 32
+            }
+          },
+          "tracking": {
+            "value": -10
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#1b1b1f"
+          }
+        },
+        {
+          "id": "product",
+          "name": "product",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [120, 320]
+            },
+            "position": {
+              "value": [200, 318]
+            },
+            "scale": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [0.55, 0.55],
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.5,
+                    "response": 0.45
+                  }
+                },
+                {
+                  "frame": 31,
+                  "value": [0.72, 0.72],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotation": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": -6,
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.7,
+                    "response": 0.5
+                  }
+                },
+                {
+                  "frame": 26,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "image",
+          "assetId": "bottle"
+        },
+        {
+          "id": "shadow",
+          "name": "shadow",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-5",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [200, 318]
+              },
+              "size": {
+                "value": [190, 26]
+              }
+            },
+            {
+              "id": "fill-6",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [200, 318]
+                },
+                "radius": {
+                  "value": 95
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#00000040"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#00000000"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "halo",
+          "name": "halo",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [200, 190]
+            },
+            "position": {
+              "value": [200, 190]
+            },
+            "scale": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [0.8, 0.8],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 20,
+                  "value": [1, 1],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-7",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [200, 190]
+              },
+              "size": {
+                "value": [250, 250]
+              }
+            },
+            {
+              "id": "fill-8",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [200, 190]
+                },
+                "radius": {
+                  "value": 125
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffe2c6"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#f6d0ae"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "card",
+          "name": "card",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [0, 24],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 18,
+                  "value": [0, 0],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-9",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [320, 180]
+              },
+              "size": {
+                "value": [592, 312]
+              },
+              "cornerRadius": {
+                "value": 28
+              }
+            },
+            {
+              "id": "fill-10",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#fffdf9"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            },
+            {
+              "id": "stroke-11",
+              "name": "stroke",
+              "type": "stroke",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#e2dbcf"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "width": {
+                "value": 1
+              },
+              "cap": "round",
+              "join": "round",
+              "miterLimit": 4,
+              "dashes": [],
+              "dashOffset": {
+                "value": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

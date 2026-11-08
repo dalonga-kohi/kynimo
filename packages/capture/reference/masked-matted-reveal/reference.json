@@ -1,0 +1,4 @@
+{
+  "description": "Masked and matted reveal: a moving gradient seen through a hidden headline (alpha matte) and revealed by a feathered, animated wipe mask; an underline shown through a hidden moving radial sweep (luma matte); a ring cut by add + subtract ellipse masks with animated expansion; a dot grid knocked out by an inverted luma matte.",
+  "frames": [8, 24, 59]
+}
