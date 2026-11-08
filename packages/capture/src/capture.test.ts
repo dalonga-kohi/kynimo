@@ -27,7 +27,11 @@ const FRAMES = [0, 12, 29];
 interface Golden {
   chromium: string;
   frames: Record<string, { pixelsSha256: string; pngSha256: string }>;
+  /** The same frames downscaled to {@link DOWNSCALED} (pins the CPU resampler too). */
+  downscaled: Record<string, { pixelsSha256: string; pngSha256: string }>;
 }
+
+const DOWNSCALED = 160;
 
 let capture: CaptureSession;
 beforeAll(async () => {
@@ -37,8 +41,11 @@ afterAll(async () => {
   await capture?.close();
 });
 
-const render = (frames = FRAMES, session = capture) =>
-  session.captureFrames(DETERMINISM_SCENE, frames, { assets: DETERMINISM_ASSETS });
+const render = (frames = FRAMES, session = capture, maxSize?: number) =>
+  session.captureFrames(DETERMINISM_SCENE, frames, {
+    assets: DETERMINISM_ASSETS,
+    ...(maxSize === undefined ? {} : { maxSize }),
+  });
 
 const hashes = (frames: CapturedFrame[]) =>
   Object.fromEntries(
@@ -48,7 +55,12 @@ const hashes = (frames: CapturedFrame[]) =>
 describe("captureFrames: determinism (ADR-0016)", () => {
   it("matches the golden hashes", async () => {
     const frames = await render();
-    const actual: Golden = { chromium: capture.browserVersion, frames: hashes(frames) };
+    const small = await render(FRAMES, capture, DOWNSCALED);
+    const actual: Golden = {
+      chromium: capture.browserVersion,
+      frames: hashes(frames),
+      downscaled: hashes(small),
+    };
     if (UPDATE) {
       writeFileSync(GOLDEN_FILE, `${JSON.stringify(actual, null, 2)}\n`);
       return;
@@ -60,6 +72,8 @@ describe("captureFrames: determinism (ADR-0016)", () => {
       const out = new URL("../../../renders/capture/", import.meta.url);
       mkdirSync(out, { recursive: true });
       for (const f of frames) writeFileSync(new URL(`frame-${f.frame}.png`, out), f.png);
+      for (const f of small)
+        writeFileSync(new URL(`frame-${f.frame}-${DOWNSCALED}.png`, out), f.png);
       throw error;
     }
   }, 60_000);
@@ -89,10 +103,121 @@ describe("captureFrames: determinism (ADR-0016)", () => {
   }, 60_000);
 });
 
-describe("captureFrames: PNG output", () => {
-  const require = createRequire(import.meta.url);
-  const bin = dirname(require.resolve("canvaskit-wasm/bin/canvaskit.js"));
+const require = createRequire(import.meta.url);
+const bin = dirname(require.resolve("canvaskit-wasm/bin/canvaskit.js"));
 
+/** Decodes a PNG with CanvasKit into premultiplied sRGB RGBA8. */
+async function decode(
+  png: Uint8Array,
+): Promise<{ width: number; height: number; pixels: Uint8Array }> {
+  const ck = await loadCanvasKit({ locateFile: (file) => join(bin, file) });
+  const image = ck.MakeImageFromEncoded(png);
+  if (image === null) throw new Error("the PNG does not decode");
+  try {
+    const width = image.width();
+    const height = image.height();
+    const pixels = image.readPixels(0, 0, {
+      width,
+      height,
+      colorType: ck.ColorType.RGBA_8888,
+      alphaType: ck.AlphaType.Premul,
+      colorSpace: ck.ColorSpace.SRGB,
+    });
+    if (!(pixels instanceof Uint8Array)) throw new Error("no pixels");
+    return { width, height, pixels };
+  } finally {
+    image.delete();
+  }
+}
+
+const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+describe("captureFrames: maxSize", () => {
+  it("downscales to the longest edge, keeping the aspect, and never upscales", async () => {
+    const [small] = await render([12], capture, 160);
+    expect([small?.width, small?.height]).toEqual([160, 90]);
+    const [native] = await render([12]);
+    const [same] = await render([12], capture, 320);
+    const [larger] = await render([12], capture, 1000);
+    expect(same?.pixelsSha256).toBe(native?.pixelsSha256);
+    expect(larger?.pixelsSha256).toBe(native?.pixelsSha256);
+    expect(small?.skipped).toEqual(native?.skipped);
+    expect(small?.warnings).toEqual(native?.warnings);
+  }, 60_000);
+
+  it("decodes back to exactly the hashed downscaled pixels", async () => {
+    for (const f of await render(FRAMES, capture, 97)) {
+      const decoded = await decode(f.png);
+      expect([decoded.width, decoded.height]).toEqual([97, 55]);
+      expect(sha(decoded.pixels)).toBe(f.pixelsSha256);
+    }
+  }, 60_000);
+});
+
+describe("captureSheet", () => {
+  it("tiles frames row-major; every cell is exactly its frame, gaps are transparent", async () => {
+    const frames = [0, 12, 29];
+    const sheet = await capture.captureSheet(DETERMINISM_SCENE, frames, {
+      assets: DETERMINISM_ASSETS,
+      maxSize: 160,
+      columns: 2,
+      gap: 4,
+    });
+    expect([sheet.width, sheet.height, sheet.cellWidth, sheet.cellHeight, sheet.columns]).toEqual([
+      324, 184, 160, 90, 2,
+    ]);
+    expect(sheet.frames.map((f) => f.frame)).toEqual(frames);
+    expect(sheet.pngSha256).toBe(sha(sheet.png));
+    const decoded = await decode(sheet.png);
+    expect(sha(decoded.pixels)).toBe(sheet.pixelsSha256);
+
+    const singles = await render(frames, capture, 160);
+    const cell = (i: number) => {
+      const x0 = (i % 2) * 164;
+      const y0 = Math.floor(i / 2) * 94;
+      const out = new Uint8Array(160 * 90 * 4);
+      for (let y = 0; y < 90; y++)
+        out.set(
+          decoded.pixels.subarray(((y0 + y) * 324 + x0) * 4, ((y0 + y) * 324 + x0 + 160) * 4),
+          y * 160 * 4,
+        );
+      return out;
+    };
+    singles.forEach((f, i) => {
+      expect(sha(cell(i))).toBe(f.pixelsSha256);
+      expect(sheet.frames[i]?.warnings).toEqual(f.warnings);
+    });
+    // The gap column, and the empty fourth cell.
+    for (let y = 0; y < 184; y++)
+      for (const x of [160, 163]) expect(decoded.pixels[(y * 324 + x) * 4 + 3]).toBe(0);
+    expect(decoded.pixels[(150 * 324 + 250) * 4 + 3]).toBe(0);
+  }, 60_000);
+
+  it("uses no more columns than frames", async () => {
+    const sheet = await capture.captureSheet(DETERMINISM_SCENE, [0, 29], {
+      assets: DETERMINISM_ASSETS,
+      maxSize: 64,
+      columns: 6,
+    });
+    expect([sheet.width, sheet.height, sheet.columns]).toEqual([128, 36, 2]);
+  }, 60_000);
+
+  it("refuses invalid layouts", async () => {
+    const error = await capture
+      .captureSheet(DETERMINISM_SCENE, [0], { assets: DETERMINISM_ASSETS, columns: 0 })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CaptureError);
+    expect((error as Error).message).toMatch(/columns must be a positive integer/);
+  });
+});
+
+describe("buildId", () => {
+  it("is a SHA-256 over what decides the pixels", () => {
+    expect(capture.buildId).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("captureFrames: PNG output", () => {
   it("decodes back to exactly the hashed pixels", async () => {
     const ck = await loadCanvasKit({ locateFile: (file) => join(bin, file) });
     for (const f of await render()) {

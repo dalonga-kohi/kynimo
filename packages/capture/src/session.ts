@@ -50,10 +50,37 @@ export interface CaptureOptions {
   /** The composition to render; the project's main composition by default. */
   composition?: string;
   /**
+   * The longest output edge in pixels. Larger frames are composited at full size, then
+   * downscaled on the CPU with the pinned CanvasKit (trilinear), keeping the aspect ratio
+   * ({@link fitSize}); smaller ones are returned as they are. Hashes are of the output pixels.
+   */
+  maxSize?: number;
+  /**
    * Bytes of the document's image and font assets, by asset id. Each is checked against the
    * document's pin. Loading them (the asset store, M3) is the caller's job: capture never fetches.
    */
   assets?: ReadonlyMap<string, Uint8Array>;
+}
+
+export interface SheetOptions extends CaptureOptions {
+  /** Cells per row; the sheet has as many rows as the frames need. */
+  columns: number;
+  /** Transparent pixels between cells. Default 0. */
+  gap?: number;
+}
+
+/** Frames tiled row-major into one PNG; each cell holds exactly that frame's output pixels. */
+export interface CapturedSheet {
+  width: number;
+  height: number;
+  png: Uint8Array;
+  pixelsSha256: string;
+  pngSha256: string;
+  cellWidth: number;
+  cellHeight: number;
+  columns: number;
+  /** Per cell, in order: the frame and what it skipped or drew differently. */
+  frames: { frame: number; skipped: SkippedLayer[]; warnings: RenderWarning[] }[];
 }
 
 export interface CaptureSession {
@@ -61,6 +88,13 @@ export interface CaptureSession {
   readonly browserVersion: string;
   /** `UNMASKED_RENDERER_WEBGL`; always a SwiftShader renderer. */
   readonly gpu: string;
+  /**
+   * Identifies everything that decides the pixels: the page bundle, CanvasKit's wasm, the bundled
+   * fonts, the Chromium version and the GPU string (hex SHA-256). Render caches key on it (ADR-0018).
+   */
+  readonly buildId: string;
+  /** True once closed, or once the browser is gone; a closed session stays closed. */
+  readonly closed: boolean;
   /**
    * Renders `frames` (at most {@link MAX_FRAMES_PER_CALL}) of a document to PNG. The document is
    * migrated and validated first. Calls on one session run one at a time. Throws
@@ -71,6 +105,12 @@ export interface CaptureSession {
     frames: readonly number[],
     options?: CaptureOptions,
   ): Promise<CapturedFrame[]>;
+  /** Renders `frames` (at most {@link MAX_FRAMES_PER_CALL}) into one contact sheet PNG. */
+  captureSheet(
+    document: unknown,
+    frames: readonly number[],
+    options: SheetOptions,
+  ): Promise<CapturedSheet>;
   close(): Promise<void>;
 }
 
@@ -115,8 +155,12 @@ interface StaticFile {
  * it when done.
  */
 export async function launchCapture(options: LaunchOptions = {}): Promise<CaptureSession> {
-  const { browser, page, gpu, serve } = await openCapturePage(options);
-  return session(browser, gpu, async (request, assets) => {
+  const { browser, page, gpu, serve, files } = await openCapturePage(options);
+  const build = createHash("sha256");
+  for (const [path, file] of [...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+    build.update(`${path}\0`).update(createHash("sha256").update(file.body).digest("hex"));
+  build.update(`\0${browser.version()}\0${gpu}`);
+  return session(browser, gpu, build.digest("hex"), async (request, assets) => {
     serve(assets);
     try {
       // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
@@ -145,6 +189,7 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
   page: Page;
   gpu: string;
   serve(assets: ReadonlyMap<string, Uint8Array>): void;
+  files: ReadonlyMap<string, StaticFile>;
 }> {
   const files = await staticFiles(pageScript);
   let assets: ReadonlyMap<string, Uint8Array> = new Map();
@@ -191,6 +236,7 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
       browser,
       page,
       gpu,
+      files,
       serve(next) {
         assets = next;
       },
@@ -217,6 +263,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 function session(
   browser: Browser,
   gpu: string,
+  buildId: string,
   render: (request: PageRequest, assets: ReadonlyMap<string, Uint8Array>) => Promise<PageResponse>,
 ): CaptureSession {
   let closed = false;
@@ -230,48 +277,76 @@ function session(
     return run;
   };
 
+  const call = (
+    document: unknown,
+    frames: readonly number[],
+    { composition, assets = new Map(), maxSize }: CaptureOptions,
+    sheet: PageRequest["sheet"],
+  ) =>
+    serialized(async () => {
+      if (closed) throw new CaptureError("the capture session is closed");
+      const migrated = migrateProject(document);
+      if (!migrated.ok)
+        throw new CaptureError(
+          `the document is invalid: ${migrated.errors
+            .map((e) => `${e.path.join(".") || "(root)"}: ${e.message}`)
+            .join("; ")}`,
+        );
+      const project = migrated.doc;
+      if (frames.length === 0 || frames.length > MAX_FRAMES_PER_CALL)
+        throw new CaptureError(
+          `frames must list 1 to ${MAX_FRAMES_PER_CALL} frames (got ${frames.length}); split longer ranges into several calls`,
+        );
+      if (maxSize !== undefined && (!Number.isInteger(maxSize) || maxSize < 1))
+        throw new CaptureError(`maxSize must be a positive integer (got ${maxSize})`);
+      if (sheet !== null) {
+        if (!Number.isInteger(sheet.columns) || sheet.columns < 1)
+          throw new CaptureError(`columns must be a positive integer (got ${sheet.columns})`);
+        if (!Number.isInteger(sheet.gap) || sheet.gap < 0)
+          throw new CaptureError(`gap must be a whole number of pixels (got ${sheet.gap})`);
+      }
+      for (const id of assets.keys()) {
+        const asset = project.assets.find((a) => a.id === id);
+        if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
+          throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
+      }
+      const response = await render(
+        {
+          project,
+          compositionId: composition ?? project.mainCompositionId,
+          frames: [...frames],
+          assets: [...assets.keys()],
+          maxSize: maxSize ?? null,
+          sheet,
+        },
+        assets,
+      );
+      if (!response.ok) throw new CaptureError(response.message, response.name);
+      return response;
+    });
+
+  const png = (base64: string) => {
+    const bytes = new Uint8Array(Buffer.from(base64, "base64"));
+    return { png: bytes, pngSha256: createHash("sha256").update(bytes).digest("hex") };
+  };
+
   return {
     browserVersion: browser.version(),
     gpu,
-    captureFrames(document, frames, { composition, assets = new Map() } = {}) {
-      return serialized(async () => {
-        if (closed) throw new CaptureError("the capture session is closed");
-        const migrated = migrateProject(document);
-        if (!migrated.ok)
-          throw new CaptureError(
-            `the document is invalid: ${migrated.errors
-              .map((e) => `${e.path.join(".") || "(root)"}: ${e.message}`)
-              .join("; ")}`,
-          );
-        const project = migrated.doc;
-        if (frames.length === 0 || frames.length > MAX_FRAMES_PER_CALL)
-          throw new CaptureError(
-            `frames must list 1 to ${MAX_FRAMES_PER_CALL} frames (got ${frames.length}); split longer ranges into several calls`,
-          );
-        for (const id of assets.keys()) {
-          const asset = project.assets.find((a) => a.id === id);
-          if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
-            throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
-        }
-        const response = await render(
-          {
-            project,
-            compositionId: composition ?? project.mainCompositionId,
-            frames: [...frames],
-            assets: [...assets.keys()],
-          },
-          assets,
-        );
-        if (!response.ok) throw new CaptureError(response.message, response.name);
-        return response.frames.map((f) => {
-          const png = new Uint8Array(Buffer.from(f.png, "base64"));
-          return {
-            ...f,
-            png,
-            pngSha256: createHash("sha256").update(png).digest("hex"),
-          };
-        });
-      });
+    buildId,
+    get closed() {
+      return closed;
+    },
+    async captureFrames(document, frames, options = {}) {
+      const response = await call(document, frames, options, null);
+      if (!("frames" in response)) throw new CaptureError("the capture page returned a sheet");
+      return response.frames.map((f) => ({ ...f, ...png(f.png) }));
+    },
+    async captureSheet(document, frames, { columns, gap = 0, ...options }) {
+      const response = await call(document, frames, options, { columns, gap });
+      if (!("sheet" in response)) throw new CaptureError("the capture page returned frames");
+      const { sheet } = response;
+      return { ...sheet, ...png(sheet.png), columns: Math.min(columns, frames.length) };
     },
     async close() {
       closed = true;

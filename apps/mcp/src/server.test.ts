@@ -55,6 +55,8 @@ describe("MCP server", () => {
       "list_projects",
       "precompose",
       "redo",
+      "render_contact_sheet",
+      "render_frames",
       "set_keyframes",
       "set_matte",
       "undo",
@@ -80,7 +82,7 @@ describe("MCP server", () => {
 
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
-    expect(JSON.stringify(tools).length).toBeLessThan(50_000);
+    expect(JSON.stringify(tools).length).toBeLessThan(60_000);
   });
 
   it("masks, mattes and precomposes layers, then undoes the precompose", async () => {

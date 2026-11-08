@@ -19,6 +19,10 @@ import {
   ListProjectsOutput,
   PrecomposeInput,
   ProjectIdSchema,
+  RenderContactSheetInput,
+  RenderContactSheetOutput,
+  RenderFramesInput,
+  RenderFramesOutput,
   SetKeyframesInput,
   SetMatteInput,
   UndoRedoInput,
@@ -26,13 +30,13 @@ import {
   WriteOutcomeOutput,
   WriteOutput,
 } from "./schemas.js";
-import { type KynimoService, ToolError, type WriteMeta } from "./service.js";
+import { type KynimoService, type Rendered, ToolError, type WriteMeta } from "./service.js";
 
 export const SERVER_NAME = "kynimo";
 export const SERVER_VERSION = "0.1.0";
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
-Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer.
+Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer, and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).`;
 
@@ -54,12 +58,35 @@ const errorReply = (e: unknown): CallToolResult => {
   return { isError: true, content: [{ type: "text", text: JSON.stringify(body) }] };
 };
 
+/** A render result: its PNGs as image content, then the structured result as text. */
+const imageReply = ({ result, images }: Rendered<object>): CallToolResult => ({
+  content: [
+    ...images.map((png) => ({
+      type: "image" as const,
+      data: Buffer.from(png).toString("base64"),
+      mimeType: "image/png",
+    })),
+    { type: "text", text: JSON.stringify(result) },
+  ],
+  structuredContent: result as Record<string, unknown>,
+});
+
 /** Runs a handler and turns any failure into an MCP error result; nothing throws to the transport. */
 const guard =
   <A>(fn: (args: A) => Promise<Record<string, unknown>>) =>
   async (args: A): Promise<CallToolResult> => {
     try {
       return reply(await fn(args));
+    } catch (e) {
+      return errorReply(e);
+    }
+  };
+
+const guardImages =
+  <A>(fn: (args: A) => Promise<Rendered<object>>) =>
+  async (args: A): Promise<CallToolResult> => {
+    try {
+      return imageReply(await fn(args));
     } catch (e) {
       return errorReply(e);
     }
@@ -216,6 +243,33 @@ export function createServer(service: KynimoService): McpServer {
       annotations: READ,
     },
     guard(async (a) => ({ ...(await service.getWriteOutcome(a.idempotency_key, a.project_id)) })),
+  );
+
+  // Feedback
+  server.registerTool(
+    "render_frames",
+    {
+      title: "Render frames",
+      description:
+        "Renders composition frames and returns them as PNG images, downscaled to max_size. Lists layers the renderer skipped and content drawn differently (font fallback), with the frames affected. Results are cached by document content.",
+      inputSchema: RenderFramesInput,
+      outputSchema: RenderFramesOutput,
+      annotations: READ,
+    },
+    guardImages(async ({ project_id, ...input }) => service.renderFrames(project_id, input)),
+  );
+
+  server.registerTool(
+    "render_contact_sheet",
+    {
+      title: "Render contact sheet",
+      description:
+        "Renders frames tiled row-major into one PNG image (`frames` lists them in cell order), to check a whole animation at a glance. Lists skipped layers and warnings like render_frames.",
+      inputSchema: RenderContactSheetInput,
+      outputSchema: RenderContactSheetOutput,
+      annotations: READ,
+    },
+    guardImages(async ({ project_id, ...input }) => service.renderContactSheet(project_id, input)),
   );
 
   // Precise

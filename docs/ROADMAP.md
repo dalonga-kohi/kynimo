@@ -29,7 +29,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 - [x] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops` → ADR-0024: `apps/mcp`, `ProjectStore` (memory + JSON dir), `base_version` + `idempotency_key` on every write, `get_write_outcome`, compact tool schemas with `get_layer_schema`
 - [x] Mask, matte and precompose ops in `@kynimo/scene` + `add_mask`, `set_matte`, `precompose` tools → ADR-0025: mask list recorded as one change, After Effects "move all attributes" precompose that refuses to break cross-boundary links, composition change records, 50 KB listing budget
-- [ ] `render_frames` + `render_contact_sheet` returning images, with declared limits, a render cache and skipped-feature reporting (ADR-0018); `describe_motion` timeline summary
+- [ ] `render_frames` + `render_contact_sheet` returning images, with declared limits, a render cache and skipped-feature reporting (ADR-0018); `describe_motion` timeline summary — render tools done → ADR-0026: longest-edge downscale in the page, byte-exact contact-sheet cells, in-memory LRU keyed by document hash + `buildId`; `describe_motion` next
 - [ ] MCP resources: scene schema, preset/component/token catalogs; capability manifest as a resource and `get_capabilities` tool (ADR-0018)
 - [ ] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on every write, `get_write_outcome`, undo history persisted with the project (ADR-0018)
 - [ ] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, SVG, fonts)

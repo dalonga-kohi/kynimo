@@ -13,5 +13,19 @@
       "pixelsSha256": "05ee9f55ad4836ff72993e45cf5c9b62adcf6f8dba9f4ff22b028208c857c1fa",
       "pngSha256": "c5abe726b4e9a7bbac84bd54050331cfb781a9d3a483f2888724fb1c7d8a8f14"
     }
+  },
+  "downscaled": {
+    "0": {
+      "pixelsSha256": "4ee9940ffd610d0e9c2a58ce9c0752ca5393e7db78acaade4f8df3f79c73f35b",
+      "pngSha256": "10c8a6308ea7c99527e0945cd83319b91b05a3fbcb01011bd0255532b3aa1a33"
+    },
+    "12": {
+      "pixelsSha256": "ab5dcead52ade4c95b4c2758b2eb7d34114a1e9fb58a8e9a8b95b137ece1cacf",
+      "pngSha256": "4d97e89b544b6f1a3578ccc505e8811a414f5871000832d4c3529a31a725b9f5"
+    },
+    "29": {
+      "pixelsSha256": "c1b75d1004b4b5cdae6cf00401bc1e0e833812aa90af563db62b04f6efee26b8",
+      "pngSha256": "c71a7b1c3e08b1fe2442c66048016c4448929c296ae30a62397385dff4b7c869"
+    }
   }
 }

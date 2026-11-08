@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
 import {
   applyBatch,
   type Change,
+  type Composition,
   type Layer,
   LayerSelectorSchema,
   matchLayers,
@@ -15,6 +16,16 @@ import {
   undo,
 } from "@kynimo/scene";
 import type { z } from "zod";
+import { fingerprint } from "./hash.js";
+import {
+  aggregateReports,
+  type FrameRenderer,
+  RENDER_LIMITS,
+  RenderCache,
+  type SkippedReport,
+  sampleFrames,
+  type WarningReport,
+} from "./render.js";
 import {
   MAX_WRITE_KEYS,
   newProjectId,
@@ -34,7 +45,14 @@ type SelectorInput = z.input<typeof LayerSelectorSchema>;
 /** A tool-level failure. The server turns it into an MCP error result. */
 export class ToolError extends Error {
   constructor(
-    readonly kind: "invalid" | "conflict" | "empty" | "not_found" | "key_reused",
+    readonly kind:
+      | "invalid"
+      | "conflict"
+      | "empty"
+      | "not_found"
+      | "key_reused"
+      | "render_failed"
+      | "unavailable",
     message: string,
     readonly errors: OpError[] = [],
     readonly currentVersion?: number,
@@ -76,20 +94,6 @@ export type OutcomeReply =
       current_version?: number;
     }
   | { status: "expired" | "unknown" };
-
-/** Canonical JSON (sorted keys), so equal requests hash equally regardless of key order. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (typeof value === "object" && value !== null)
-    return `{${Object.keys(value)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`)
-      .join(",")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
-const fingerprint = (request: unknown): string =>
-  createHash("sha256").update(canonical(request)).digest("hex");
 
 const toState = (p: StoredProject): SceneState => ({
   doc: p.doc,
@@ -158,6 +162,76 @@ function inputPath(path: readonly PropertyKey[]): (string | number)[] {
 
 const keep = (records: WriteRecord[]) => records.slice(-MAX_WRITE_KEYS);
 
+export interface ServiceOptions {
+  makeId?: () => string;
+  /** Draws frames for the render tools; without one they answer `unavailable`. */
+  renderer?: FrameRenderer;
+  /** Bytes the render cache may hold. Default 256 MB. */
+  renderCacheBytes?: number;
+}
+
+export interface RenderFramesInput {
+  composition?: string | undefined;
+  frames: number[];
+  max_size: number;
+}
+
+export interface ContactSheetInput {
+  composition?: string | undefined;
+  frames?: number[] | undefined;
+  count: number;
+  from_frame?: number | undefined;
+  to_frame?: number | undefined;
+  columns?: number | undefined;
+  cell_size: number;
+}
+
+interface RenderReports {
+  /** Layers the renderer left out, with why and in which frames; nothing is dropped silently. */
+  skipped: SkippedReport[];
+  /** Content drawn other than the document asks (font fallback, missing glyphs). */
+  warnings: WarningReport[];
+}
+
+export interface RenderFramesReply extends RenderReports {
+  project_id: string;
+  version: number;
+  composition: string;
+  frames: {
+    frame: number;
+    width: number;
+    height: number;
+    pixels_sha256: string;
+    png_sha256: string;
+    cached: boolean;
+  }[];
+}
+
+export interface ContactSheetReply extends RenderReports {
+  project_id: string;
+  version: number;
+  composition: string;
+  /** The cells' frames, row-major. */
+  frames: number[];
+  width: number;
+  height: number;
+  columns: number;
+  rows: number;
+  cell_width: number;
+  cell_height: number;
+  pixels_sha256: string;
+  png_sha256: string;
+  cached: boolean;
+}
+
+/** A render result and its PNG images, which the server sends as image content. */
+export interface Rendered<T> {
+  result: T;
+  images: Uint8Array[];
+}
+
+type CacheValue = { kind: "frame"; frame: CapturedFrame } | { kind: "sheet"; sheet: CapturedSheet };
+
 /**
  * The MCP tools' logic, independent of the transport. Every write goes through `write`, which
  * holds a per-project lock, checks `base_version` (optimistic concurrency), applies one atomic
@@ -165,13 +239,20 @@ const keep = (records: WriteRecord[]) => records.slice(-MAX_WRITE_KEYS);
  */
 export class KynimoService {
   private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly makeId: () => string;
+  private readonly renderer: FrameRenderer | undefined;
+  private readonly renders: RenderCache<CacheValue>;
 
   constructor(
     private readonly store: ProjectStore,
     /** The authenticated actor; the local server has exactly one. */
     readonly actor: string,
-    private readonly makeId: () => string = newProjectId,
-  ) {}
+    options: ServiceOptions = {},
+  ) {
+    this.makeId = options.makeId ?? newProjectId;
+    this.renderer = options.renderer;
+    this.renders = new RenderCache(options.renderCacheBytes ?? 256 * 1024 * 1024);
+  }
 
   private async exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(key) ?? Promise.resolve();
@@ -466,6 +547,188 @@ export class KynimoService {
     });
   }
 
+  /** The composition to render and the renderer, or a tool error naming what is missing. */
+  private async renderTarget(projectId: string, composition: string | undefined) {
+    const renderer = this.renderer;
+    if (renderer === undefined)
+      throw new ToolError("unavailable", "rendering is not available on this server");
+    const p = await this.load(projectId);
+    const id = composition ?? p.doc.mainCompositionId;
+    const comp = p.doc.compositions.find((c) => c.id === id);
+    if (comp === undefined)
+      throw new ToolError(
+        "not_found",
+        `composition '${id}' does not exist; compositions: ${p.doc.compositions.map((c) => c.id).join(", ")}`,
+      );
+    return { p, comp, renderer };
+  }
+
+  /** Runs the renderer, turning its failures into `render_failed` tool errors. */
+  private async draw<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (/could not launch the pinned Chromium/.test(message))
+        throw new ToolError(
+          "unavailable",
+          "rendering is unavailable: the pinned Chromium could not be launched. Install it with `pnpm --filter @kynimo/renderer exec playwright install chromium` and retry",
+        );
+      throw new ToolError("render_failed", message);
+    }
+  }
+
+  /**
+   * Frames of a composition as PNGs, downscaled to `max_size`. Each frame is cached by
+   * document content, composition, frame, size and renderer build (ADR-0018).
+   */
+  async renderFrames(
+    projectId: string,
+    input: RenderFramesInput,
+  ): Promise<Rendered<RenderFramesReply>> {
+    const { p, comp, renderer } = await this.renderTarget(projectId, input.composition);
+    const frames = [...new Set(input.frames)];
+    checkFrames(comp, frames, "frames");
+    const build = await this.draw(() => renderer.build());
+    const docHash = fingerprint(p.doc);
+    const key = (frame: number) =>
+      fingerprint(["frame", p.id, docHash, comp.id, frame, input.max_size, build]);
+    const found = new Map<number, CapturedFrame>();
+    for (const f of frames) {
+      const hit = this.renders.get(key(f));
+      if (hit?.kind === "frame") found.set(f, hit.frame);
+    }
+    const misses = frames.filter((f) => !found.has(f));
+    const cachedFrames = new Set(found.keys());
+    if (misses.length > 0) {
+      const drawn = await this.draw(() => renderer.frames(p.doc, comp.id, misses, input.max_size));
+      for (const f of drawn) {
+        found.set(f.frame, f);
+        this.renders.set(key(f.frame), { kind: "frame", frame: f }, f.png.byteLength + 1024);
+      }
+    }
+    const ordered = frames.map((f) => {
+      const captured = found.get(f);
+      if (captured === undefined) throw new ToolError("render_failed", `frame ${f} was not drawn`);
+      return captured;
+    });
+    return {
+      result: {
+        project_id: p.id,
+        version: p.version,
+        composition: comp.id,
+        frames: ordered.map((f) => ({
+          frame: f.frame,
+          width: f.width,
+          height: f.height,
+          pixels_sha256: f.pixelsSha256,
+          png_sha256: f.pngSha256,
+          cached: cachedFrames.has(f.frame),
+        })),
+        ...aggregateReports(ordered),
+      },
+      images: ordered.map((f) => f.png),
+    };
+  }
+
+  /**
+   * Frames tiled row-major into one PNG: the listed frames, or `count` frames spread evenly over
+   * a range (the whole composition by default). Refuses a sheet over the size limit and names a
+   * `cell_size` that fits.
+   */
+  async renderContactSheet(
+    projectId: string,
+    input: ContactSheetInput,
+  ): Promise<Rendered<ContactSheetReply>> {
+    const { p, comp, renderer } = await this.renderTarget(projectId, input.composition);
+    const last = comp.durationFrames - 1;
+    let frames: number[];
+    if (input.frames !== undefined) {
+      frames = [...new Set(input.frames)];
+      checkFrames(comp, frames, "frames");
+    } else {
+      const from = input.from_frame ?? 0;
+      const to = input.to_frame ?? last;
+      checkFrames(comp, [from], "from_frame");
+      checkFrames(comp, [to], "to_frame");
+      if (from > to)
+        throw new ToolError("invalid", `from_frame ${from} is after to_frame ${to}`, [
+          { path: ["to_frame"], message: `must be at least ${from}` },
+        ]);
+      frames = sampleFrames(from, to, input.count);
+    }
+    if (frames.length < RENDER_LIMITS.minCells)
+      throw new ToolError(
+        "invalid",
+        `a contact sheet needs at least ${RENDER_LIMITS.minCells} different frames; use render_frames for one`,
+        [{ path: ["frames"], message: `at least ${RENDER_LIMITS.minCells} different frames` }],
+      );
+    const columns = Math.min(
+      input.columns ?? Math.ceil(Math.sqrt(frames.length)),
+      RENDER_LIMITS.maxColumns,
+    );
+    const gap = RENDER_LIMITS.sheetGap;
+    const layout = (cellSize: number) =>
+      sheetSize(fitSize(comp.width, comp.height, cellSize), frames.length, columns, gap);
+    const fits = (cellSize: number) => {
+      const l = layout(cellSize);
+      return Math.max(l.width, l.height) <= RENDER_LIMITS.maxSheetSize;
+    };
+    if (!fits(input.cell_size)) {
+      const l = layout(input.cell_size);
+      let size = input.cell_size;
+      while (size > RENDER_LIMITS.minSize && !fits(size)) size--;
+      const fix = fits(size)
+        ? `use cell_size ${size} or less, or fewer frames`
+        : "use fewer frames, or more columns";
+      throw new ToolError(
+        "invalid",
+        `the sheet would be ${l.width}×${l.height}, over the ${RENDER_LIMITS.maxSheetSize} px limit; ${fix}`,
+        [{ path: ["cell_size"], message: fix }],
+      );
+    }
+    const build = await this.draw(() => renderer.build());
+    const key = fingerprint([
+      "sheet",
+      p.id,
+      fingerprint(p.doc),
+      comp.id,
+      frames,
+      input.cell_size,
+      columns,
+      gap,
+      build,
+    ]);
+    const hit = this.renders.get(key);
+    let sheet: CapturedSheet;
+    if (hit?.kind === "sheet") sheet = hit.sheet;
+    else {
+      sheet = await this.draw(() =>
+        renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }),
+      );
+      this.renders.set(key, { kind: "sheet", sheet }, sheet.png.byteLength + 1024);
+    }
+    return {
+      result: {
+        project_id: p.id,
+        version: p.version,
+        composition: comp.id,
+        frames,
+        width: sheet.width,
+        height: sheet.height,
+        columns: sheet.columns,
+        rows: Math.ceil(frames.length / sheet.columns),
+        cell_width: sheet.cellWidth,
+        cell_height: sheet.cellHeight,
+        pixels_sha256: sheet.pixelsSha256,
+        png_sha256: sheet.pngSha256,
+        cached: hit?.kind === "sheet",
+        ...aggregateReports(sheet.frames),
+      },
+      images: [sheet.png],
+    };
+  }
+
   /** Whether a write with this key landed (ADR-0018). Without `projectId`, looks up `create_project` keys. */
   async getWriteOutcome(key: string, projectId?: string): Promise<OutcomeReply> {
     const records =
@@ -485,4 +748,23 @@ export class KynimoService {
           ...(o.currentVersion === undefined ? {} : { current_version: o.currentVersion }),
         };
   }
+}
+
+/** Every frame must be a whole frame of the composition; errors name the field and the range. */
+function checkFrames(comp: Composition, frames: readonly number[], field: string): void {
+  const last = comp.durationFrames - 1;
+  const errors: OpError[] = [];
+  frames.forEach((f, i) => {
+    if (!Number.isInteger(f) || f < 0 || f > last)
+      errors.push({
+        path: field === "frames" ? [field, i] : [field],
+        message: `must be a frame from 0 to ${last}`,
+      });
+  });
+  if (errors.length > 0)
+    throw new ToolError(
+      "invalid",
+      `composition '${comp.id}' has frames 0 to ${last} (${comp.durationFrames} frames); every frame must be in that range`,
+      errors,
+    );
 }
