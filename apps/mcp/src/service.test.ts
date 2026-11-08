@@ -290,4 +290,44 @@ describe("KynimoService", () => {
     expect(await svc.getWriteOutcome("c2")).toMatchObject({ status: "rejected", kind: "invalid" });
     expect(await svc.listProjects()).toHaveLength(1);
   });
+
+  describe("describeMotion", () => {
+    it("describes the main composition, filtered by selector and window", async () => {
+      await write(1, "a", [addSolid("Title", "title"), addSolid("Bg", "bg")]);
+      await write(2, "k", [
+        {
+          op: "setTransformTrack",
+          layer: "title",
+          property: "opacity",
+          track: {
+            keyframes: [
+              { frame: 0, value: 0, interpolation: { type: "linear" } },
+              { frame: 30, value: 1, interpolation: { type: "linear" } },
+            ],
+          },
+        },
+      ]);
+      const d = await svc.describeMotion(project, { layer: { name: "Ti*" } });
+      expect(d).toMatchObject({ project_id: project, version: 3, composition: "main" });
+      expect(d.layers.map((l) => [l.id, l.properties.map((p) => p.property)])).toEqual([
+        ["title", ["transform.opacity"]],
+      ]);
+      const late = await svc.describeMotion(project, { from_frame: 40 });
+      expect(late.layers.flatMap((l) => l.properties)).toEqual([]);
+    });
+
+    it("names bad windows, unknown compositions and selectors matching nothing here", async () => {
+      const window = await rejection(svc.describeMotion(project, { from_frame: 50, to_frame: 10 }));
+      expect(window.errors[0]?.path).toEqual(["to_frame"]);
+      const range = await rejection(svc.describeMotion(project, { to_frame: 90 }));
+      expect(range.errors).toEqual([
+        { path: ["to_frame"], message: "must be a frame from 0 to 89" },
+      ]);
+      expect((await rejection(svc.describeMotion(project, { composition: "x" }))).kind).toBe(
+        "not_found",
+      );
+      const none = await rejection(svc.describeMotion(project, { layer: { name: "Nope" } }));
+      expect(none.kind).toBe("not_found");
+    });
+  });
 });

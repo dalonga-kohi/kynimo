@@ -46,6 +46,7 @@ describe("MCP server", () => {
       "add_mask",
       "apply_ops",
       "create_project",
+      "describe_motion",
       "find_layers",
       "get_layer",
       "get_layer_schema",
@@ -83,6 +84,42 @@ describe("MCP server", () => {
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
     expect(JSON.stringify(tools).length).toBeLessThan(60_000);
+  });
+
+  it("describes motion with output the client validates", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "a",
+      composition: "main",
+      layer: { type: "solid", name: "Box", width: 10, height: 10, color: "#ffffff" },
+      id: "box",
+    });
+    await call(client, "set_keyframes", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "k",
+      layer: "box",
+      property: "position",
+      track: {
+        keyframes: [
+          {
+            frame: 0,
+            value: [0, 0],
+            interpolation: { type: "spring", damping: 0.5, response: 0.5 },
+          },
+          { frame: 60, value: [100, 50], interpolation: { type: "linear" } },
+        ],
+      },
+    });
+    const d = await call(client, "describe_motion", { project_id });
+    const [layer] = d.layers as { properties: { segments: { easing: { type: string } }[] }[] }[];
+    expect(layer?.properties[0]?.segments[0]?.easing.type).toBe("spring");
+    expect(d.truncated_segments).toBe(0);
   });
 
   it("masks, mattes and precomposes layers, then undoes the precompose", async () => {

@@ -17,6 +17,7 @@ import {
 } from "@kynimo/scene";
 import type { z } from "zod";
 import { fingerprint } from "./hash.js";
+import { describeMotion, type MotionDescription } from "./motion.js";
 import {
   aggregateReports,
   type FrameRenderer,
@@ -459,6 +460,63 @@ export class KynimoService {
       composition: first.composition.id,
       index: first.index,
       layer: first.layer,
+    };
+  }
+
+  /**
+   * What animates when in one composition (the main one by default), from the keyframes:
+   * optionally only the layers a selector matches there, and only a window of frames.
+   */
+  async describeMotion(
+    projectId: string,
+    input: {
+      composition?: string | undefined;
+      layer?: SelectorInput | undefined;
+      from_frame?: number | undefined;
+      to_frame?: number | undefined;
+    },
+  ): Promise<{ project_id: string; version: number } & MotionDescription> {
+    const p = await this.load(projectId);
+    const id = input.composition ?? p.doc.mainCompositionId;
+    const comp = p.doc.compositions.find((c) => c.id === id);
+    if (comp === undefined)
+      throw new ToolError(
+        "not_found",
+        `composition '${id}' does not exist; compositions: ${p.doc.compositions.map((c) => c.id).join(", ")}`,
+      );
+    const from = input.from_frame ?? 0;
+    const to = input.to_frame ?? comp.durationFrames - 1;
+    checkFrames(comp, [from], "from_frame");
+    checkFrames(comp, [to], "to_frame");
+    if (from > to)
+      throw new ToolError("invalid", `from_frame ${from} is after to_frame ${to}`, [
+        { path: ["to_frame"], message: `must be at least ${from}` },
+      ]);
+    let layers: Set<string> | undefined;
+    if (input.layer !== undefined) {
+      const matches = matchLayers(p.doc, LayerSelectorSchema.parse(input.layer));
+      const here = matches.filter((m) => m.composition.id === comp.id);
+      if (here.length === 0) {
+        const elsewhere = [...new Set(matches.map((m) => m.composition.id))];
+        throw new ToolError(
+          "not_found",
+          `no layer of composition '${comp.id}' matches ${JSON.stringify(input.layer)}${
+            elsewhere.length > 0
+              ? `; matches exist in ${elsewhere.join(", ")} (pass composition)`
+              : ""
+          }`,
+        );
+      }
+      layers = new Set(here.map((m) => m.layer.id));
+    }
+    return {
+      project_id: p.id,
+      version: p.version,
+      ...describeMotion(comp, {
+        from_frame: from,
+        to_frame: to,
+        ...(layers === undefined ? {} : { layers }),
+      }),
     };
   }
 

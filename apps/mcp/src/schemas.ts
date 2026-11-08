@@ -36,7 +36,7 @@ export const LayerBodySchema = z
 export const TrackBodySchema = z
   .looseObject({})
   .describe(
-    "Either { value } for a constant, or { keyframes: [{ frame, value, interpolation }] } with frames in layer time. interpolation is { type: 'linear' | 'hold' } or { type: 'bezier', x1, y1, x2, y2 } or { type: 'spring', damping, response }. position keyframes may add `spatial: { in, out }` tangents.",
+    "Either { value } for a constant, or { keyframes: [{ frame, value, interpolation }] } with frames in layer time. interpolation is { type: 'linear' | 'hold' } or { type: 'bezier', x1, y1, x2, y2 } or { type: 'spring', damping, response }. position keyframes may add `spatial: { inTangent, outTangent }` tangents (relative to the keyframe's value).",
   );
 
 const MASK_TRACKS =
@@ -488,4 +488,61 @@ export const RenderContactSheetOutput = z.looseObject({
   png_sha256: z.string(),
   cached: z.boolean(),
   ...RenderReportsOutput,
+});
+
+export const DescribeMotionInput = z.object({
+  project_id: ProjectIdSchema,
+  composition: CompositionField,
+  layer: LayerSelectorSchema.optional().describe("Only the layers this selector matches."),
+  from_frame: FrameSchema.optional().describe(
+    "Start of the window (composition frame). Default 0.",
+  ),
+  to_frame: FrameSchema.optional().describe(
+    "End of the window (included). Default: the last frame.",
+  ),
+});
+
+const MotionValue = z.unknown();
+export const DescribeMotionOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  composition: z.string(),
+  fps: Fps,
+  duration_frames: z.number().int(),
+  duration_seconds: z.number(),
+  from_frame: z.number().int(),
+  to_frame: z.number().int(),
+  layers: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      type: z.enum(LAYER_TYPES),
+      index: z.number().int(),
+      parent: z.string().nullable(),
+      hidden: z.boolean(),
+      in_frame: z.number().int(),
+      out_frame: z.number().int(),
+      precomp: z.looseObject({ composition: z.string(), time_offset: z.number().int() }).optional(),
+      properties: z.array(
+        z.looseObject({
+          property: z.string(),
+          constant: MotionValue.optional(),
+          segments: z.array(
+            z.looseObject({
+              from_frame: z.number().int(),
+              to_frame: z.number().int(),
+              from_seconds: z.number(),
+              to_seconds: z.number(),
+              from: MotionValue,
+              to: MotionValue,
+              easing: z.looseObject({ type: z.enum(["linear", "hold", "bezier", "spring"]) }),
+              curved: z.literal(true).optional(),
+              outside_layer_range: z.literal(true).optional(),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+  truncated_segments: z.number().int(),
 });
