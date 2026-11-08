@@ -13,6 +13,7 @@ import {
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { z } from "zod";
+import { RENDER_LIMITS } from "./render.js";
 
 /** Every layer type, from the schema itself so new types appear here automatically. */
 export const LAYER_TYPES = LayerSchema.options.map((o) => o.shape.type.value) as [
@@ -363,4 +364,128 @@ export const WriteOutcomeOutput = z.looseObject({
   message: z.string().optional(),
   errors: z.array(ErrorItem).optional(),
   current_version: z.number().int().optional(),
+});
+
+const L = RENDER_LIMITS;
+const FrameSchema = z.number().int().min(0).max(MAX_DURATION_FRAMES);
+const CompositionField = z
+  .string()
+  .min(1)
+  .max(64)
+  .optional()
+  .describe("Composition id. Default: the main composition.");
+
+export const RenderFramesInput = z.object({
+  project_id: ProjectIdSchema,
+  composition: CompositionField,
+  frames: z
+    .array(FrameSchema)
+    .min(1)
+    .max(L.maxFrames, `at most ${L.maxFrames} frames per call; split them over several calls`)
+    .describe(
+      `Composition frames to render, 1 to ${L.maxFrames}. For an overview of a whole animation use render_contact_sheet.`,
+    ),
+  max_size: z
+    .number()
+    .int()
+    .min(L.minSize)
+    .max(L.maxSize, `max_size is at most ${L.maxSize}`)
+    .default(L.defaultSize)
+    .describe(
+      `Longest edge of each image in pixels (${L.minSize} to ${L.maxSize}). Larger compositions are downscaled, never upscaled.`,
+    ),
+});
+
+export const RenderContactSheetInput = z.object({
+  project_id: ProjectIdSchema,
+  composition: CompositionField,
+  frames: z
+    .array(FrameSchema)
+    .min(L.minCells)
+    .max(L.maxCells, `at most ${L.maxCells} cells per sheet; use several sheets`)
+    .optional()
+    .describe(
+      `Frames to show, ${L.minCells} to ${L.maxCells}. Default: \`count\` frames spread evenly from from_frame to to_frame.`,
+    ),
+  count: z
+    .number()
+    .int()
+    .min(L.minCells)
+    .max(L.maxCells, `count is at most ${L.maxCells}`)
+    .default(L.defaultCells)
+    .describe("How many evenly spaced frames to show when `frames` is not given."),
+  from_frame: FrameSchema.optional().describe("First sampled frame. Default 0."),
+  to_frame: FrameSchema.optional().describe(
+    "Last sampled frame (included). Default: the last frame.",
+  ),
+  columns: z
+    .number()
+    .int()
+    .min(1)
+    .max(L.maxColumns)
+    .optional()
+    .describe("Cells per row. Default: about square."),
+  cell_size: z
+    .number()
+    .int()
+    .min(L.minSize)
+    .max(L.maxCellSize, `cell_size is at most ${L.maxCellSize}`)
+    .default(L.defaultCellSize)
+    .describe(
+      `Longest edge of each cell in pixels (${L.minSize} to ${L.maxCellSize}). The whole sheet may be at most ${L.maxSheetSize} px per side.`,
+    ),
+});
+
+const RenderReportsOutput = {
+  skipped: z.array(
+    z.looseObject({
+      layer: z.string(),
+      type: z.string(),
+      reason: z.string(),
+      frames: z.array(z.number().int()),
+    }),
+  ),
+  warnings: z.array(
+    z.looseObject({
+      layer: z.string(),
+      kind: z.string(),
+      message: z.string(),
+      codepoints: z.array(z.number().int()),
+      frames: z.array(z.number().int()),
+    }),
+  ),
+};
+
+export const RenderFramesOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  composition: z.string(),
+  frames: z.array(
+    z.looseObject({
+      frame: z.number().int(),
+      width: z.number().int(),
+      height: z.number().int(),
+      pixels_sha256: z.string(),
+      png_sha256: z.string(),
+      cached: z.boolean(),
+    }),
+  ),
+  ...RenderReportsOutput,
+});
+
+export const RenderContactSheetOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  composition: z.string(),
+  frames: z.array(z.number().int()),
+  width: z.number().int(),
+  height: z.number().int(),
+  columns: z.number().int(),
+  rows: z.number().int(),
+  cell_width: z.number().int(),
+  cell_height: z.number().int(),
+  pixels_sha256: z.string(),
+  png_sha256: z.string(),
+  cached: z.boolean(),
+  ...RenderReportsOutput,
 });

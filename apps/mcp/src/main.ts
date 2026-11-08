@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
 import { FileStore, MemoryStore } from "./store.js";
@@ -34,15 +35,15 @@ if (values.help) {
       })
     : undefined;
   const store = fileStore ?? new MemoryStore();
-  if (fileStore) {
-    const release = () => {
-      void fileStore.close().finally(() => process.exit(0));
-    };
-    process.once("SIGINT", release);
-    process.once("SIGTERM", release);
-    process.stdin.once("end", release);
-  }
-  const server = createServer(new KynimoService(store, values.actor));
+  // Chromium starts on the first render, not here.
+  const renderer = new CaptureRenderer();
+  const release = () => {
+    void Promise.allSettled([renderer.close(), fileStore?.close()]).finally(() => process.exit(0));
+  };
+  process.once("SIGINT", release);
+  process.once("SIGTERM", release);
+  process.stdin.once("end", release);
+  const server = createServer(new KynimoService(store, values.actor, { renderer }));
   await server.connect(new StdioServerTransport());
   // Logs go to stderr: stdout carries the protocol.
   process.stderr.write(

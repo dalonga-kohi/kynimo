@@ -93,6 +93,8 @@ export interface CaptureSession {
    * fonts, the Chromium version and the GPU string (hex SHA-256). Render caches key on it (ADR-0018).
    */
   readonly buildId: string;
+  /** True once closed, or once the browser is gone; a closed session stays closed. */
+  readonly closed: boolean;
   /**
    * Renders `frames` (at most {@link MAX_FRAMES_PER_CALL}) of a document to PNG. The document is
    * migrated and validated first. Calls on one session run one at a time. Throws
@@ -332,6 +334,9 @@ function session(
     browserVersion: browser.version(),
     gpu,
     buildId,
+    get closed() {
+      return closed;
+    },
     async captureFrames(document, frames, options = {}) {
       const response = await call(document, frames, options, null);
       if (!("frames" in response)) throw new CaptureError("the capture page returned a sheet");

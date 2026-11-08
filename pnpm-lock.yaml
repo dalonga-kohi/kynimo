@@ -184,6 +184,9 @@ importers:
 
   apps/mcp:
     dependencies:
+      '@kynimo/capture':
+        specifier: workspace:*
+        version: link:../../packages/capture
       '@kynimo/scene':
         specifier: workspace:*
         version: link:../../packages/scene

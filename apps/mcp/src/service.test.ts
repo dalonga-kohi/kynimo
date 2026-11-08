@@ -45,7 +45,7 @@ describe("KynimoService", () => {
 
   beforeEach(async () => {
     store = new MemoryStore();
-    svc = new KynimoService(store, "agent", ids);
+    svc = new KynimoService(store, "agent", { makeId: ids });
     project = (await svc.createProject({ name: "Demo", idempotency_key: "c1", ...settings })).id;
   });
 
@@ -178,7 +178,7 @@ describe("KynimoService", () => {
 
   it("scopes keys to the actor", async () => {
     await write(1, "w1", [addSolid("a")]);
-    const other = new KynimoService(store, "editor", ids);
+    const other = new KynimoService(store, "editor", { makeId: ids });
     expect(await other.getWriteOutcome("w1", project)).toEqual({ status: "unknown" });
     const r = await other.write(
       { project_id: project, base_version: 2, idempotency_key: "w1" },
@@ -213,7 +213,7 @@ describe("KynimoService", () => {
 
   it("refuses an undo whose properties another actor changed later", async () => {
     await write(1, "w1", [addSolid("a", "a")]);
-    const editor = new KynimoService(store, "editor", ids);
+    const editor = new KynimoService(store, "editor", { makeId: ids });
     await editor.write(
       { project_id: project, base_version: 2, idempotency_key: "e1" },
       { kind: "ops", ops: [{ op: "updateLayer", layer: "a", set: { name: "renamed" } }] },
