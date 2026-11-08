@@ -32,6 +32,9 @@ export interface WriteResult {
   layers_changed: string[];
   markers_added: string[];
   markers_removed: string[];
+  /** Optional: outcomes stored before precompose existed have none. */
+  compositions_added?: string[];
+  compositions_removed?: string[];
 }
 
 /** One idempotency key and what it did. `fingerprint` identifies the request it was used with. */

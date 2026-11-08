@@ -43,6 +43,7 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "add_layer",
+      "add_mask",
       "apply_ops",
       "create_project",
       "find_layers",
@@ -52,13 +53,25 @@ describe("MCP server", () => {
       "get_scene",
       "get_write_outcome",
       "list_projects",
+      "precompose",
       "redo",
       "set_keyframes",
+      "set_matte",
       "undo",
       "update_layer",
     ]);
     for (const t of tools) expect(t.outputSchema, t.name).toBeDefined();
-    const writes = ["add_layer", "apply_ops", "set_keyframes", "update_layer", "undo", "redo"];
+    const writes = [
+      "add_layer",
+      "add_mask",
+      "apply_ops",
+      "precompose",
+      "set_keyframes",
+      "set_matte",
+      "update_layer",
+      "undo",
+      "redo",
+    ];
     for (const t of tools.filter((t) => writes.includes(t.name)))
       expect(t.inputSchema.required, t.name).toEqual(
         expect.arrayContaining(["project_id", "base_version", "idempotency_key"]),
@@ -67,7 +80,103 @@ describe("MCP server", () => {
 
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
-    expect(JSON.stringify(tools).length).toBeLessThan(40_000);
+    expect(JSON.stringify(tools).length).toBeLessThan(50_000);
+  });
+
+  it("masks, mattes and precomposes layers, then undoes the precompose", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    const meta = (v: number, key: string) => ({
+      project_id,
+      base_version: v,
+      idempotency_key: key,
+    });
+    const square = {
+      closed: true,
+      vertices: [
+        [0, 0],
+        [200, 0],
+        [200, 200],
+        [0, 200],
+      ].map((point) => ({ point, inTangent: [0, 0], outTangent: [0, 0] })),
+    };
+    const solid = (id: string) => ({
+      composition: "main",
+      id,
+      layer: { type: "solid", name: id, width: 400, height: 400, color: "#ffffff" },
+    });
+    await call(client, "add_layer", { ...solid("card"), ...meta(1, "w1") });
+    await call(client, "add_layer", { ...solid("wipe"), ...meta(2, "w2") });
+
+    const masked = await call(client, "add_mask", {
+      ...meta(3, "w3"),
+      layer: "card",
+      path: { value: square },
+      feather: { value: [8, 8] },
+    });
+    expect(masked).toMatchObject({ version: 4, layers_changed: ["card"] });
+    const card = await call(client, "get_layer", { project_id, layer: "card" });
+    expect(card.layer).toMatchObject({
+      masks: [{ id: "mask-1", name: "Mask", mode: "add", inverted: false, opacity: { value: 1 } }],
+    });
+
+    const matted = await call(client, "set_matte", {
+      ...meta(4, "w4"),
+      layer: "card",
+      matte: { layer: { name: "wipe" }, mode: "alpha" },
+    });
+    expect(matted).toMatchObject({ version: 5, layers_changed: ["card"] });
+
+    const crossing = await callError(client, "precompose", { ...meta(5, "w5"), layers: ["card"] });
+    expect(crossing).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(crossing.errors)).toContain("track matte 'wipe'");
+
+    const pre = await call(client, "precompose", {
+      ...meta(5, "w6"),
+      layers: ["card", "wipe"],
+      name: "Card group",
+      composition_id: "card-group",
+    });
+    expect(pre).toMatchObject({
+      version: 6,
+      compositions_added: ["card-group"],
+      layers_changed: ["wipe", "card"],
+    });
+    expect((pre.layers_added as string[]).length).toBe(1);
+    const scene = (await call(client, "get_project", { project_id })) as {
+      compositions: { id: string; layers: number }[];
+    };
+    expect(scene.compositions.map((c) => [c.id, c.layers])).toEqual([
+      ["main", 1],
+      ["card-group", 2],
+    ]);
+
+    const undone = await call(client, "undo", meta(6, "u1"));
+    expect(undone).toMatchObject({ version: 7, compositions_removed: ["card-group"] });
+  });
+
+  it("validates mask bodies in apply_ops on the server", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    const bad = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      ops: [{ op: "addMask", layer: "s", mask: { name: "m", mode: "add" } }],
+    });
+    expect(JSON.stringify(bad.errors)).toContain('"ops",0,"mask","inverted"');
   });
 
   it("builds and animates a layer end to end", async () => {

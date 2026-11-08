@@ -5,6 +5,7 @@ import { z } from "zod";
 import { withLayerDefaults } from "./defaults.js";
 import {
   AddLayerInput,
+  AddMaskInput,
   ApplyOpsInput,
   CreateProjectInput,
   CreateProjectOutput,
@@ -16,8 +17,10 @@ import {
   IdempotencyKeySchema,
   LAYER_TYPES,
   ListProjectsOutput,
+  PrecomposeInput,
   ProjectIdSchema,
   SetKeyframesInput,
+  SetMatteInput,
   UndoRedoInput,
   UpdateLayerInput,
   WriteOutcomeOutput,
@@ -221,7 +224,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Apply operations",
       description:
-        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker. Errors name the failing op and field as a path (['ops', i, field]).",
+        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, setMatte, precompose. Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
       annotations: DESTRUCTIVE,
@@ -286,6 +289,76 @@ export function createServer(service: KynimoService): McpServer {
         ops: [{ op: "setTransformTrack", layer: a.layer, property: a.property, track: a.track }],
       })),
     })),
+  );
+
+  server.registerTool(
+    "add_mask",
+    {
+      title: "Add mask",
+      description:
+        "Adds a mask to a drawing layer (not null or audio). Masks clip the layer in its own space and combine top-first by mode. Same as an addMask op; edit or remove masks with updateMask / removeMask in apply_ops.",
+      inputSchema: AddMaskInput,
+      outputSchema: WriteOutput,
+      annotations: WRITE,
+    },
+    guard(async (a) => {
+      const op = {
+        op: "addMask",
+        layer: a.layer,
+        mask: {
+          name: a.name ?? a.id ?? "Mask",
+          mode: a.mode,
+          inverted: a.inverted,
+          path: a.path,
+          feather: a.feather ?? { value: [0, 0] },
+          opacity: a.opacity ?? { value: 1 },
+          expansion: a.expansion ?? { value: 0 },
+        },
+        ...(a.id === undefined ? {} : { id: a.id }),
+        ...(a.index === undefined ? {} : { index: a.index }),
+      };
+      return { ...(await service.write(meta(a), { kind: "ops", ops: [op] })) };
+    }),
+  );
+
+  server.registerTool(
+    "set_matte",
+    {
+      title: "Set track matte",
+      description:
+        "Shows a layer only where another layer of the same composition has alpha or brightness (luma), optionally inverted; null clears it. The source keeps its own visibility: hide it with update_layer if it should only act as the matte.",
+      inputSchema: SetMatteInput,
+      outputSchema: WriteOutput,
+      annotations: WRITE,
+    },
+    guard(async (a) => ({
+      ...(await service.write(meta(a), {
+        kind: "ops",
+        ops: [{ op: "setMatte", layer: a.layer, matte: a.matte }],
+      })),
+    })),
+  );
+
+  server.registerTool(
+    "precompose",
+    {
+      title: "Precompose",
+      description:
+        "Moves layers of one composition into a new composition (same size, frame rate and duration, transparent) and replaces them with one precomp layer at the topmost one's position. The frame looks the same; the new layer can then be animated, masked or matted as a group. Returns the new composition in compositions_added.",
+      inputSchema: PrecomposeInput,
+      outputSchema: WriteOutput,
+      annotations: WRITE,
+    },
+    guard(async (a) => {
+      const op = {
+        op: "precompose",
+        layers: a.layers,
+        ...(a.name === undefined ? {} : { name: a.name }),
+        ...(a.composition_id === undefined ? {} : { id: a.composition_id }),
+        ...(a.layer_id === undefined ? {} : { layerId: a.layer_id }),
+      };
+      return { ...(await service.write(meta(a), { kind: "ops", ops: [op] })) };
+    }),
   );
 
   server.registerTool(
