@@ -47,6 +47,6 @@ ADR-0016 guarantees bit-identical frames only for the pinned Chromium on SwiftSh
 - Each call re-decodes images and re-loads fonts, and each frame re-uploads its rasters. Caching decoded assets per session, keyed by hash, is an optimization for when workers land (M7).
 - Asset bytes and PNGs cross Playwright's channel as base64, about a third larger than raw. That is fine for previews; exports at scale may want a binary channel, and M7 revisits it.
 - **The golden hashes so far have been produced on one x86-64 host.** Whether CI's runners match is the first test of ADR-0016's CPU-family caveat. If they differ, workers and CI must be pinned to one CPU family, and the golden file records which one.
-- Reference scenes with approved PNGs (ADR-0018) are the next roadmap item. They reuse this session and test layout, and add PNGs a person reviews.
+- Reference scenes with approved PNGs (ADR-0018) reuse this session and test layout (ADR-0023).
 - The launch flags now exist twice: privately in capture and in the renderer's compositor test helper. The renderer cannot depend on capture, so the duplicate stays until the worker app owns the launch.
 - `page.evaluate` has no timeout yet. The pixel budget bounds a frame's memory, but not its time. Job timeouts and cancellation arrive with the workers (M7).
