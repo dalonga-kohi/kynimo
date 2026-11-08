@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { CompositionIdSchema, LayerIdSchema, MarkerIdSchema } from "./ids.js";
+import { MaskSchema, TrackMatteSchema } from "./compositing.js";
+import { CompositionIdSchema, LayerIdSchema, MarkerIdSchema, MaskIdSchema } from "./ids.js";
 import type { Animatable, PositionTrack } from "./keyframes.js";
 import { type Layer, LayerSchema } from "./layer.js";
+import { MAX_LAYERS } from "./limits.js";
 import { MarkerSchema, NameSchema } from "./primitives.js";
 import { LayerSelectorSchema } from "./selectors.js";
 import { TransformSchema } from "./transform.js";
@@ -107,6 +109,65 @@ const addMarker = z.strictObject({
 
 const removeMarker = z.strictObject({ op: z.literal("removeMarker"), marker: MarkerIdSchema });
 
+/** A mask without its id: the id is supplied by the op or generated from the seeded counter. */
+export const MaskInputSchema = MaskSchema.omit({ id: true });
+
+const addMask = z.strictObject({
+  op: z.literal("addMask"),
+  layer: LayerSelectorSchema,
+  /** Optional; generated from the seeded counter when omitted. Unique within the layer. */
+  id: MaskIdSchema.optional(),
+  mask: MaskInputSchema,
+  /** Position in the layer's mask list (masks combine top-first). Default: the end. */
+  index: z.number().int().nonnegative().optional(),
+});
+
+/** Mask fields `updateMask` may change; tracks are replaced whole. */
+export const MaskPatchSchema = MaskInputSchema.partial().refine(
+  (p) => Object.keys(p).length > 0,
+  "set at least one field",
+);
+
+const updateMask = z.strictObject({
+  op: z.literal("updateMask"),
+  layer: LayerSelectorSchema,
+  mask: MaskIdSchema,
+  set: MaskPatchSchema,
+});
+
+const removeMask = z.strictObject({
+  op: z.literal("removeMask"),
+  layer: LayerSelectorSchema,
+  mask: MaskIdSchema,
+});
+
+/** Sets or clears a layer's track matte. The source is a layer of the same composition. */
+const setMatte = z.strictObject({
+  op: z.literal("setMatte"),
+  layer: LayerSelectorSchema,
+  matte: z
+    .strictObject({ layer: LayerSelectorSchema, mode: TrackMatteSchema.shape.mode })
+    .nullable(),
+});
+
+/**
+ * Moves layers of one composition into a new composition and puts a precomp layer of it where
+ * the topmost of them was (After Effects "move all attributes"). The new composition copies the
+ * source's size, frame rate and duration with a transparent background; the precomp layer spans
+ * the whole duration with an identity transform, so the frame looks the same as long as the moved
+ * layers blend normally: other blend modes then blend inside the new composition (as in After Effects).
+ */
+const precompose = z.strictObject({
+  op: z.literal("precompose"),
+  layers: z.array(LayerSelectorSchema).min(1).max(MAX_LAYERS),
+  /** Id of the new composition; generated (`comp-N`) when omitted. */
+  id: CompositionIdSchema.optional(),
+  /** Name of the new composition and its precomp layer. Default: "<topmost layer name> Comp". */
+  name: NameSchema.optional(),
+  /** Id of the precomp layer; generated when omitted. */
+  layerId: LayerIdSchema.optional(),
+});
+
 export const OpSchema = z.discriminatedUnion("op", [
   addLayer,
   updateLayer,
@@ -116,6 +177,11 @@ export const OpSchema = z.discriminatedUnion("op", [
   setParent,
   addMarker,
   removeMarker,
+  addMask,
+  updateMask,
+  removeMask,
+  setMatte,
+  precompose,
 ]);
 export type Op = z.infer<typeof OpSchema>;
 

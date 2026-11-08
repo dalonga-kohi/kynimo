@@ -33,6 +33,19 @@ export type Change = { op: number } & (
   | { type: "layer.move"; composition: CompositionId; layerId: LayerId; from: number; to: number }
   | { type: "marker.insert"; owner: MarkerOwner; markerId: MarkerId; index: number; marker: Marker }
   | { type: "marker.remove"; owner: MarkerOwner; markerId: MarkerId; index: number; marker: Marker }
+  /** A whole composition at `index` in the project's list (layers included). */
+  | {
+      type: "composition.insert";
+      compositionId: CompositionId;
+      index: number;
+      composition: Composition;
+    }
+  | {
+      type: "composition.remove";
+      compositionId: CompositionId;
+      index: number;
+      composition: Composition;
+    }
 );
 
 export const invert = (c: Change): Change => {
@@ -49,6 +62,10 @@ export const invert = (c: Change): Change => {
       return { ...c, type: "marker.remove" };
     case "marker.remove":
       return { ...c, type: "marker.insert" };
+    case "composition.insert":
+      return { ...c, type: "composition.remove" };
+    case "composition.remove":
+      return { ...c, type: "composition.insert" };
   }
 };
 
@@ -162,6 +179,21 @@ export function applyChange(doc: Project, c: Change): string | undefined {
       if (!jsonEqual(found.marker, c.marker))
         return `marker '${c.markerId}' was changed by a later edit`;
       found.markers.splice(found.index, 1);
+      return undefined;
+    }
+    case "composition.insert": {
+      if (findComposition(doc, c.compositionId) !== undefined)
+        return `composition '${c.compositionId}' already exists`;
+      doc.compositions.splice(Math.min(c.index, doc.compositions.length), 0, clone(c.composition));
+      return undefined;
+    }
+    case "composition.remove": {
+      const index = doc.compositions.findIndex((x) => x.id === c.compositionId);
+      const found = doc.compositions[index];
+      if (found === undefined) return `composition '${c.compositionId}' no longer exists`;
+      if (!jsonEqual(found, c.composition))
+        return `composition '${c.compositionId}' was changed by a later edit`;
+      doc.compositions.splice(index, 1);
       return undefined;
     }
   }

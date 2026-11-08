@@ -7,7 +7,9 @@ import {
   jsonEqual,
   readPath,
 } from "./changes.js";
-import type { CompositionId, LayerId, MarkerId } from "./ids.js";
+import type { Mask } from "./compositing.js";
+import type { Composition } from "./composition.js";
+import type { CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
 import type { Layer } from "./layer.js";
 import { BatchSchema, type Op } from "./ops.js";
 import type { Json } from "./primitives.js";
@@ -45,8 +47,8 @@ interface Ctx {
   draft: Project;
   changes: Change[];
   counter: number;
-  /** Layer and marker ids are separate namespaces. */
-  usedIds: { layer: Set<string>; marker: Set<string> };
+  /** Layer, marker and composition ids are separate namespaces. Mask ids are per layer. */
+  usedIds: { layer: Set<string>; marker: Set<string>; comp: Set<string> };
 }
 
 const emit = (ctx: Ctx, change: Change): void => {
@@ -56,15 +58,55 @@ const emit = (ctx: Ctx, change: Change): void => {
 };
 
 /** Ids come from a counter carried by the caller (ADR-0009), skipping any id already in use. */
-function nextId(ctx: Ctx, prefix: "layer" | "marker"): string {
+function nextId(
+  ctx: Ctx,
+  prefix: "layer" | "marker" | "comp" | "mask",
+  taken?: Set<string>,
+): string {
+  const used = taken ?? ctx.usedIds[prefix as "layer" | "marker" | "comp"];
   let id: string;
   do {
     ctx.counter += 1;
     id = `${prefix}-${ctx.counter}`;
-  } while (ctx.usedIds[prefix].has(id));
-  ctx.usedIds[prefix].add(id);
+  } while (used.has(id));
+  used.add(id);
   return id;
 }
+
+type DrawnLayer = Exclude<Layer, { type: "audio" | "null" }>;
+const isDrawn = (layer: Layer): layer is DrawnLayer =>
+  layer.type !== "audio" && layer.type !== "null";
+
+/** Resolves a selector to a layer that can carry masks and a track matte. */
+function resolveDrawn(ctx: Ctx, selector: LayerSelector, path: (string | number)[]) {
+  const ref = resolve(ctx, selector, path);
+  if (!isDrawn(ref.layer))
+    fail(
+      path,
+      `layer '${ref.layer.id}' is ${ref.layer.type === "audio" ? "an audio" : "a null"} layer and has no masks or track matte; use a shape, text, image, solid, precomp, adjustment or component layer`,
+    );
+  return { ...ref, layer: ref.layer };
+}
+
+function maskIndex(layer: DrawnLayer, id: string, path: (string | number)[]): number {
+  const index = layer.masks.findIndex((m) => m.id === id);
+  if (index === -1)
+    fail(
+      path,
+      `layer '${layer.id}' has no mask '${id}'; its masks: ${layer.masks.map((m) => m.id).join(", ") || "none"}`,
+    );
+  return index;
+}
+
+/** The layer a link (parent or track matte) points at, if any. */
+const links = (layer: Layer): { field: "parent" | "matte"; target: string }[] => {
+  const out: { field: "parent" | "matte"; target: string }[] = [];
+  if (layer.type !== "audio" && layer.parent !== null)
+    out.push({ field: "parent", target: layer.parent });
+  if (isDrawn(layer) && layer.matte !== null)
+    out.push({ field: "matte", target: layer.matte.layerId });
+  return out;
+};
 
 const describe = (s: LayerSelector): string =>
   typeof s === "string" ? `id '${s}'` : JSON.stringify(s);
@@ -244,7 +286,183 @@ function run(ctx: Ctx, op: Op, i: number): void {
       });
       return;
     }
+    case "addMask": {
+      const { layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
+      const index = op.index ?? layer.masks.length;
+      if (index > layer.masks.length)
+        fail(
+          [i, "index"],
+          `index ${index} is past the end; layer '${layer.id}' has ${layer.masks.length} masks`,
+        );
+      const taken = new Set<string>(layer.masks.map((m) => m.id));
+      if (op.id !== undefined && taken.has(op.id))
+        fail(
+          [i, "id"],
+          `layer '${layer.id}' already has a mask '${op.id}'; choose another id or omit it`,
+        );
+      const id = (op.id ?? nextId(ctx, "mask", taken)) as MaskId;
+      const masks: Mask[] = [...layer.masks];
+      masks.splice(index, 0, { ...op.mask, id });
+      setLayerValue(ctx, i, layer, ["masks"], masks as Json);
+      return;
+    }
+    case "updateMask": {
+      const { layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
+      const index = maskIndex(layer, op.mask, [i, "mask"]);
+      const masks: Mask[] = [...layer.masks];
+      // Parsed partials hold only the keys the caller sent, never explicit undefined.
+      masks[index] = { ...(masks[index] as Mask), ...op.set } as Mask;
+      setLayerValue(ctx, i, layer, ["masks"], masks as Json);
+      return;
+    }
+    case "removeMask": {
+      const { layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
+      const index = maskIndex(layer, op.mask, [i, "mask"]);
+      setLayerValue(ctx, i, layer, ["masks"], layer.masks.filter((_, k) => k !== index) as Json);
+      return;
+    }
+    case "setMatte": {
+      const { composition, layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
+      let matte: Json = null;
+      if (op.matte !== null) {
+        const source = resolve(ctx, op.matte.layer, [i, "matte", "layer"]);
+        if (source.composition.id !== composition.id)
+          fail(
+            [i, "matte", "layer"],
+            `matte source '${source.layer.id}' is in composition '${source.composition.id}', not '${composition.id}'; a track matte must be a layer of the same composition`,
+          );
+        matte = { layerId: source.layer.id, mode: op.matte.mode };
+      }
+      setLayerValue(ctx, i, layer, ["matte"], matte);
+      return;
+    }
+    case "precompose": {
+      precomposeLayers(ctx, op, i);
+      return;
+    }
   }
+}
+
+function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: number): void {
+  const refs = op.layers.map((s, k) => resolve(ctx, s, [i, "layers", k]));
+  const source = (refs[0] as (typeof refs)[number]).composition;
+  const selected = new Map<string, number>();
+  for (const [k, ref] of refs.entries()) {
+    if (ref.composition.id !== source.id)
+      fail(
+        [i, "layers", k],
+        `layer '${ref.layer.id}' is in composition '${ref.composition.id}', not '${source.id}'; precompose layers of one composition at a time`,
+      );
+    if (selected.has(ref.layer.id))
+      fail([i, "layers", k], `layer '${ref.layer.id}' is listed twice; list each layer once`);
+    selected.set(ref.layer.id, k);
+  }
+
+  // Parents and track mattes cannot cross a composition boundary; refuse rather than break them.
+  for (const layer of source.layers) {
+    const inside = selected.has(layer.id);
+    for (const { field, target } of links(layer)) {
+      if (selected.has(target) === inside) continue;
+      const what = field === "parent" ? "parent" : "track matte";
+      const k = selected.get(inside ? layer.id : target) as number;
+      fail(
+        [i, "layers", k],
+        inside
+          ? `layer '${layer.id}' has ${what} '${target}', which is not being precomposed; add '${target}' to layers, or clear the ${what} first`
+          : `layer '${layer.id}' (not being precomposed) has ${what} '${target}'; add '${layer.id}' to layers, or clear its ${what} first`,
+      );
+    }
+  }
+
+  if (op.id !== undefined && ctx.usedIds.comp.has(op.id))
+    fail([i, "id"], `composition id '${op.id}' is already in use; choose another or omit it`);
+  const compId = (op.id ?? nextId(ctx, "comp")) as CompositionId;
+  ctx.usedIds.comp.add(compId);
+  if (op.layerId !== undefined && ctx.usedIds.layer.has(op.layerId))
+    fail([i, "layerId"], `layer id '${op.layerId}' is already in use; choose another or omit it`);
+
+  const ordered = [...refs].sort((a, b) => a.index - b.index);
+  const top = ordered[0] as (typeof ordered)[number];
+  const name = op.name ?? `${top.layer.name.slice(0, 195)} Comp`;
+  const composition: Composition = {
+    id: compId,
+    name,
+    width: source.width,
+    height: source.height,
+    fps: { ...source.fps },
+    durationFrames: source.durationFrames,
+    background: null,
+    layers: [],
+    markers: [],
+  };
+  emit(ctx, {
+    op: i,
+    type: "composition.insert",
+    compositionId: compId,
+    index: ctx.draft.compositions.length,
+    composition: clone(composition),
+  });
+
+  for (const [k, ref] of ordered.entries()) {
+    const at = (findComposition(ctx.draft, source.id) as Composition).layers.findIndex(
+      (l) => l.id === ref.layer.id,
+    );
+    const layer = clone(ref.layer);
+    emit(ctx, {
+      op: i,
+      type: "layer.remove",
+      composition: source.id as CompositionId,
+      layerId: layer.id,
+      index: at,
+      layer,
+    });
+    emit(ctx, {
+      op: i,
+      type: "layer.insert",
+      composition: compId,
+      layerId: layer.id,
+      index: k,
+      layer: clone(layer),
+    });
+  }
+
+  const layerId = (op.layerId ?? nextId(ctx, "layer")) as LayerId;
+  ctx.usedIds.layer.add(layerId);
+  const center: [number, number] = [source.width / 2, source.height / 2];
+  const precomp: Layer = {
+    id: layerId,
+    type: "precomp",
+    name,
+    inFrame: 0,
+    outFrame: source.durationFrames,
+    startFrame: 0,
+    hidden: false,
+    // Solo is per composition: keep a soloed selection soloed against the layers left outside.
+    solo: refs.some((r) => r.layer.solo),
+    editor: { locked: false, shy: false, label: null },
+    markers: [],
+    parent: null,
+    transform: {
+      anchorPoint: { value: center },
+      position: { value: center },
+      scale: { value: [1, 1] },
+      rotation: { value: 0 },
+      skew: { value: 0 },
+      opacity: { value: 1 },
+    },
+    blendMode: "normal",
+    matte: null,
+    masks: [],
+    compositionId: compId,
+  };
+  emit(ctx, {
+    op: i,
+    type: "layer.insert",
+    composition: source.id as CompositionId,
+    layerId,
+    index: top.index,
+    layer: precomp,
+  });
 }
 
 /** Validates the whole document; integrity failures are reported with "doc" paths. */
@@ -282,8 +500,13 @@ export function applyOps(doc: Project, ops: unknown, idCounter = 0): ApplyResult
         })),
       );
 
-    const usedIds = { layer: new Set<string>(), marker: new Set<string>() };
+    const usedIds = {
+      layer: new Set<string>(),
+      marker: new Set<string>(),
+      comp: new Set<string>(),
+    };
     for (const c of doc.compositions) {
+      usedIds.comp.add(c.id);
       for (const m of c.markers) usedIds.marker.add(m.id);
       for (const l of c.layers) {
         usedIds.layer.add(l.id);

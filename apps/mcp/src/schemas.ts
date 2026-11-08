@@ -3,11 +3,14 @@ import {
   LayerPatchSchema,
   LayerSchema,
   LayerSelectorSchema,
+  MASK_MODES,
   MAX_BATCH_OPS,
   MAX_COMPOSITION_SIZE,
   MAX_DURATION_FRAMES,
+  MAX_LAYERS,
   OpSchema,
   TRANSFORM_PROPERTIES,
+  TrackMatteSchema,
 } from "@kynimo/scene";
 import { z } from "zod";
 
@@ -35,6 +38,16 @@ export const TrackBodySchema = z
     "Either { value } for a constant, or { keyframes: [{ frame, value, interpolation }] } with frames in layer time. interpolation is { type: 'linear' | 'hold' } or { type: 'bezier', x1, y1, x2, y2 } or { type: 'spring', damping, response }. position keyframes may add `spatial: { in, out }` tangents.",
   );
 
+const MASK_TRACKS =
+  "path: a track of { closed, vertices: [{ point, inTangent, outTangent }] } (tangents relative to the point; keyframed paths keep one vertex count); feather: [x, y] blur width >= 0; opacity: 0..1; expansion: grow (+) or shrink (-) in layer units. Each is { value } or { keyframes } in layer time.";
+
+/** Mask bodies are declared loosely in `apply_ops`: their four tracks inline to several KB. */
+export const MaskBodySchema = z
+  .looseObject({})
+  .describe(
+    `A mask without its id: { name, mode: ${MASK_MODES.join(" | ")}, inverted, path, feather, opacity, expansion }. ${MASK_TRACKS}`,
+  );
+
 type AnyOp = (typeof OpSchema.options)[number];
 /** The op name of an option; setTransformTrack is itself a union of per-property variants. */
 const opName = (o: AnyOp): string =>
@@ -49,13 +62,19 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
       property: z.enum(TRANSFORM_PROPERTIES),
       track: TrackBodySchema,
     });
-  return name === "addLayer"
-    ? (o as z.ZodObject<z.ZodRawShape>).extend({ layer: LayerBodySchema })
-    : o;
+  const obj = o as z.ZodObject<z.ZodRawShape>;
+  if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
+  if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "updateMask")
+    return obj.extend({
+      set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
+    });
+  return o;
 }) as unknown as [AnyOp, ...AnyOp[]];
 
 /**
- * The op union as tools declare it: exact except `addLayer.layer` and `setTransformTrack.track`,
+ * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
+ * `addMask.mask` and `updateMask.set`,
  * which the server validates in full against `OpSchema` before anything is applied.
  */
 export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);
@@ -125,6 +144,74 @@ export const SetKeyframesInput = z.object({
   track: TrackBodySchema,
 });
 
+export const AddMaskInput = z.object({
+  ...writeMeta,
+  layer: LayerSelectorSchema,
+  path: TrackBodySchema.describe(
+    "Required. The mask path in layer space: { value: { closed, vertices: [{ point, inTangent, outTangent }] } } or keyframes of such paths with one vertex count. Tangents are relative to their point; [0, 0] makes a corner.",
+  ),
+  mode: z.enum(MASK_MODES).default("add").describe("How it combines with the masks above it."),
+  inverted: z.boolean().default(false),
+  feather: TrackBodySchema.optional().describe(
+    "Per-axis blur width [x, y] in layer units, >= 0. Default { value: [0, 0] }.",
+  ),
+  opacity: TrackBodySchema.optional().describe("0..1. Default { value: 1 }."),
+  expansion: TrackBodySchema.optional().describe(
+    "Grows (+) or shrinks (-) the path in layer units. Default { value: 0 }.",
+  ),
+  name: z.string().min(1).max(200).optional().describe("Default: the given id, else 'Mask'."),
+  id: z.string().min(1).max(64).optional().describe("Optional mask id, unique within the layer."),
+  index: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Position in the layer's masks (they combine top-first). Default: last."),
+});
+
+export const SetMatteInput = z.object({
+  ...writeMeta,
+  layer: LayerSelectorSchema.describe("The layer to matte."),
+  matte: z
+    .object({
+      layer: LayerSelectorSchema.describe(
+        "The matte source: a drawing layer of the same composition.",
+      ),
+      mode: TrackMatteSchema.shape.mode,
+    })
+    .nullable()
+    .describe("null clears the matte."),
+});
+
+export const PrecomposeInput = z.object({
+  ...writeMeta,
+  layers: z
+    .array(LayerSelectorSchema)
+    .min(1)
+    .max(MAX_LAYERS)
+    .describe(
+      "Layers of one composition to move into the new composition. Parents and track mattes must stay on one side: include the linked layers or clear the links first.",
+    ),
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Name of the new composition and its layer. Default: '<topmost layer name> Comp'."),
+  composition_id: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe("Id of the new composition; generated when omitted."),
+  layer_id: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe("Id of the precomp layer that replaces them; generated when omitted."),
+});
+
 export const UndoRedoInput = z.object(writeMeta);
 
 export const CreateProjectInput = z.object({
@@ -160,6 +247,9 @@ export const WriteOutput = z.looseObject({
   layers_changed: z.array(z.string()),
   markers_added: z.array(z.string()),
   markers_removed: z.array(z.string()),
+  /** Added after v1, so optional (ADR-0024). */
+  compositions_added: z.array(z.string()).optional(),
+  compositions_removed: z.array(z.string()).optional(),
   replayed: z.boolean(),
 });
 
