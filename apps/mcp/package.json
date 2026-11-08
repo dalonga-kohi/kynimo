@@ -1,0 +1,33 @@
+{
+  "name": "@kynimo/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo MCP server: project, read and precise tools over the scene operations (local stdio mode).",
+  "type": "module",
+  "bin": {
+    "kynimo-mcp": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/scene": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "^4.6.7"
+  }
+}
