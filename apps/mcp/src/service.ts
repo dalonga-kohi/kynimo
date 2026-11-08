@@ -568,7 +568,13 @@ export class KynimoService {
     try {
       return await fn();
     } catch (e) {
-      throw new ToolError("render_failed", e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (/could not launch the pinned Chromium/.test(message))
+        throw new ToolError(
+          "unavailable",
+          "rendering is unavailable: the pinned Chromium could not be launched. Install it with `pnpm --filter @kynimo/renderer exec playwright install chromium` and retry",
+        );
+      throw new ToolError("render_failed", message);
     }
   }
 

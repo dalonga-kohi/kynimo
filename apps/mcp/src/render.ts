@@ -58,10 +58,27 @@ export class CaptureRenderer implements FrameRenderer {
 
   constructor(private readonly launch: () => Promise<CaptureSession> = () => launchCapture()) {}
 
+  /**
+   * The live session, launching one when there is none. Concurrent callers share one launch:
+   * after every wait the session promise is checked again, so a caller that finds it replaced
+   * waits on the replacement instead of launching a second browser.
+   */
   async #current(): Promise<CaptureSession> {
-    if (this.#closed) throw new Error("the renderer is closed");
-    const existing = this.#session && (await this.#session.catch(() => undefined));
-    if (existing && !existing.closed) return existing;
+    for (;;) {
+      if (this.#closed) throw new Error("the renderer is closed");
+      const observed = this.#session;
+      if (observed === undefined) return this.#relaunch();
+      // Callers that waited on a launch that failed get its error; the next call retries.
+      const existing = await observed;
+      // close() sets #closed before it awaits, so no launch can start after it.
+      if (this.#closed) throw new Error("the renderer is closed");
+      if (this.#session !== observed) continue;
+      if (!existing.closed) return existing;
+      return this.#relaunch();
+    }
+  }
+
+  #relaunch(): Promise<CaptureSession> {
     const next = this.launch();
     this.#session = next;
     // A failed launch is retried on the next call instead of being cached.

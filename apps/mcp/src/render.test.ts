@@ -102,6 +102,29 @@ describe("CaptureRenderer", () => {
     expect(await renderer.build()).toBe("b3");
   });
 
+  it("relaunches once when concurrent calls find a crashed session or a failed launch", async () => {
+    let launches = 0;
+    const sessions: (CaptureSession & { closed: boolean })[] = [];
+    const renderer = new CaptureRenderer(async () => {
+      launches++;
+      if (launches === 2) throw new Error("no browser");
+      const s = fakeSession(`b${launches}`);
+      sessions.push(s);
+      return s;
+    });
+    await renderer.build();
+    (sessions[0] as { closed: boolean }).closed = true; // crashed
+    const results = await Promise.allSettled([
+      renderer.build(),
+      renderer.build(),
+      renderer.build(),
+    ]);
+    expect(launches).toBe(2);
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected", "rejected"]);
+    expect(await Promise.all([renderer.build(), renderer.build()])).toEqual(["b3", "b3"]);
+    expect(launches).toBe(3);
+  });
+
   it("closes its session and refuses calls afterwards", async () => {
     const session = fakeSession("b");
     const renderer = new CaptureRenderer(async () => session);

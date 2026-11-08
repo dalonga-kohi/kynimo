@@ -163,6 +163,10 @@ describe("KynimoService: rendering", () => {
     renderer.fail = new Error("layer 'pic' shows image asset 'a', which was not loaded");
     const e = await rejection(frames([0]));
     expect([e.kind, e.message]).toEqual(["render_failed", renderer.fail.message]);
+    renderer.fail = new Error("could not launch the pinned Chromium: Executable doesn't exist");
+    const launch = await rejection(frames([1]));
+    expect(launch.kind).toBe("unavailable");
+    expect(launch.message).toMatch(/playwright install chromium/);
     const bare = new KynimoService(new MemoryStore(), "agent");
     expect((await rejection(bare.renderFrames(project, { frames: [0], max_size: 960 }))).kind).toBe(
       "unavailable",
