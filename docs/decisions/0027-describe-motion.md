@@ -22,5 +22,5 @@ Agents are unreliable at frame arithmetic and at reading bezier handles (CAPABIL
 ## Consequences
 
 - An agent can check timing and easing in one compact call, then render to check the look (ADR-0026).
-- The tool listing is ~58.7 KB of the 60 KB budget. The next tool does not fit without the structural fix ADR-0025 and ADR-0026 deferred to the MCP resources item, so that item must do it.
+- The tool listing is ~59.0 KB of the 60 KB budget. The next tool does not fit without the structural fix ADR-0025 and ADR-0026 deferred to the MCP resources item, so that item must do it.
 - Output schemas list segment values as unknown, because their type depends on the property.
