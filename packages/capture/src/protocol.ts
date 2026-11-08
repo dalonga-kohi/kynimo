@@ -16,6 +16,10 @@ export interface PageRequest {
   frames: number[];
   /** Ids of the image and font assets whose bytes the host serves at `/assets/<id>`. */
   assets: string[];
+  /** Longest output edge in pixels; larger frames are downscaled to it, smaller ones kept. */
+  maxSize: number | null;
+  /** Tile every frame into one image instead of returning them one by one. */
+  sheet: { columns: number; gap: number } | null;
 }
 
 export interface PageFrame {
@@ -30,9 +34,21 @@ export interface PageFrame {
   warnings: RenderWarning[];
 }
 
+/** A contact sheet: the frames tiled row-major, each cell exactly its frame's downscaled pixels. */
+export interface PageSheet {
+  width: number;
+  height: number;
+  png: string;
+  pixelsSha256: string;
+  cellWidth: number;
+  cellHeight: number;
+  frames: { frame: number; skipped: SkippedLayer[]; warnings: RenderWarning[] }[];
+}
+
 /** Errors cross as data so the host can keep their name (`RenderError`, `FontAssetError`, …). */
 export type PageResponse =
   | { ok: true; frames: PageFrame[] }
+  | { ok: true; sheet: PageSheet }
   | { ok: false; name: string; message: string };
 
 /** What the page bundle defines as the global `KynimoCapture`. */

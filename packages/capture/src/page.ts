@@ -17,7 +17,15 @@ import {
   rasterizeFrame,
   type SkippedLayer,
 } from "@kynimo/renderer";
-import { ORIGIN, type PageFrame, type PageRequest, type PageResponse } from "./protocol.js";
+import type { Canvas } from "canvaskit-wasm";
+import {
+  ORIGIN,
+  type PageFrame,
+  type PageRequest,
+  type PageResponse,
+  type PageSheet,
+} from "./protocol.js";
+import { fitSize, sheetSize } from "./size.js";
 
 let state: { ck: CanvasKit; compositor: Compositor; bundled: Uint8Array[] } | undefined;
 
@@ -39,11 +47,39 @@ export async function init(): Promise<string> {
 
 export async function render(request: PageRequest): Promise<PageResponse> {
   try {
-    return { ok: true, frames: await renderFrames(request) };
+    const frames = await renderFrames(request);
+    if (request.sheet !== null) return { ok: true, sheet: await tile(frames, request.sheet) };
+    const out: PageFrame[] = [];
+    for (const { frame, width, height, pixels, skipped, warnings } of frames)
+      out.push({
+        frame,
+        width,
+        height,
+        png: toBase64(encodePng(ck(), width, height, pixels)),
+        pixelsSha256: await sha256(pixels),
+        skipped,
+        warnings,
+      });
+    return { ok: true, frames: out };
   } catch (error) {
     const e = error instanceof Error ? error : new Error(String(error));
     return { ok: false, name: e.name, message: e.message };
   }
+}
+
+const ck = (): CanvasKit => {
+  if (state === undefined) throw new Error("capture page: init() has not run");
+  return state.ck;
+};
+
+/** One composited frame at its output size, premultiplied sRGB RGBA8. */
+interface Pixels {
+  frame: number;
+  width: number;
+  height: number;
+  pixels: Uint8Array;
+  skipped: SkippedLayer[];
+  warnings: RenderWarning[];
 }
 
 async function renderFrames({
@@ -51,7 +87,8 @@ async function renderFrames({
   compositionId,
   frames,
   assets,
-}: PageRequest): Promise<PageFrame[]> {
+  maxSize,
+}: PageRequest): Promise<Pixels[]> {
   if (state === undefined) throw new Error("capture page: init() has not run");
   const { ck, compositor, bundled } = state;
   const provided = new Set(assets);
@@ -66,21 +103,15 @@ async function renderFrames({
       if (asset.type === "image") await images.add(asset, bytes);
       else if (asset.type === "font") await fonts.add(asset, bytes);
     }
-    const out: PageFrame[] = [];
+    const out: Pixels[] = [];
     for (const frame of frames) {
       const plan = rasterizeFrame(ck, evaluateFrame(project, frame, compositionId), {
         images,
         fonts,
       });
-      const { width, height, pixels } = compositor.composite(plan);
-      out.push({
-        frame,
-        width,
-        height,
-        png: toBase64(encodePng(ck, width, height, pixels)),
-        pixelsSha256: await sha256(pixels),
-        ...reports(plan),
-      });
+      const full = compositor.composite(plan);
+      const size = fitSize(full.width, full.height, maxSize);
+      out.push({ frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) });
     }
     return out;
   } finally {
@@ -88,20 +119,108 @@ async function renderFrames({
   }
 }
 
+const RGBA = (ck: CanvasKit, width: number, height: number) => ({
+  width,
+  height,
+  colorType: ck.ColorType.RGBA_8888,
+  alphaType: ck.AlphaType.Premul,
+  colorSpace: ck.ColorSpace.SRGB,
+});
+
+/** Wraps premultiplied pixels as a CanvasKit image; the caller deletes it. */
+function wrap(ck: CanvasKit, width: number, height: number, pixels: Uint8Array) {
+  const image = ck.MakeImage(RGBA(ck, width, height), pixels, width * 4);
+  if (image === null) throw new Error("capture page: CanvasKit could not wrap the frame");
+  return image;
+}
+
+/** Draws onto a fresh transparent CPU raster surface and reads it back premultiplied. */
+function drawPixels(
+  ck: CanvasKit,
+  width: number,
+  height: number,
+  draw: (canvas: Canvas) => void,
+): Uint8Array {
+  const surface = ck.MakeSurface(width, height);
+  if (surface === null) throw new RangeError(`cannot allocate a ${width}×${height} surface`);
+  try {
+    const canvas = surface.getCanvas();
+    canvas.clear(ck.TRANSPARENT);
+    draw(canvas);
+    const pixels = canvas.readPixels(0, 0, RGBA(ck, width, height));
+    if (!(pixels instanceof Uint8Array)) throw new Error("CanvasKit returned no RGBA8 pixels");
+    return pixels;
+  } finally {
+    surface.delete();
+  }
+}
+
+/**
+ * The frame resampled to `size` on the CPU (trilinear: linear filtering between mipmap levels,
+ * so large reductions do not alias), or the frame itself when the size is unchanged.
+ */
+function downscale(
+  ck: CanvasKit,
+  full: { width: number; height: number; pixels: Uint8Array },
+  size: { width: number; height: number },
+): Uint8Array {
+  if (size.width === full.width && size.height === full.height) return full.pixels;
+  const image = wrap(ck, full.width, full.height, full.pixels);
+  try {
+    return drawPixels(ck, size.width, size.height, (canvas) => {
+      canvas.drawImageRectOptions(
+        image,
+        ck.XYWHRect(0, 0, full.width, full.height),
+        ck.XYWHRect(0, 0, size.width, size.height),
+        ck.FilterMode.Linear,
+        ck.MipmapMode.Linear,
+        null,
+      );
+    });
+  } finally {
+    image.delete();
+  }
+}
+
+/**
+ * Tiles the frames row-major on a transparent sheet. Cells are copied at whole-pixel offsets
+ * without resampling, so each cell holds exactly its frame's pixels.
+ */
+async function tile(
+  frames: Pixels[],
+  { columns, gap }: { columns: number; gap: number },
+): Promise<PageSheet> {
+  const kit = ck();
+  const [first] = frames;
+  if (first === undefined) throw new RangeError("a contact sheet needs at least one frame");
+  const cell = { width: first.width, height: first.height };
+  const layout = sheetSize(cell, frames.length, columns, gap);
+  const pixels = drawPixels(kit, layout.width, layout.height, (canvas) => {
+    frames.forEach((f, i) => {
+      const image = wrap(kit, f.width, f.height, f.pixels);
+      try {
+        const x = (i % layout.columns) * (cell.width + gap);
+        const y = Math.floor(i / layout.columns) * (cell.height + gap);
+        canvas.drawImage(image, x, y, null);
+      } finally {
+        image.delete();
+      }
+    });
+  });
+  return {
+    width: layout.width,
+    height: layout.height,
+    png: toBase64(encodePng(kit, layout.width, layout.height, pixels)),
+    pixelsSha256: await sha256(pixels),
+    cellWidth: cell.width,
+    cellHeight: cell.height,
+    frames: frames.map(({ frame, skipped, warnings }) => ({ frame, skipped, warnings })),
+  };
+}
+
 /** CanvasKit's PNG encoder, pinned with CanvasKit; it un-premultiplies for the file's straight alpha. */
 function encodePng(ck: CanvasKit, width: number, height: number, pixels: Uint8Array): Uint8Array {
-  const image = ck.MakeImage(
-    {
-      width,
-      height,
-      colorType: ck.ColorType.RGBA_8888,
-      alphaType: ck.AlphaType.Premul,
-      colorSpace: ck.ColorSpace.SRGB,
-    },
-    pixels,
-    width * 4,
-  );
-  if (image === null) throw new Error("capture page: CanvasKit could not wrap the frame");
+  const image = wrap(ck, width, height, pixels);
   try {
     const png = image.encodeToBytes(ck.ImageFormat.PNG, 100);
     if (png === null) throw new Error("capture page: CanvasKit could not encode the PNG");
