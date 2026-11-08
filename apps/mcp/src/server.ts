@@ -344,7 +344,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Precompose",
       description:
-        "Moves layers of one composition into a new composition (same size, frame rate and duration, transparent) and replaces them with one precomp layer at the topmost one's position. The frame looks the same; the new layer can then be animated, masked or matted as a group. Returns the new composition in compositions_added.",
+        "Moves layers of one composition into a new composition (same size, frame rate and duration, transparent) and replaces them with one precomp layer at the topmost one's position. The frame looks the same when the moved layers use the normal blend mode (others then blend inside the new composition, not with the layers below); the new layer can then be animated, masked or matted as a group. Returns the new composition in compositions_added.",
       inputSchema: PrecomposeInput,
       outputSchema: WriteOutput,
       annotations: WRITE,

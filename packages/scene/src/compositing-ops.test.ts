@@ -200,6 +200,18 @@ describe("precompose", () => {
     ]);
   });
 
+  it("keeps blend modes and layer markers on the moved layers", () => {
+    const marker = { id: "beat", frame: 3, durationFrames: 0, name: "beat" };
+    const r = ok(
+      applyOps(doc([solid("s1"), { ...solid("s2"), blendMode: "multiply", markers: [marker] }]), [
+        { op: "precompose", layers: ["s2"], id: "g" },
+        { op: "removeMarker", marker: "beat" },
+      ]),
+    );
+    expect(layerOf(r.doc, "s2")).toMatchObject({ blendMode: "multiply", markers: [] });
+    expect(ids(r.doc, "g")).toEqual(["s2"]);
+  });
+
   it("uses given ids, a default name, and keeps a soloed selection soloed", () => {
     const r = ok(
       applyOps(doc([solid("s1"), { ...solid("s2"), solo: true }]), [

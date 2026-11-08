@@ -154,7 +154,8 @@ const setMatte = z.strictObject({
  * Moves layers of one composition into a new composition and puts a precomp layer of it where
  * the topmost of them was (After Effects "move all attributes"). The new composition copies the
  * source's size, frame rate and duration with a transparent background; the precomp layer spans
- * the whole duration with an identity transform, so the frame looks the same.
+ * the whole duration with an identity transform, so the frame looks the same as long as the moved
+ * layers blend normally: other blend modes then blend inside the new composition (as in After Effects).
  */
 const precompose = z.strictObject({
   op: z.literal("precompose"),

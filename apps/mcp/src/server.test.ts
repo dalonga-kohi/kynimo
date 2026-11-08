@@ -153,6 +153,12 @@ describe("MCP server", () => {
       ["card-group", 2],
     ]);
 
+    const outcome = await call(client, "get_write_outcome", { project_id, idempotency_key: "w6" });
+    expect(outcome).toMatchObject({
+      status: "applied",
+      result: { compositions_added: ["card-group"] },
+    });
+
     const undone = await call(client, "undo", meta(6, "u1"));
     expect(undone).toMatchObject({ version: 7, compositions_removed: ["card-group"] });
   });

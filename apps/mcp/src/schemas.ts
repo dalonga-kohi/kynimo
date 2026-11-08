@@ -7,8 +7,10 @@ import {
   MAX_BATCH_OPS,
   MAX_COMPOSITION_SIZE,
   MAX_DURATION_FRAMES,
+  MAX_LAYERS,
   OpSchema,
   TRANSFORM_PROPERTIES,
+  TrackMatteSchema,
 } from "@kynimo/scene";
 import { z } from "zod";
 
@@ -157,7 +159,7 @@ export const AddMaskInput = z.object({
   expansion: TrackBodySchema.optional().describe(
     "Grows (+) or shrinks (-) the path in layer units. Default { value: 0 }.",
   ),
-  name: z.string().min(1).max(200).optional().describe("Default: the mask id."),
+  name: z.string().min(1).max(200).optional().describe("Default: the given id, else 'Mask'."),
   id: z.string().min(1).max(64).optional().describe("Optional mask id, unique within the layer."),
   index: z
     .number()
@@ -175,7 +177,7 @@ export const SetMatteInput = z.object({
       layer: LayerSelectorSchema.describe(
         "The matte source: a drawing layer of the same composition.",
       ),
-      mode: z.enum(["alpha", "alpha-inverted", "luma", "luma-inverted"]),
+      mode: TrackMatteSchema.shape.mode,
     })
     .nullable()
     .describe("null clears the matte."),
@@ -186,7 +188,7 @@ export const PrecomposeInput = z.object({
   layers: z
     .array(LayerSelectorSchema)
     .min(1)
-    .max(1000)
+    .max(MAX_LAYERS)
     .describe(
       "Layers of one composition to move into the new composition. Parents and track mattes must stay on one side: include the linked layers or clear the links first.",
     ),
