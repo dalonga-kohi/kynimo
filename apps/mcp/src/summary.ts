@@ -38,9 +38,22 @@ export interface CompositionSummary {
 /** Layer fields holding free-form data, not tracks. */
 const FREE_FORM = new Set(["props"]);
 
-/** Finds keyframe tracks structurally, so properties added later show up without changes here. */
-function animatedProperties(layer: Layer): AnimatedProperty[] {
-  const out: AnimatedProperty[] = [];
+/** A keyframe as found in any track; checked structurally, the schema already validated it. */
+export interface RawKeyframe {
+  frame: number;
+  value: unknown;
+  interpolation: { type: string; [k: string]: unknown };
+  spatial?: unknown;
+}
+
+/**
+ * Calls `visit` for every keyframed track of a layer, with its dot path ("transform.position",
+ * "masks.0.path"). Found structurally, so properties added later show up without changes here.
+ */
+export function walkTracks(
+  layer: Layer,
+  visit: (property: string, keyframes: RawKeyframe[]) => void,
+): void {
   const walk = (value: unknown, path: string[]) => {
     if (typeof value !== "object" || value === null) return;
     if (Array.isArray(value)) {
@@ -51,16 +64,10 @@ function animatedProperties(layer: Layer): AnimatedProperty[] {
     }
     const kfs = (value as { keyframes?: unknown }).keyframes;
     if (Array.isArray(kfs)) {
-      const frames = kfs
-        .map((k) => (k as { frame?: unknown }).frame)
-        .filter((f): f is number => typeof f === "number");
-      if (frames.length > 0)
-        out.push({
-          property: path.join("."),
-          keyframes: frames.length,
-          first_frame: layer.startFrame + Math.min(...frames),
-          last_frame: layer.startFrame + Math.max(...frames),
-        });
+      const keyframes = kfs.filter(
+        (k): k is RawKeyframe => typeof (k as { frame?: unknown })?.frame === "number",
+      );
+      if (keyframes.length > 0) visit(path.join("."), keyframes);
       return;
     }
     for (const [k, v] of Object.entries(value)) {
@@ -69,6 +76,19 @@ function animatedProperties(layer: Layer): AnimatedProperty[] {
     }
   };
   walk(layer, []);
+}
+
+function animatedProperties(layer: Layer): AnimatedProperty[] {
+  const out: AnimatedProperty[] = [];
+  walkTracks(layer, (property, keyframes) => {
+    const frames = keyframes.map((k) => k.frame);
+    out.push({
+      property,
+      keyframes: frames.length,
+      first_frame: layer.startFrame + Math.min(...frames),
+      last_frame: layer.startFrame + Math.max(...frames),
+    });
+  });
   return out;
 }
 

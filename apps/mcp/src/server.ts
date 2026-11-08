@@ -9,6 +9,8 @@ import {
   ApplyOpsInput,
   CreateProjectInput,
   CreateProjectOutput,
+  DescribeMotionInput,
+  DescribeMotionOutput,
   FindLayersOutput,
   GetLayerOutput,
   GetLayerSchemaOutput,
@@ -36,7 +38,7 @@ export const SERVER_NAME = "kynimo";
 export const SERVER_VERSION = "0.1.0";
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
-Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer, and look at the result with render_contact_sheet (whole animation) and render_frames (details).
+Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).`;
 
@@ -214,6 +216,21 @@ export function createServer(service: KynimoService): McpServer {
       annotations: READ,
     },
     guard(async (a) => service.getLayer(a.project_id, a.layer)),
+  );
+
+  server.registerTool(
+    "describe_motion",
+    {
+      title: "Describe motion",
+      description:
+        "What animates when, from the keyframes: per layer its visible frames and, per animated property, segments between keyframes with frames, seconds, start and end values and easing (linear, hold, bezier with its curve, spring with its settle frame). Filter by layer selector or a frame window. Nothing is rendered.",
+      inputSchema: DescribeMotionInput,
+      outputSchema: DescribeMotionOutput,
+      annotations: READ,
+    },
+    guard(async ({ project_id, ...input }) => ({
+      ...(await service.describeMotion(project_id, input)),
+    })),
   );
 
   server.registerTool(
