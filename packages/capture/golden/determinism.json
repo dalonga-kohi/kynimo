@@ -1,0 +1,17 @@
+{
+  "chromium": "153.0.8010.12",
+  "frames": {
+    "0": {
+      "pixelsSha256": "355d29a150deb1dbec87ea8ed468c17fbf86fc181704891019342f4d47f4838a",
+      "pngSha256": "aeca237e99d1c465004380f9dc16245900ba9fca5bcb9352b56cfae5d55c1cf1"
+    },
+    "12": {
+      "pixelsSha256": "c4264d48fb7875020e7560cda821229da06f885ec6349e6ef23abae56f380ea3",
+      "pngSha256": "f2f6d9e45086cadaec6ed56dc74f98c743ab19b8a5de71e9bb229918b9e35129"
+    },
+    "29": {
+      "pixelsSha256": "05ee9f55ad4836ff72993e45cf5c9b62adcf6f8dba9f4ff22b028208c857c1fa",
+      "pngSha256": "c5abe726b4e9a7bbac84bd54050331cfb781a9d3a483f2888724fb1c7d8a8f14"
+    }
+  }
+}
