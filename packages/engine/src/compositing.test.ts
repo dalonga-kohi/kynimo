@@ -177,5 +177,6 @@ describe("evaluateFrame: track mattes", () => {
       composition("c", [solid("s", { masks })], { durationFrames: 100 }),
     ]);
     expect(() => evaluateFrame(doc, 0)).toThrow(/units of work/);
-  });
+    // Heavy by design, like the budget tests in evaluate.test.ts; CI runs every package at once.
+  }, 20_000);
 });
