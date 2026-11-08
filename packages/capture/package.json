@@ -1,0 +1,31 @@
+{
+  "name": "@kynimo/capture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo headless capture: renders document frames to PNG in the pinned Chromium on SwiftShader.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/engine": "workspace:*",
+    "@kynimo/renderer": "workspace:*",
+    "@kynimo/scene": "workspace:*",
+    "canvaskit-wasm": "0.42.0",
+    "playwright": "1.63.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}

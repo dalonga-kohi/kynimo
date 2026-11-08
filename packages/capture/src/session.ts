@@ -1,0 +1,221 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { BUNDLED_FONTS, type RenderWarning, type SkippedLayer } from "@kynimo/renderer";
+import { migrateProject } from "@kynimo/scene";
+import { type Browser, chromium, type Route } from "playwright";
+import { ORIGIN, type PageApi, type PageRequest, type PageResponse } from "./protocol.js";
+
+/** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
+export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
+
+export class CaptureError extends Error {
+  override name = "CaptureError";
+  /** The page-side error's name (`RenderError`, `FontAssetError`, `RangeError`, …), if it came from there. */
+  readonly pageError: string | null;
+
+  constructor(message: string, pageError: string | null = null) {
+    super(message);
+    this.pageError = pageError;
+  }
+}
+
+export interface CapturedFrame {
+  frame: number;
+  width: number;
+  height: number;
+  /** The frame as a PNG file (straight-alpha sRGB RGBA8), encoded by the pinned CanvasKit. */
+  png: Uint8Array;
+  /**
+   * Lowercase hex SHA-256 of the composited premultiplied sRGB RGBA8 pixels, rows top to bottom.
+   * The determinism invariant is stated on these bytes: same document + frame → same hash.
+   */
+  pixelsSha256: string;
+  /** Lowercase hex SHA-256 of `png`. Also fixed by the pins, but changes with the encoder. */
+  pngSha256: string;
+  /** Layers left out because the renderer cannot draw them yet; nothing is dropped silently (ADR-0018). */
+  skipped: SkippedLayer[];
+  /** Content drawn other than the document asks (font fallback, missing glyphs). */
+  warnings: RenderWarning[];
+}
+
+export interface CaptureOptions {
+  /** The composition to render; the project's main composition by default. */
+  composition?: string;
+  /**
+   * Bytes of the document's image and font assets, by asset id. Each is checked against the
+   * document's pin. Loading them (the asset store, M3) is the caller's job: capture never fetches.
+   */
+  assets?: ReadonlyMap<string, Uint8Array>;
+}
+
+export interface CaptureSession {
+  /** The Chromium version, e.g. `153.0.8010.12`. Record it with what the session renders (ADR-0016). */
+  readonly browserVersion: string;
+  /** `UNMASKED_RENDERER_WEBGL`; always a SwiftShader renderer. */
+  readonly gpu: string;
+  /**
+   * Renders `frames` of a document to PNG. The document is migrated and validated first.
+   * Calls on one session run one at a time. Throws {@link CaptureError}.
+   */
+  captureFrames(
+    document: unknown,
+    frames: readonly number[],
+    options?: CaptureOptions,
+  ): Promise<CapturedFrame[]>;
+  close(): Promise<void>;
+}
+
+export interface LaunchOptions {
+  /** The page bundle's source. Defaults to the one built into `dist/page/capture.js`. */
+  pageScript?: string;
+}
+
+const require = createRequire(import.meta.url);
+
+async function staticFiles(pageScript: string | undefined): Promise<Map<string, StaticFile>> {
+  const files = new Map<string, StaticFile>();
+  files.set("/", {
+    type: "text/html",
+    body: '<!doctype html><meta charset="utf-8"><title>capture</title><script src="/capture.js"></script>',
+  });
+  files.set("/capture.js", {
+    type: "text/javascript",
+    body: pageScript ?? (await readFile(new URL("./page/capture.js", import.meta.url), "utf8")),
+  });
+  const canvaskit = dirname(require.resolve("canvaskit-wasm/bin/canvaskit.js"));
+  files.set("/canvaskit/canvaskit.wasm", {
+    type: "application/wasm",
+    body: await readFile(join(canvaskit, "canvaskit.wasm")),
+  });
+  for (const font of BUNDLED_FONTS)
+    files.set(`/fonts/${font.file}`, {
+      type: "font/ttf",
+      body: await readFile(require.resolve(`@kynimo/renderer/fonts/${font.file}`)),
+    });
+  return files;
+}
+
+interface StaticFile {
+  type: string;
+  body: string | Buffer;
+}
+
+/**
+ * Launches the pinned Chromium (Playwright's) on SwiftShader with the capture page loaded, and
+ * refuses to run on any other GPU (ADR-0016). One session renders any number of documents; close
+ * it when done.
+ */
+export async function launchCapture({ pageScript }: LaunchOptions = {}): Promise<CaptureSession> {
+  const files = await staticFiles(pageScript);
+  /** Asset bytes of the call in progress, served at `/assets/<id>`. */
+  let assets: ReadonlyMap<string, Uint8Array> = new Map();
+
+  const answer = (route: Route) => {
+    const url = new URL(route.request().url());
+    if (url.origin !== ORIGIN) return route.abort("blockedbyclient");
+    const file = files.get(url.pathname);
+    if (file !== undefined)
+      return route.fulfill({ status: 200, contentType: file.type, body: file.body });
+    if (url.pathname.startsWith("/assets/")) {
+      const bytes = assets.get(decodeURIComponent(url.pathname.slice("/assets/".length)));
+      if (bytes !== undefined)
+        return route.fulfill({
+          status: 200,
+          contentType: "application/octet-stream",
+          body: Buffer.from(bytes),
+        });
+    }
+    return route.fulfill({ status: 404, body: "" });
+  };
+
+  const browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
+  let gpu: string;
+  try {
+    const context = await browser.newContext();
+    await context.route("**/*", answer);
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/`);
+    gpu = await page.evaluate(() =>
+      (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.init(),
+    );
+    if (!/swiftshader/i.test(gpu))
+      throw new CaptureError(
+        `capture runs only on SwiftShader (ADR-0016), but WebGL2 reports '${gpu}'`,
+      );
+    return session(browser, gpu, async (request, bytes) => {
+      assets = bytes;
+      try {
+        // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
+        return await page.evaluate(
+          (json) =>
+            (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.render(
+              JSON.parse(json),
+            ),
+          JSON.stringify(request),
+        );
+      } finally {
+        assets = new Map();
+      }
+    });
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
+}
+
+function session(
+  browser: Browser,
+  gpu: string,
+  render: (request: PageRequest, assets: ReadonlyMap<string, Uint8Array>) => Promise<PageResponse>,
+): CaptureSession {
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialized = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  return {
+    browserVersion: browser.version(),
+    gpu,
+    captureFrames(document, frames, { composition, assets = new Map() } = {}) {
+      return serialized(async () => {
+        const migrated = migrateProject(document);
+        if (!migrated.ok)
+          throw new CaptureError(
+            `the document is invalid: ${migrated.errors
+              .map((e) => `${e.path.join(".") || "(root)"}: ${e.message}`)
+              .join("; ")}`,
+          );
+        const project = migrated.doc;
+        if (frames.length === 0) throw new CaptureError("frames must list at least one frame");
+        for (const id of assets.keys()) {
+          const asset = project.assets.find((a) => a.id === id);
+          if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
+            throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
+        }
+        const response = await render(
+          {
+            project,
+            compositionId: composition ?? project.mainCompositionId,
+            frames: [...frames],
+            assets: [...assets.keys()],
+          },
+          assets,
+        );
+        if (!response.ok) throw new CaptureError(response.message, response.name);
+        return response.frames.map((f) => {
+          const png = new Uint8Array(Buffer.from(f.png, "base64"));
+          return {
+            ...f,
+            png,
+            pngSha256: createHash("sha256").update(png).digest("hex"),
+          };
+        });
+      });
+    },
+    close: () => browser.close(),
+  };
+}
