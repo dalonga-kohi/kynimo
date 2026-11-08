@@ -1,0 +1,1479 @@
+{
+  "formatVersion": 3,
+  "name": "Reference: masked and matted reveal",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 640,
+      "height": 360,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 60,
+      "background": "#11131a",
+      "markers": [],
+      "layers": [
+        {
+          "id": "ink",
+          "name": "ink",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": {
+            "layerId": "headline",
+            "mode": "alpha"
+          },
+          "masks": [
+            {
+              "id": "wipe",
+              "name": "wipe",
+              "mode": "add",
+              "inverted": false,
+              "path": {
+                "keyframes": [
+                  {
+                    "frame": 4,
+                    "value": {
+                      "closed": true,
+                      "vertices": [
+                        {
+                          "point": [10, 90],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [10, 90],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [10, 230],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [10, 230],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        }
+                      ]
+                    },
+                    "interpolation": {
+                      "type": "bezier",
+                      "x1": 0.16,
+                      "y1": 1,
+                      "x2": 0.3,
+                      "y2": 1
+                    }
+                  },
+                  {
+                    "frame": 40,
+                    "value": {
+                      "closed": true,
+                      "vertices": [
+                        {
+                          "point": [10, 90],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [610, 90],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [610, 230],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        },
+                        {
+                          "point": [10, 230],
+                          "inTangent": [0, 0],
+                          "outTangent": [0, 0]
+                        }
+                      ]
+                    },
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  }
+                ]
+              },
+              "feather": {
+                "value": [40, 0]
+              },
+              "opacity": {
+                "value": 1
+              },
+              "expansion": {
+                "value": 0
+              }
+            }
+          ],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-1",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [320, 180]
+              },
+              "size": {
+                "value": [640, 360]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "id": "fill-2",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "linear-gradient",
+                "start": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [40, 0],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.65,
+                        "y1": 0,
+                        "x2": 0.35,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 59,
+                      "value": [-200, 0],
+                      "interpolation": {
+                        "type": "linear"
+                      }
+                    }
+                  ]
+                },
+                "end": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [640, 0],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.65,
+                        "y1": 0,
+                        "x2": 0.35,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 59,
+                      "value": [400, 0],
+                      "interpolation": {
+                        "type": "linear"
+                      }
+                    }
+                  ]
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ff5f6d"
+                    },
+                    {
+                      "offset": 0.5,
+                      "color": "#ffc371"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#47cfa3"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "headline",
+          "name": "headline",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": true,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [320, 222]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "REVEAL"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 900,
+            "size": {
+              "value": 132
+            }
+          },
+          "tracking": {
+            "value": 40
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "center",
+          "textCase": "none",
+          "fill": {
+            "value": "#ffffff"
+          }
+        },
+        {
+          "id": "underline",
+          "name": "underline",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [100, 252]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": {
+            "layerId": "sweep",
+            "mode": "luma"
+          },
+          "masks": [],
+          "type": "solid",
+          "width": 440,
+          "height": 6,
+          "color": "#ffc371"
+        },
+        {
+          "id": "sweep",
+          "name": "sweep",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": true,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-3",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [320, 255]
+              },
+              "size": {
+                "value": [640, 40]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "id": "fill-4",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "keyframes": [
+                    {
+                      "frame": 10,
+                      "value": [60, 255],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.65,
+                        "y1": 0,
+                        "x2": 0.35,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 50,
+                      "value": [580, 255],
+                      "interpolation": {
+                        "type": "linear"
+                      }
+                    }
+                  ]
+                },
+                "radius": {
+                  "value": 220
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffffff"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#000000"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "ring",
+          "name": "ring",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [
+            {
+              "id": "outer",
+              "name": "outer",
+              "mode": "add",
+              "inverted": false,
+              "path": {
+                "value": {
+                  "closed": true,
+                  "vertices": [
+                    {
+                      "point": [320, 10],
+                      "inTangent": [-93.88840746599999, 0],
+                      "outTangent": [93.88840746599999, 0]
+                    },
+                    {
+                      "point": [490, 180],
+                      "inTangent": [0, -93.88840746599999],
+                      "outTangent": [0, 93.88840746599999]
+                    },
+                    {
+                      "point": [320, 350],
+                      "inTangent": [93.88840746599999, 0],
+                      "outTangent": [-93.88840746599999, 0]
+                    },
+                    {
+                      "point": [150, 180],
+                      "inTangent": [0, 93.88840746599999],
+                      "outTangent": [0, -93.88840746599999]
+                    }
+                  ]
+                }
+              },
+              "feather": {
+                "value": [2, 2]
+              },
+              "opacity": {
+                "value": 1
+              },
+              "expansion": {
+                "value": 0
+              }
+            },
+            {
+              "id": "inner",
+              "name": "inner",
+              "mode": "subtract",
+              "inverted": false,
+              "path": {
+                "value": {
+                  "closed": true,
+                  "vertices": [
+                    {
+                      "point": [320, 30],
+                      "inTangent": [-82.84271247, 0],
+                      "outTangent": [82.84271247, 0]
+                    },
+                    {
+                      "point": [470, 180],
+                      "inTangent": [0, -82.84271247],
+                      "outTangent": [0, 82.84271247]
+                    },
+                    {
+                      "point": [320, 330],
+                      "inTangent": [82.84271247, 0],
+                      "outTangent": [-82.84271247, 0]
+                    },
+                    {
+                      "point": [170, 180],
+                      "inTangent": [0, 82.84271247],
+                      "outTangent": [0, -82.84271247]
+                    }
+                  ]
+                }
+              },
+              "feather": {
+                "value": [2, 2]
+              },
+              "opacity": {
+                "value": 1
+              },
+              "expansion": {
+                "keyframes": [
+                  {
+                    "frame": 0,
+                    "value": -60,
+                    "interpolation": {
+                      "type": "bezier",
+                      "x1": 0.16,
+                      "y1": 1,
+                      "x2": 0.3,
+                      "y2": 1
+                    }
+                  },
+                  {
+                    "frame": 36,
+                    "value": 0,
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "solid",
+          "width": 640,
+          "height": 360,
+          "color": "#26304f"
+        },
+        {
+          "id": "vignette-dots",
+          "name": "vignette-dots",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": {
+            "layerId": "spot",
+            "mode": "luma-inverted"
+          },
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-5",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-6",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-7",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-8",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-9",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-10",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-11",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-12",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-13",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-14",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-15",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 40]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-16",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-17",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-18",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-19",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-20",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-21",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-22",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-23",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-24",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-25",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-26",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 96]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-27",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-28",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-29",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-30",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-31",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-32",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-33",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-34",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-35",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-36",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-37",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 152]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-38",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-39",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-40",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-41",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-42",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-43",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-44",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-45",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-46",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-47",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-48",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 208]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-49",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-50",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-51",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-52",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-53",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-54",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-55",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-56",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-57",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-58",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-59",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 264]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-60",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [40, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-61",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [96, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-62",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [152, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-63",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [208, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-64",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [264, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-65",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [320, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-66",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [376, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-67",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [432, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-68",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [488, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-69",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [544, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "ellipse-70",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [600, 320]
+              },
+              "size": {
+                "value": [4, 4]
+              }
+            },
+            {
+              "id": "fill-71",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#3a4466"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "spot",
+          "name": "spot",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": true,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-72",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [320, 180]
+              },
+              "size": {
+                "value": [640, 360]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "id": "fill-73",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [320, 180]
+                },
+                "radius": {
+                  "value": 260
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffffff"
+                    },
+                    {
+                      "offset": 0.7,
+                      "color": "#000000"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#000000"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

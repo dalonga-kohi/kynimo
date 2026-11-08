@@ -23,7 +23,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] Text: font loading strategy (bundled + uploaded fonts pinned by hash), shaping, layout (point/box, auto-fit) → ADR-0019: Inter + Noto Sans fallback, font assets (format v2), After Effects point/box semantics, shrink-only auto-fit
 - [x] Masks, track mattes, blend modes → ADR-0020: format v3, CPU mask coverage; ADR-0021: WebGL2 compositor with a JavaScript reference it is tested against
 - [x] Headless capture: document + frame → PNG; determinism test (same doc + frame → identical pixels) → ADR-0022: `@kynimo/capture`, whole pipeline in the pinned Chromium, golden pixel + PNG hashes
-- [ ] Reference scenes (ADR-0018): title card, masked/matted reveal, nested precomp with parenting, image-and-shape product card; approved frames checked in and looked at whenever they change
+- [x] Reference scenes (ADR-0018): title card, masked/matted reveal, nested precomp with parenting, image-and-shape product card; approved frames checked in and looked at whenever they change → ADR-0023: plain scene documents in `packages/capture/reference/`, 640×360 approved PNGs compared byte for byte
 
 ## M3 — MCP server v1
 

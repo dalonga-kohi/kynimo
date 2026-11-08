@@ -1,0 +1,1068 @@
+{
+  "formatVersion": 3,
+  "name": "Reference: nested precomp with parenting",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 640,
+      "height": 360,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 60,
+      "background": "#0d1222",
+      "markers": [],
+      "layers": [
+        {
+          "id": "tile-b",
+          "name": "tile-b",
+          "inFrame": 12,
+          "outFrame": 60,
+          "startFrame": 12,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "rig",
+          "transform": {
+            "anchorPoint": {
+              "value": [130, 90]
+            },
+            "position": {
+              "value": [150, 0]
+            },
+            "scale": {
+              "keyframes": [
+                {
+                  "frame": 12,
+                  "value": [0.6, 0.6],
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.5,
+                    "response": 0.45
+                  }
+                },
+                {
+                  "frame": 43,
+                  "value": [0.85, 0.85],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotation": {
+              "value": 6
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "precomp",
+          "compositionId": "tile"
+        },
+        {
+          "id": "tile-a",
+          "name": "tile-a",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "rig",
+          "transform": {
+            "anchorPoint": {
+              "value": [130, 90]
+            },
+            "position": {
+              "value": [-150, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": -4
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "precomp",
+          "compositionId": "tile"
+        },
+        {
+          "id": "rig",
+          "name": "rig",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [320, 210],
+                  "interpolation": {
+                    "type": "spring",
+                    "damping": 0.7,
+                    "response": 0.5
+                  }
+                },
+                {
+                  "frame": 30,
+                  "value": [320, 180],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": -3,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.65,
+                    "y1": 0,
+                    "x2": 0.35,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 59,
+                  "value": 3,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "type": "null"
+        },
+        {
+          "id": "bg",
+          "name": "bg",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-16",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [320, 180]
+              },
+              "size": {
+                "value": [640, 360]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "id": "fill-17",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "linear-gradient",
+                "start": {
+                  "value": [0, 0]
+                },
+                "end": {
+                  "value": [0, 360]
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#0d1222"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#151b31"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tile",
+      "name": "tile",
+      "width": 260,
+      "height": 180,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 60,
+      "background": null,
+      "markers": [],
+      "layers": [
+        {
+          "id": "label",
+          "name": "label",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [20, 160]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "content": {
+            "value": "orbit / precomp"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 500,
+            "size": {
+              "value": 13
+            }
+          },
+          "tracking": {
+            "value": 40
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#c9cfe0"
+          }
+        },
+        {
+          "id": "orbit",
+          "name": "orbit",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [100, 100]
+            },
+            "position": {
+              "value": [130, 80]
+            },
+            "scale": {
+              "value": [0.7, 0.7]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "precomp",
+          "compositionId": "orbit"
+        },
+        {
+          "id": "panel",
+          "name": "panel",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-13",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [130, 90]
+              },
+              "size": {
+                "value": [260, 180]
+              },
+              "cornerRadius": {
+                "value": 18
+              }
+            },
+            {
+              "id": "fill-14",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#1a2034"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            },
+            {
+              "id": "stroke-15",
+              "name": "stroke",
+              "type": "stroke",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#2f3854"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "width": {
+                "value": 2
+              },
+              "cap": "round",
+              "join": "round",
+              "miterLimit": 4,
+              "dashes": [],
+              "dashOffset": {
+                "value": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orbit",
+      "name": "orbit",
+      "width": 200,
+      "height": 200,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 60,
+      "background": null,
+      "markers": [],
+      "layers": [
+        {
+          "id": "planet-a",
+          "name": "planet-a",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "hub",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [70, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-1",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [22, 22]
+              }
+            },
+            {
+              "id": "fill-2",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [-4.4, -4.4]
+                },
+                "radius": {
+                  "value": 15.399999999999999
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffffff"
+                    },
+                    {
+                      "offset": 0.25,
+                      "color": "#ff7a59"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#ff7a59"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "planet-b",
+          "name": "planet-b",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "hub",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [-35, 60]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-3",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [16, 16]
+              }
+            },
+            {
+              "id": "fill-4",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [-3.2, -3.2]
+                },
+                "radius": {
+                  "value": 11.2
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffffff"
+                    },
+                    {
+                      "offset": 0.25,
+                      "color": "#47cfa3"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#47cfa3"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "moon-host",
+          "name": "moon-host",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "hub",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [-35, -60]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-5",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [18, 18]
+              }
+            },
+            {
+              "id": "fill-6",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [-3.6, -3.6]
+                },
+                "radius": {
+                  "value": 12.6
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#ffffff"
+                    },
+                    {
+                      "offset": 0.25,
+                      "color": "#7c8cff"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#7c8cff"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "moon",
+          "name": "moon",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "moon-host",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [16, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-7",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [7, 7]
+              }
+            },
+            {
+              "id": "fill-8",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#e6e9f5"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "hub",
+          "name": "hub",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [100, 100]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 59,
+                  "value": 354,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "type": "null"
+        },
+        {
+          "id": "core",
+          "name": "core",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-9",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [100, 100]
+              },
+              "size": {
+                "value": [34, 34]
+              }
+            },
+            {
+              "id": "fill-10",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "radial-gradient",
+                "center": {
+                  "value": [94, 94]
+                },
+                "radius": {
+                  "value": 22
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#fff6d6"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#ffb86b"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "track",
+          "name": "track",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-11",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [100, 100]
+              },
+              "size": {
+                "value": [140, 140]
+              }
+            },
+            {
+              "id": "stroke-12",
+              "name": "stroke",
+              "type": "stroke",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#ffffff40"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "width": {
+                "value": 1.5
+              },
+              "cap": "round",
+              "join": "round",
+              "miterLimit": 4,
+              "dashes": [4, 6],
+              "dashOffset": {
+                "keyframes": [
+                  {
+                    "frame": 0,
+                    "value": 0,
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  },
+                  {
+                    "frame": 59,
+                    "value": 40,
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

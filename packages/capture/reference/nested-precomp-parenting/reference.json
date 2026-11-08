@@ -1,0 +1,4 @@
+{
+  "description": "Nested precomp with parenting: main holds two instances of a tile composition, both parented to an animated null; the second starts at frame 12 (in and start frame) and springs in. Each tile holds a scaled orbit composition whose planets are parented to a rotating null, with a moon parented to a planet (two-level parenting), and a dashed orbit stroke.",
+  "frames": [0, 20, 45]
+}
