@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Change, migrateProject, type OpError, type Project } from "@kynimo/scene";
 
@@ -18,7 +18,8 @@ export type WriteOutcome =
       kind: "invalid" | "conflict" | "empty";
       message: string;
       errors: OpError[];
-      currentVersion: number;
+      /** The project's version at rejection; absent for `create_project`, which has no project. */
+      currentVersion?: number;
     };
 
 /** What a successful write returns. Ids are concrete, never selectors. */
@@ -114,6 +115,12 @@ async function writeAtomic(path: string, data: string): Promise<void> {
   await rename(tmp, path);
 }
 
+/** A positive integer pid, or undefined for anything else (empty, partial, 0 or negative). */
+const readPid = (text: string): number | undefined => {
+  const pid = Number(text.trim());
+  return Number.isInteger(pid) && pid > 0 && text.trim() !== "" ? pid : undefined;
+};
+
 const isAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -137,29 +144,53 @@ export class FileStore implements ProjectStore {
 
   /**
    * Opens `dir` for this process only. The service's write lock is in memory, so two processes on
-   * one folder could both pass a version check and lose a write; `<dir>/.lock` (holding the owner's
-   * pid) refuses a second live owner. A lock left by a process that is gone is taken over.
+   * one folder could both pass a version check and lose a write; `<dir>/.lock` refuses a second
+   * owner. The lock never exists without its pid: the pid is written to a temp file that is then
+   * hard-linked into place, which fails atomically if a lock exists. A lock whose pid is gone is
+   * renamed away and re-read before deletion, so a racing starter never deletes a fresh lock.
+   * Anything unreadable counts as held.
    */
   static async open(dir: string, pid: number = process.pid): Promise<FileStore> {
     await mkdir(dir, { recursive: true });
     const lock = join(dir, ".lock");
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const handle = await open(lock, "wx");
-        await handle.writeFile(String(pid));
-        await handle.close();
-        return new FileStore(dir);
-      } catch (e) {
-        if ((e as { code?: unknown }).code !== "EEXIST") throw e;
-        const owner = Number.parseInt(await readFile(lock, "utf8").catch(() => ""), 10);
-        if (Number.isInteger(owner) && owner !== pid && isAlive(owner))
-          throw new Error(
-            `${dir} is in use by another kynimo-mcp process (pid ${owner}); use a different --dir or stop that process`,
-          );
-        await rm(lock, { force: true });
+    const held = (detail: string) =>
+      new Error(
+        `${dir} is in use (${detail}). Stop the other kynimo-mcp process or use a different --dir; if no server is running, delete ${lock}`,
+      );
+    const tmp = join(dir, `.lock.${randomUUID()}.tmp`);
+    await writeFile(tmp, String(pid), "utf8");
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await link(tmp, lock);
+          return new FileStore(dir);
+        } catch (e) {
+          if ((e as { code?: unknown }).code !== "EEXIST") throw e;
+        }
+        const owner = readPid(await readFile(lock, "utf8").catch(() => ""));
+        if (owner === undefined) throw held("its lock file is unreadable");
+        if (owner === pid) return new FileStore(dir);
+        if (isAlive(owner)) throw held(`pid ${owner}`);
+        // Stale: move it aside, and only delete it if it is still the dead owner's lock.
+        const aside = join(dir, `.lock.${randomUUID()}.stale`);
+        try {
+          await rename(lock, aside);
+        } catch (e) {
+          if (isMissing(e)) continue;
+          throw e;
+        }
+        if (readPid(await readFile(aside, "utf8").catch(() => "")) === owner) await rm(aside);
+        else {
+          // Another starter took the folder between our read and rename: put its lock back.
+          await link(aside, lock).catch(() => undefined);
+          await rm(aside, { force: true });
+          throw held("another process is starting on it");
+        }
       }
+      throw held("its lock keeps changing");
+    } finally {
+      await rm(tmp, { force: true });
     }
-    throw new Error(`could not lock ${dir}`);
   }
 
   /** Releases the folder lock. */

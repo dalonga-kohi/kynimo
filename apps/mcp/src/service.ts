@@ -73,7 +73,7 @@ export type OutcomeReply =
       kind: string;
       message: string;
       errors: OpError[];
-      current_version: number;
+      current_version?: number;
     }
   | { status: "expired" | "unknown" };
 
@@ -230,7 +230,6 @@ export class KynimoService {
           kind: "invalid",
           message: "the project settings are invalid; nothing was created",
           errors: parsed.error.issues.map((i) => ({ path: inputPath(i.path), message: i.message })),
-          currentVersion: 0,
         };
         await this.store.putCreateRecords(
           keep([...records, { actor: this.actor, key, fingerprint: print, outcome }]),
@@ -475,7 +474,7 @@ export class KynimoService {
           kind: o.kind,
           message: o.message,
           errors: o.errors,
-          current_version: o.currentVersion,
+          ...(o.currentVersion === undefined ? {} : { current_version: o.currentVersion }),
         };
   }
 }

@@ -96,13 +96,22 @@ describe("FileStore", () => {
   it("refuses a folder another live process holds, and takes over a stale lock", async () => {
     const live = process.ppid;
     await writeFile(join(dir, ".lock"), String(live));
-    await expect(FileStore.open(dir)).rejects.toThrow(/in use by another kynimo-mcp process/);
+    await expect(FileStore.open(dir)).rejects.toThrow(/is in use \(pid \d+\).*delete .*\.lock/);
 
     await writeFile(join(dir, ".lock"), "4194303"); // above Linux's pid_max default: never alive
     const store = await FileStore.open(dir);
     expect(await readFile(join(dir, ".lock"), "utf8")).toBe(String(process.pid));
     await store.close();
-    expect(await readdir(dir)).not.toContain(".lock");
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it("treats an empty or invalid lock as held, so a half-written lock is never taken", async () => {
+    for (const content of ["", "0", "-1", "12abc"]) {
+      await writeFile(join(dir, ".lock"), content);
+      await expect(FileStore.open(dir), JSON.stringify(content)).rejects.toThrow(/unreadable/);
+    }
+    // Temp files from the failed attempts are cleaned up.
+    expect((await readdir(dir)).sort()).toEqual([".lock"]);
   });
 
   it("lists the readable projects when one file is corrupt", async () => {
