@@ -199,18 +199,18 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 
 ### Tool groups (target)
 
-| Group    | Tools                                                                                                                                            | Milestone |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                  | M3        |
-| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome` | M3        |
-| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`                                 | M3        |
-| Precise  | `add_effect`, `add_behavior`                                                                                                                     | M4        |
-| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                   | M4        |
-| Intent   | `add_component`, `build_from_brief`                                                                                                              | M6        |
-| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                          | M6        |
-| Intent   | `sync_to_beats`                                                                                                                                  | M7        |
-| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                      | M5        |
-| Feedback | `render_frames`, `render_contact_sheet`                                                                                                          | M3        |
-| Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                        | M7        |
+| Group    | Tools                                                                                                                                                                | Milestone |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                                      | M3        |
+| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome`, `get_layer_schema` | M3        |
+| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
+| Precise  | `add_effect`, `add_behavior`                                                                                                                                         | M4        |
+| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                                       | M4        |
+| Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
+| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
+| Intent   | `sync_to_beats`                                                                                                                                                      | M7        |
+| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5        |
+| Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3        |
+| Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                                            | M7        |
 
 MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing.

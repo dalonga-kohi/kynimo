@@ -27,7 +27,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M3 — MCP server v1
 
-- [ ] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops`
+- [x] Local stdio MCP server: project, read (`get_scene` summary/full, `find_layers`) and precise tools incl. batched `apply_ops` → ADR-0024: `apps/mcp`, `ProjectStore` (memory + JSON dir), `base_version` + `idempotency_key` on every write, `get_write_outcome`, compact tool schemas with `get_layer_schema`
+- [ ] Mask, matte and precompose ops in `@kynimo/scene` + `add_mask`, `set_matte`, `precompose` tools
 - [ ] `render_frames` + `render_contact_sheet` returning images, with declared limits, a render cache and skipped-feature reporting (ADR-0018); `describe_motion` timeline summary
 - [ ] MCP resources: scene schema, preset/component/token catalogs; capability manifest as a resource and `get_capabilities` tool (ADR-0018)
 - [ ] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on every write, `get_write_outcome`, undo history persisted with the project (ADR-0018)
