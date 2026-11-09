@@ -7,7 +7,7 @@ import { AwsClient } from "aws4fetch";
  * Asset keys are content-addressed: `assets/<sha256>.<ext>`, the same string a document's asset
  * entry holds as `uri`. Equal bytes share one object, so a put is idempotent and a retry is free.
  */
-export const BLOB_KEY_PATTERN = /^assets\/[0-9a-f]{64}\.(png|jpg|ttf|otf)$/;
+export const BLOB_KEY_PATTERN = /^assets\/[0-9a-f]{64}\.(png|jpg|ttf|otf|json|flac)$/;
 
 /** Largest asset file, decoded: what `upload_asset` takes (ADR-0031). */
 export const MAX_ASSET_BYTES = 8 * 1024 * 1024;
@@ -17,8 +17,10 @@ export const MAX_ASSET_BASE64 = Math.ceil((Math.ceil(MAX_ASSET_BYTES / 3) * 4 * 
 
 export const isBlobKey = (key: string): boolean => BLOB_KEY_PATTERN.test(key);
 
-export const blobKey = (sha256: string, ext: "png" | "jpg" | "ttf" | "otf"): string =>
-  `assets/${sha256}.${ext}`;
+export const blobKey = (
+  sha256: string,
+  ext: "png" | "jpg" | "ttf" | "otf" | "json" | "flac",
+): string => `assets/${sha256}.${ext}`;
 
 function checkKey(key: string): void {
   if (!BLOB_KEY_PATTERN.test(key)) throw new Error(`invalid asset key '${key}'`);

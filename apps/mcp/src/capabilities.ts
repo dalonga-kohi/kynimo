@@ -34,8 +34,14 @@ const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
     status: "renders",
     note: `formats: ${RENDERER_FORMATS.font.join(", ")}; add with upload_asset; bundled without an asset: ${RENDERER_FORMATS.bundledFonts.join(", ")}`,
   },
-  video: { status: "renders", note: "no tool adds one yet (see unavailable.video)" },
-  audio: LAYER_SUPPORT.audio,
+  video: {
+    status: "renders",
+    note: "add with upload_asset (MP4, MOV, WebM, MKV; up to 60 s): decoded at upload to JPEG frames, at most 1920 px and 60 fps; needs FFmpeg on the server",
+  },
+  audio: {
+    status: "accepted",
+    reason: `${LAYER_SUPPORT.audio.status === "accepted" ? LAYER_SUPPORT.audio.reason : "audio renders"}. Add with upload_asset (WAV, MP3, FLAC, Ogg, M4A, or a video's own sound), stored as 48 kHz FLAC`,
+  },
 };
 
 const unavailable = (reason: string): Unavailable => ({ status: "unavailable", reason });
@@ -46,8 +52,6 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  video: unavailable("video assets and layers arrive later in M3"),
-  audio_upload: unavailable("audio uploads arrive with video assets later in M3"),
   effects: unavailable(
     "blur, drop shadow, glow, color effects and adjustment layers that use them arrive in M4",
   ),

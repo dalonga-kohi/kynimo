@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
+import { evaluateFrame, type ResolvedComposition } from "@kynimo/engine";
 import {
   AssetInfoError,
   readFontInfo,
   readImageInfo,
   sniffFontFormat,
   sniffImageFormat,
+  videoFrameKey,
 } from "@kynimo/renderer";
 import {
   type Asset,
@@ -28,12 +33,14 @@ import {
 import type { z } from "zod";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import { fingerprint } from "./hash.js";
+import { MediaError, type MediaTools, type Rational } from "./media.js";
 import { describeMotion, type MotionDescription } from "./motion.js";
 import {
   aggregateReports,
   type FrameRenderer,
   RENDER_LIMITS,
   RenderCache,
+  type RenderMedia,
   type SkippedReport,
   sampleFrames,
   type WarningReport,
@@ -234,6 +241,10 @@ export interface ServiceOptions {
   blobsUnavailable?: string;
   /** Asset bytes kept in memory for renders. Default 128 MB. */
   assetCacheBytes?: number;
+  /** Decodes video and audio uploads; without it they answer `unavailable`. */
+  media?: MediaTools;
+  /** Why there is no media decoder, for the `unavailable` message. */
+  mediaUnavailable?: string;
 }
 
 /** Largest file `upload_asset` takes, decoded (ADR-0031). */
@@ -257,6 +268,8 @@ export interface AssetSummary {
   height?: number;
   family?: string;
   weight?: { min: number; max: number };
+  fps?: { num: number; den: number };
+  frame_count?: number;
   duration_ms?: number;
   /** Layers that use it (for a font: text layers of its family), up to 20. */
   used_by: string[];
@@ -307,6 +320,39 @@ function uploadError(e: ToolError): ToolError {
 }
 
 const sha256Of = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * Containers FFmpeg reads at upload, by signature: ISO BMFF (MP4, MOV, M4A), Matroska/WebM,
+ * WAV, MP3 (ID3 or a frame sync), FLAC and Ogg. Anything else never reaches FFmpeg.
+ */
+export function isMediaFile(b: Uint8Array): boolean {
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+  return (
+    ascii(4, 8) === "ftyp" ||
+    (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) ||
+    (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE") ||
+    ascii(0, 3) === "ID3" ||
+    (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) ||
+    ascii(0, 4) === "fLaC" ||
+    ascii(0, 4) === "OggS"
+  );
+}
+
+/** Video limits at upload (ADR-0032). */
+export const VIDEO_LIMITS = {
+  maxSeconds: 60,
+  maxFps: 60,
+  /** Longest edge of the decoded frames; larger footage is scaled down to it. */
+  maxEdge: 1920,
+  /** Decoded JPEG frames of one upload. */
+  maxDecodedBytes: 1024 * 1024 * 1024,
+} as const;
+
+/** One stored object and the entries an upload adds; the first entry is the uploaded asset. */
+interface Prepared {
+  blobs: { key: string; bytes: Uint8Array; contentType: string }[];
+  entries: Record<string, unknown>[];
+}
 
 /** The asset entry (without id) the bytes describe; the fields come from the file itself. */
 function describeUpload(input: UploadAssetInput, bytes: Uint8Array) {
@@ -360,8 +406,25 @@ function describeUpload(input: UploadAssetInput, bytes: Uint8Array) {
     throw e;
   }
   throw invalid(
-    "unsupported file type: upload a PNG or JPEG image, or a TrueType/OpenType font (.ttf/.otf). Audio, video and SVG uploads are not available yet (see get_capabilities)",
+    "unsupported file type: upload a PNG or JPEG image, a TrueType/OpenType font (.ttf/.otf), a video (MP4, MOV, WebM, MKV) or audio (WAV, MP3, FLAC, Ogg, M4A). SVG uploads are not available yet (see get_capabilities)",
   );
+}
+
+function prepareFile(input: UploadAssetInput, bytes: Uint8Array): Prepared {
+  const { key, contentType, asset } = describeUpload(input, bytes);
+  return { blobs: [{ key, bytes, contentType }], entries: [asset] };
+}
+
+/** Stores objects a few at a time: a long clip has thousands of frames. */
+async function putAll(blobs: BlobStore, items: Prepared["blobs"]): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) {
+      const item = items[i] as Prepared["blobs"][number];
+      await blobs.put(item.key, item.bytes, item.contentType);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, items.length) }, worker));
 }
 
 export interface RenderFramesInput {
@@ -439,6 +502,8 @@ export class KynimoService {
   private readonly blobs: BlobStore | undefined;
   private readonly blobsUnavailable: string;
   private readonly assetBytes: RenderCache<Uint8Array>;
+  private readonly media: MediaTools | undefined;
+  private readonly mediaUnavailable: string;
 
   constructor(
     private readonly store: ProjectStore,
@@ -452,17 +517,22 @@ export class KynimoService {
     this.blobs = options.blobs;
     this.blobsUnavailable = options.blobsUnavailable ?? "this server has no asset storage";
     this.assetBytes = new RenderCache(options.assetCacheBytes ?? 128 * 1024 * 1024);
+    this.media = options.media;
+    this.mediaUnavailable =
+      options.mediaUnavailable ?? "this server has no FFmpeg (install ffmpeg and ffprobe)";
   }
 
   /**
-   * Stores a file and adds its asset entry in one write. The bytes go to the blob store first,
-   * under their content key, so a retry (same key, same bytes) stores nothing new and replays the
-   * write; a rejected write leaves an unreferenced object, which is harmless (ADR-0031).
+   * Stores a file and adds its asset entry (a video's extracted audio too) in one write. The
+   * request is fingerprinted on the file's own hash and the given fields, not on what is derived
+   * from it, so a retry with the same key replays the stored result without decoding again.
+   * Bytes go to the blob store first under their content keys, so a rejected write leaves only
+   * unreferenced objects, which are harmless (ADR-0031, ADR-0032).
    */
   async uploadAsset(
     meta: WriteMeta,
     input: UploadAssetInput,
-  ): Promise<WriteReply & { asset: Asset }> {
+  ): Promise<WriteReply & { asset: Asset; audio_asset?: Asset }> {
     const blobs = this.blobs;
     if (blobs === undefined)
       throw new ToolError("unavailable", `asset upload is unavailable: ${this.blobsUnavailable}`);
@@ -470,19 +540,173 @@ export class KynimoService {
     if (bytes.length > MAX_UPLOAD_BYTES) throw tooLarge();
     if (bytes.length === 0)
       throw new ToolError("invalid", "data is empty", [{ path: ["data"], message: "empty file" }]);
-    const { key, contentType, asset } = describeUpload(input, bytes);
+    const print = fingerprint({
+      tool: "upload_asset",
+      base_version: meta.base_version,
+      source: sha256Of(bytes),
+      name: input.name,
+      id: input.id ?? null,
+      family: input.family ?? null,
+    });
     await this.load(meta.project_id);
-    await blobs.put(key, bytes, contentType);
-    const op = { op: "addAsset", ...(input.id === undefined ? {} : { id: input.id }), asset };
+    const seen = await this.store.lookupWrite(meta.project_id, this.actor, meta.idempotency_key);
     let reply: WriteReply;
+    if (seen.status !== "unknown") {
+      // Replays the stored outcome, or fails with key_reused / key_expired; applies nothing.
+      reply = await this.writeUpload(meta, [], print);
+    } else {
+      const prepared = isMediaFile(bytes)
+        ? await this.prepareMedia(input, bytes)
+        : prepareFile(input, bytes);
+      await putAll(blobs, prepared.blobs);
+      const ops = prepared.entries.map((asset, i) => {
+        const id = input.id === undefined ? undefined : i === 0 ? input.id : `${input.id}-audio`;
+        return { op: "addAsset", ...(id === undefined ? {} : { id }), asset };
+      });
+      reply = await this.writeUpload(meta, ops, print);
+    }
+    const ids = reply.assets_added ?? [];
+    const doc =
+      (await this.store.getVersion(meta.project_id, reply.version)) ??
+      (await this.load(meta.project_id)).doc;
+    const added = ids.map((id) => doc.assets.find((a) => a.id === id));
+    const [asset, audio] = added;
+    if (asset === undefined) throw new ToolError("invalid", "the asset was not added");
+    return { ...reply, asset, ...(audio === undefined ? {} : { audio_asset: audio }) };
+  }
+
+  private async writeUpload(meta: WriteMeta, ops: unknown[], print: string): Promise<WriteReply> {
     try {
-      reply = await this.write(meta, { kind: "ops", ops: [op] });
+      return await this.write(meta, { kind: "ops", ops }, print);
     } catch (e) {
       throw e instanceof ToolError && e.kind === "invalid" ? uploadError(e) : e;
     }
-    const id = reply.assets_added?.[0];
-    if (id === undefined) throw new ToolError("invalid", "the asset was not added");
-    return { ...reply, asset: { ...asset, id } as Asset };
+  }
+
+  /**
+   * Decodes video to constant-rate JPEG frames and a frame manifest, and audio to FLAC, with
+   * FFmpeg on a temp copy of the upload. The frames are not kept in memory all at once beyond
+   * what the blob store needs; the source file itself is not stored.
+   */
+  private async prepareMedia(input: UploadAssetInput, bytes: Uint8Array): Promise<Prepared> {
+    const media = this.media;
+    if (media === undefined)
+      throw new ToolError(
+        "unavailable",
+        `video and audio upload is unavailable: ${this.mediaUnavailable}`,
+      );
+    if (input.family !== undefined)
+      throw new ToolError("invalid", "family applies to fonts only", [
+        { path: ["family"], message: "omit it for video and audio" },
+      ]);
+    const invalid = (message: string) =>
+      new ToolError("invalid", message, [{ path: ["data"], message }]);
+    const dir = await mkdtemp(join(tmpdir(), "kynimo-media-"));
+    try {
+      const source = join(dir, "source");
+      await writeFile(source, bytes);
+      const probe = await media.probe(source);
+      const maxMs = VIDEO_LIMITS.maxSeconds * 1000;
+      if (probe.durationMs > maxMs)
+        throw invalid(
+          `clips may be at most ${VIDEO_LIMITS.maxSeconds} s (this one is ${(probe.durationMs / 1000).toFixed(1)} s); trim it before uploading`,
+        );
+      const out: Prepared = { blobs: [], entries: [] };
+      if (probe.video !== undefined)
+        out.entries.push(await this.decodeVideo(media, input, source, dir, probe.video, out));
+      if (probe.hasAudio) {
+        const flac = join(dir, "audio.flac");
+        const { durationMs } = await media.extractAudio(source, flac, VIDEO_LIMITS.maxSeconds);
+        const audio = new Uint8Array(await readFile(flac));
+        const sha256 = sha256Of(audio);
+        const key = blobKey(sha256, "flac");
+        out.blobs.push({ key, bytes: audio, contentType: "audio/flac" });
+        out.entries.push({
+          type: "audio",
+          name: probe.video === undefined ? input.name : `${input.name} (audio)`,
+          uri: key,
+          sha256,
+          durationMs: Math.max(1, durationMs),
+        });
+      }
+      if (out.entries.length === 0) throw invalid("the file has no video or audio stream");
+      return out;
+    } catch (e) {
+      if (e instanceof MediaError) throw invalid(e.message);
+      throw e;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  private async decodeVideo(
+    media: MediaTools,
+    input: UploadAssetInput,
+    source: string,
+    dir: string,
+    video: { width: number; height: number; fps: Rational },
+    out: Prepared,
+  ): Promise<Record<string, unknown>> {
+    const invalid = (message: string) =>
+      new ToolError("invalid", message, [{ path: ["data"], message }]);
+    const rate = video.fps.num / video.fps.den;
+    if (rate < 1) throw invalid("the video's frame rate is below 1 fps");
+    const fps = rate > VIDEO_LIMITS.maxFps ? { num: VIDEO_LIMITS.maxFps, den: 1 } : video.fps;
+    const scale = Math.min(1, VIDEO_LIMITS.maxEdge / Math.max(video.width, video.height));
+    const even = (n: number) => Math.max(2, Math.round((n * scale) / 2) * 2);
+    const width = even(video.width);
+    const height = even(video.height);
+    const framesDir = join(dir, "frames");
+    await mkdir(framesDir);
+    const files = await media.decodeFrames(source, framesDir, {
+      fps,
+      width,
+      height,
+      maxFrames: Math.ceil((VIDEO_LIMITS.maxSeconds * fps.num) / fps.den),
+      maxSeconds: VIDEO_LIMITS.maxSeconds,
+    });
+    if (files.length === 0) throw invalid("the video decodes to no frames");
+    const hashes: string[] = [];
+    let total = 0;
+    for (const file of files) {
+      const frame = new Uint8Array(await readFile(file));
+      total += frame.byteLength;
+      if (total > VIDEO_LIMITS.maxDecodedBytes)
+        throw invalid(
+          `the decoded frames would pass ${VIDEO_LIMITS.maxDecodedBytes} bytes; upload a shorter or smaller clip`,
+        );
+      const info = readImageInfo(frame);
+      if (info.width !== width || info.height !== height)
+        throw invalid(`a decoded frame is ${info.width}×${info.height}, not ${width}×${height}`);
+      const sha256 = sha256Of(frame);
+      hashes.push(sha256);
+      out.blobs.push({ key: blobKey(sha256, "jpg"), bytes: frame, contentType: "image/jpeg" });
+    }
+    const manifest = new TextEncoder().encode(
+      JSON.stringify({
+        format: "kynimo-video-frames",
+        version: 1,
+        width,
+        height,
+        fps,
+        frame_format: "jpeg",
+        frames: hashes,
+        decoder: await media.version(),
+      }),
+    );
+    const sha256 = sha256Of(manifest);
+    const key = blobKey(sha256, "json");
+    out.blobs.push({ key, bytes: manifest, contentType: "application/json" });
+    return {
+      type: "video",
+      name: input.name,
+      uri: key,
+      sha256,
+      width,
+      height,
+      fps,
+      frameCount: hashes.length,
+    };
   }
 
   async listAssets(projectId: string): Promise<{
@@ -497,7 +721,8 @@ export class KynimoService {
         .filter((l) =>
           a.type === "font"
             ? l.type === "text" && l.font.family === a.family
-            : (l.type === "image" || l.type === "audio") && l.assetId === a.id,
+            : (l.type === "image" || l.type === "video" || l.type === "audio") &&
+              l.assetId === a.id,
         )
         .slice(0, 20)
         .map((l) => l.id as string);
@@ -512,6 +737,15 @@ export class KynimoService {
         ...(a.type === "image" ? { width: a.width, height: a.height } : {}),
         ...(a.type === "font" ? { family: a.family, weight: a.weight } : {}),
         ...(a.type === "audio" ? { duration_ms: a.durationMs } : {}),
+        ...(a.type === "video"
+          ? {
+              width: a.width,
+              height: a.height,
+              fps: a.fps,
+              frame_count: a.frameCount,
+              duration_ms: Math.round((a.frameCount * a.fps.den * 1000) / a.fps.num),
+            }
+          : {}),
         used_by: users(a),
       })),
     };
@@ -522,7 +756,11 @@ export class KynimoService {
    * for the renderer. Each is checked against its pin here, so a corrupt object reads as missing
    * rather than as other pixels. Assets nothing in the tree uses are not loaded.
    */
-  private async assetsFor(doc: Project, compositionId: string): Promise<Map<string, Uint8Array>> {
+  private async assetsFor(
+    doc: Project,
+    compositionId: string,
+    frames: readonly number[],
+  ): Promise<RenderMedia> {
     const images = new Set<string>();
     const families = new Set<string>();
     const seen = new Set<string>();
@@ -561,7 +799,63 @@ export class KynimoService {
         );
       out.set(a.id, bytes);
     }
-    return out;
+    const videoFrames = new Map<string, Uint8Array>();
+    for (const [assetId, sourceFrames] of shownVideoFrames(doc, compositionId, frames)) {
+      const asset = doc.assets.find((a) => a.id === assetId);
+      if (asset?.type !== "video") continue;
+      const failed = (why: string) =>
+        new ToolError("render_failed", `video asset '${asset.id}' ${why}; upload the clip again`);
+      const manifest = await this.frameManifest(asset, failed);
+      for (const n of sourceFrames) {
+        const sha = manifest[n];
+        if (sha === undefined) throw failed(`has no frame ${n} in its frame manifest`);
+        const bytes = await this.blob(blobKey(sha, "jpg"), sha, () =>
+          failed(`frame ${n} is missing or corrupt in this server's asset storage`),
+        );
+        total += bytes.byteLength;
+        if (total > RENDER_LIMITS.maxAssetBytes)
+          throw new ToolError(
+            "invalid",
+            `these frames use more than ${RENDER_LIMITS.maxAssetBytes} bytes of assets and video frames, the limit for one render; render fewer frames at a time`,
+          );
+        videoFrames.set(videoFrameKey(asset.id, n), bytes);
+      }
+    }
+    return { assets: out, videoFrames };
+  }
+
+  /** Bytes under a content key, checked against their hash and cached; `failed` when absent or wrong. */
+  private async blob(key: string, sha256: string, failed: () => ToolError): Promise<Uint8Array> {
+    const cached = this.assetBytes.get(sha256);
+    if (cached !== undefined) return cached;
+    const read = this.blobs === undefined ? undefined : await this.blobs.get(key);
+    if (read === undefined || sha256Of(read) !== sha256) throw failed();
+    this.assetBytes.set(sha256, read, read.byteLength);
+    return read;
+  }
+
+  /** A video asset's frame hashes, from its manifest (pinned by the asset's sha256). */
+  private async frameManifest(
+    asset: Extract<Asset, { type: "video" }>,
+    failed: (why: string) => ToolError,
+  ): Promise<readonly string[]> {
+    if (!isBlobKey(asset.uri)) throw failed("was not stored by upload_asset");
+    const bytes = await this.blob(asset.uri, asset.sha256, () =>
+      failed("has a missing or corrupt frame manifest in this server's asset storage"),
+    );
+    let frames: unknown;
+    try {
+      frames = (JSON.parse(new TextDecoder().decode(bytes)) as { frames?: unknown }).frames;
+    } catch {
+      frames = undefined;
+    }
+    if (
+      !Array.isArray(frames) ||
+      frames.length !== asset.frameCount ||
+      !frames.every((f) => typeof f === "string" && /^[0-9a-f]{64}$/.test(f))
+    )
+      throw failed("has a frame manifest that does not match the asset");
+    return frames as string[];
   }
 
   private async load(projectId: string): Promise<ProjectState> {
@@ -816,9 +1110,10 @@ export class KynimoService {
    * Applies one write atomically. A retry with the same key and the same request returns the
    * stored outcome; the same key with a different request is an error.
    */
-  async write(meta: WriteMeta, write: Write): Promise<WriteReply> {
+  async write(meta: WriteMeta, write: Write, requestPrint?: string): Promise<WriteReply> {
     const { project_id: projectId, base_version: base, idempotency_key: key } = meta;
-    const print = fingerprint({ base_version: base, ...write });
+    // A tool whose ops derive from its input (upload_asset) fingerprints that input instead.
+    const print = requestPrint ?? fingerprint({ base_version: base, ...write });
     const done = await this.store.transact(
       projectId,
       async (tx): Promise<Step<WriteReply | ToolError>> => {
@@ -951,9 +1246,9 @@ export class KynimoService {
     const misses = frames.filter((f) => !found.has(f));
     const cachedFrames = new Set(found.keys());
     if (misses.length > 0) {
-      const assets = await this.assetsFor(p.doc, comp.id);
+      const media = await this.assetsFor(p.doc, comp.id, misses);
       const drawn = await this.draw(() =>
-        renderer.frames(p.doc, comp.id, misses, input.max_size, assets),
+        renderer.frames(p.doc, comp.id, misses, input.max_size, media),
       );
       for (const f of drawn) {
         found.set(f.frame, f);
@@ -1056,9 +1351,9 @@ export class KynimoService {
     let sheet: CapturedSheet;
     if (hit?.kind === "sheet") sheet = hit.sheet;
     else {
-      const assets = await this.assetsFor(p.doc, comp.id);
+      const media = await this.assetsFor(p.doc, comp.id, frames);
       sheet = await this.draw(() =>
-        renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, assets),
+        renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, media),
       );
       this.renders.set(key, { kind: "sheet", sheet }, sheet.png.byteLength + 1024);
     }
@@ -1099,6 +1394,40 @@ export class KynimoService {
           ...(o.currentVersion === undefined ? {} : { current_version: o.currentVersion }),
         };
   }
+}
+
+/**
+ * Source frames of each video asset that `frames` of the composition show, from the evaluated
+ * layer trees (precomps and matte sources included), so a render loads exactly those frames.
+ */
+function shownVideoFrames(
+  doc: Project,
+  compositionId: string,
+  frames: readonly number[],
+): Map<string, Set<number>> {
+  const shown = new Map<string, Set<number>>();
+  if (!doc.assets.some((a) => a.type === "video")) return shown;
+  const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
+    if (seen.has(comp)) return;
+    seen.add(comp);
+    const stack = [...comp.layers];
+    for (let l = stack.pop(); l !== undefined; l = stack.pop()) {
+      if (l.matte?.source) stack.push(l.matte.source);
+      if (l.type === "video" && l.sourceFrame !== null) {
+        const set = shown.get(l.assetId) ?? new Set<number>();
+        set.add(l.sourceFrame);
+        shown.set(l.assetId, set);
+      } else if (l.type === "precomp" && l.composition !== null) visit(l.composition, seen);
+    }
+  };
+  for (const f of frames) {
+    try {
+      visit(evaluateFrame(doc, f, compositionId), new Set());
+    } catch {
+      // The renderer evaluates again and reports the same error with its own message.
+    }
+  }
+  return shown;
 }
 
 /** Every frame must be a whole frame of the composition; errors name the field and the range. */

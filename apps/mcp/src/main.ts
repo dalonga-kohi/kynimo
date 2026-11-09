@@ -9,6 +9,7 @@ import {
   S3BlobStore,
   s3ConfigFromEnv,
 } from "./blobs.js";
+import { Ffmpeg } from "./media.js";
 import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -28,7 +29,10 @@ Environment:
   [KYNIMO_S3_REGION]    Keep uploaded assets in an S3-compatible bucket (Cloudflare R2, S3,
                         MinIO); region defaults to "auto". Without them, assets live in
                         <dir>/blobs with --dir, in memory without a store, and uploads are off
-                        with Postgres.`;
+                        with Postgres.
+  KYNIMO_FFMPEG, KYNIMO_FFPROBE
+                        FFmpeg binaries for video and audio uploads (default: ffmpeg and
+                        ffprobe on PATH). Without them those uploads are off.`;
 
 const { values } = parseArgs({
   options: {
@@ -92,6 +96,14 @@ if (values.help) {
     blobs = new MemoryBlobStore();
     assetsWhere = "in-memory assets";
   }
+  const media = new Ffmpeg({
+    ffmpeg: process.env.KYNIMO_FFMPEG || "ffmpeg",
+    ffprobe: process.env.KYNIMO_FFPROBE || "ffprobe",
+  });
+  const hasMedia = await media.available();
+  const mediaWhere = hasMedia
+    ? `video via ${await media.version()}`
+    : "video upload off: no FFmpeg";
   // Chromium starts on the first render, not here.
   const renderer = new CaptureRenderer();
   const release = () => {
@@ -103,6 +115,7 @@ if (values.help) {
   const server = createServer(
     new KynimoService(store, values.actor, {
       renderer,
+      ...(hasMedia ? { media } : {}),
       ...(blobs === undefined
         ? {
             blobsUnavailable:
@@ -113,5 +126,5 @@ if (values.help) {
   );
   await server.connect(new StdioServerTransport());
   // Logs go to stderr: stdout carries the protocol.
-  process.stderr.write(`kynimo-mcp ready (${where}; ${assetsWhere})\n`);
+  process.stderr.write(`kynimo-mcp ready (${where}; ${assetsWhere}; ${mediaWhere})\n`);
 }
