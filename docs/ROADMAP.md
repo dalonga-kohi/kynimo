@@ -2,6 +2,10 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
+**Where we are (2026-11-09):** M0–M2 done; M3 done except deployment; M4 started. An agent can build a document and see frames. It cannot yet export a video, use intent tools, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+
+**How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
+
 ## M0 — Foundation
 
 - [x] Repo, working agreement (CLAUDE.md), reviewer agent, design skills, docs, monorepo skeleton, CI
@@ -35,7 +39,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, fonts; SVG moves to SVG import in M4); the tool listing was slimmed first → ADR-0030: lossless compaction of `tools/list`, 59.8 → 52.2 KB; ADR-0031: content-addressed blobs (memory, `--dir`, S3-compatible with R2 first), `addAsset`/`removeAsset` ops, base64 uploads up to 8 MB with metadata read from the file
 - [x] Video assets: FFmpeg pre-decode to frames at upload; draw video layers; audio uploads (duration from FFmpeg) → ADR-0032: format v4 (video asset with a pinned frame manifest, video layer), exact rational source frames, system FFmpeg sandboxed by protocol/format whitelists, JPEG frames ≤ 1920 px / 60 fps / 60 s, FLAC audio, retries fingerprinted on the source bytes
 - [x] Remote transport (Streamable HTTP) + OAuth → ADR-0033: Kynimo as OAuth resource server for an external issuer (WorkOS AuthKit first; JWTs checked against its JWKS, RFC 9728 metadata), stateless Streamable HTTP, accounts from the token subject with per-account stores (Postgres migration 2)
-- [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT
+- [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT. Hosting decision ADR (container with the pinned Chromium + FFmpeg, managed Postgres, R2); health check; structured logs with per-tool latency and error kind; per-account limits on projects, storage and render seconds; measure render seconds per frame on the host. Done when one reference scene is rebuilt from a chat in each client
 
 ## M4 — Motion depth
 
@@ -43,6 +47,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog, also as an MCP resource), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens
+- [ ] Brief suite v1 (ADR-0035): five briefs run by a real model over MCP; a report of completion, tool calls, rejected calls, tokens and contact sheets, kept per run so milestones can be compared. Runs on demand, not in CI. Lands right after the intent tools; its first report sets the baseline
+- [ ] Reference scene: kinetic type (ADR-0018), built only with MCP tools
 - [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
 - [ ] SVG import → shape layer, with a fidelity report and dry run (ADR-0018)
 - [ ] Built-in 2D shader effects and generator layers (backgrounds, textures, looks)
@@ -50,7 +56,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 ## M5 — Guidelines + quality checks
 
 - [ ] Token model (visual + motion) and guideline pack format; easing/spring tokens referenced by name, resolved against the pack version pinned in the document
-- [ ] First pack, authored with a motion designer
+- [ ] First pack, authored by us (ADR-0035): tokens and rules derived from published motion systems and frame-by-frame analysis of reference videos; each rule cites its source; tuned on the brief suite. A second, contrasting pack follows to prove packs are data. An outside motion designer's critique is a gate before public launch
 - [ ] Quality rules engine + report format (location, frame range, suggested fix op)
 - [ ] `list_styles`, `apply_style`, `get_tokens` and `check_quality` tools; token list of the pinned style as an MCP resource
 
@@ -69,19 +75,33 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] MP4 / WebM / GIF export with audio layers mixed in and a fidelity report; `render_preview_clip`, `export`, `get_export_status`, `cancel_export`
 - [ ] Beat markers on audio layers (detection + manual); `sync_to_beats`
 - [ ] Shareable preview links; `get_preview_link`
+- [ ] First end-to-end check: every brief in the suite ends in an exported MP4
 
-## M8 — Editor (simple)
+## M8 — Player and review (ADR-0035)
+
+The human sees the video before any editor exists.
 
 - [ ] Design language in Paper → `DESIGN.md`
-- [ ] Sign in, project list
-- [ ] Viewer + timeline scrubbing, layer list, inspector, basic keyframe editing, all on scene operations
-- [ ] Live view of agent edits (same document versions as MCP)
-- [ ] Timing finish: easing curve and spring editor, motion-path handles in the viewer (no full graph editor)
+- [ ] Share page: sign in, project list, the player on the shared renderer with timeline scrubbing, live view of agent edits (same document versions as MCP)
+- [ ] Frame-pinned comments on the share page; `list_comments`, `resolve_comment` so the agent reads and answers them
+- [ ] In-chat player: spike MCP UI support in Claude and ChatGPT (decision ADR), then return the player from the render and export tools where the client supports it
 
 ## Private beta
 
+Opens after M8. The editor is built during it, from what users finish by hand.
+
 - [ ] Schema check: confirm additive room for 3D (Z, camera/light/model layers; interaction with order, blend modes, mattes, precomps), ADR-0013
 - [ ] Onboarding for MCP clients, usage limits, billing direction, open-core decision
+- [ ] Brief suite meets the beta targets in PRODUCT.md
+- [ ] Landing page with real exported videos and connect steps checked in each client
+
+## M9 — Editor
+
+Starts simple; grows toward an After Effects-like workflow (ADR-0035).
+
+- [ ] Layer list, inspector, basic keyframe editing, all on scene operations
+- [ ] Timing finish: easing curve and spring editor, motion-path handles in the viewer (ADR-0018)
+- [ ] Next steps chosen from beta usage: graph editor, multi-select and timeline editing, a control for each engine capability
 
 ## After beta: v1.x highlights (ADR-0013)
 

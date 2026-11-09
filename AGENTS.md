@@ -4,7 +4,7 @@ Kynimo is an **agent-first, cloud-hosted motion graphics engine**. Any MCP clien
 
 This file is the single source of truth for every coding agent (Claude Code, Codex, ChatGPT, Cursor, Copilot, …). Tool-specific notes live in separate files that import this one (`CLAUDE.md`).
 
-Read as needed: [PRODUCT.md](PRODUCT.md) (what and for whom) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how) · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (engine + MCP surface) · [docs/ROADMAP.md](docs/ROADMAP.md) (order) · [docs/decisions/](docs/decisions/) (why) · [docs/REVIEW.md](docs/REVIEW.md) (review checklist).
+Read as needed: [PRODUCT.md](PRODUCT.md) (what and for whom) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how) · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (engine + MCP surface) · [docs/ROADMAP.md](docs/ROADMAP.md) (order) · [docs/PLAN.md](docs/PLAN.md) (how the next items are built) · [docs/decisions/](docs/decisions/) (why) · [docs/REVIEW.md](docs/REVIEW.md) (review checklist).
 
 ## Quick start
 

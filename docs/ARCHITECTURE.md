@@ -1,6 +1,6 @@
 # Kynimo — Architecture
 
-Status: **initial direction**. Each section firms up as the feature that needs it is built; decisions land as ADRs in [decisions/](decisions/).
+Status: scene format, engine, renderer, capture and the MCP server (M1–M3) are built as described; guidelines, components, workers and the web app are still direction. Each section firms up as the feature that needs it is built; decisions land as ADRs in [decisions/](decisions/).
 
 ## System overview
 
@@ -46,7 +46,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 - Versioned JSON scene graph: `Project → Composition[] → Layer[]` (shape, text, image, video, solid, null, precomp, adjustment, audio, component instance, shader generator; 3D layers, cameras, lights and models in v1.x; parenting and masks/mattes between layers), each with animatable properties and keyframe tracks, plus a guideline pack reference pinned by version. A scene is a composition placed in the main composition's sequence; precomp layers reference compositions by id, with no cycles. Audio is audio layers; beat markers live on them. See [CAPABILITIES.md](CAPABILITIES.md#document-model).
 - Schema-validated (runtime schemas + inferred TS types). `SCENE_FORMAT_VERSION` + migrations for every change.
-- **Typed operations** (`addLayer`, `setKeyframes`, `applyPreset`, `retimeScene`, …) are the only way to mutate a document. They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
+- **Typed operations** (`addLayer`, `setKeyframes`, …) are the only way to mutate a document. Intent tools such as `animate` and `apply_preset` expand into these operations (M4). They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
 - Time model: integer frames at the composition frame rate; seconds only at the API edge.
 
 ### 2. Guidelines — `@kynimo/guidelines`
@@ -77,21 +77,29 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 ## Web app — `apps/web`
 
-Simple editor in v1: sign in, project list, viewer with timeline scrubbing, layer list, inspector, basic keyframe editing and share links, all on the same scene operations. It shows agent edits live. Later: frame-pinned comments that feed back to the agent.
+Player first, editor second (ADR-0035).
+
+- **Player and review (M8):** sign in, project list, a share page that plays the document on the shared renderer with timeline scrubbing and shows agent edits live, and frame-pinned comments the agent reads over MCP. Where an MCP client renders UI, the same player appears in the chat.
+- **Editor (M9, during the private beta):** layer list, inspector, basic keyframe editing and the timing-finish view (ADR-0018), all on the same scene operations. It starts simple and grows toward an After Effects-like workflow.
+
+## Agent evaluation — the brief suite
+
+A fixed set of briefs run by a real model against the MCP server, with a report per run: completion, tool calls, rejected calls, tokens, contact sheets (PRODUCT.md, "How we know it works"; ADR-0035). It drives the server only through MCP, like any client, runs on demand rather than in CI (it needs a model key and isn't deterministic), and never touches evaluation or render paths. It lives in `apps/evals`, created with the M4 item.
 
 ## Package map (target)
 
 | Path                  | Package                                                                                                                                         | Created in       |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                                         | M1 (stub exists) |
+| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                                         | M1               |
 | `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators                                                 | M1               |
 | `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2               |
 | `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2               |
-| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3 (local stdio) |
+| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3               |
 | `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                                             | M5               |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6               |
 | `apps/worker`         | render/export workers                                                                                                                           | M7               |
-| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                                                                      | M8               |
+| `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4               |
+| `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9          |
 
 ## Invariants
 
@@ -108,5 +116,6 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
 | ~~Auth / OAuth provider~~ → external issuer, Kynimo as resource server; WorkOS AuthKit first (ADR-0033)            | done      |
 | Job queue                                                                                                          | M7        |
+| MCP UI in chat clients: which clients render it, and how the player is delivered (ADR-0035)                        | M8        |
 | ~~Object storage for assets~~ → S3-compatible, Cloudflare R2 first, content-addressed (ADR-0031); CDN for previews | M7        |
 | ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                                   | done      |

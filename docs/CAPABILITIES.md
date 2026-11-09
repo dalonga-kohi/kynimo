@@ -2,7 +2,9 @@
 
 What the engine can express, and how agents reach it over MCP. Benchmark: the 2D core of Adobe After Effects. Decision: [ADR-0008](decisions/0008-ae-grade-engine-simple-editor.md). Code authoring: [ADR-0012](decisions/0012-code-authoring.md). Media, 3D and renderer: [ADR-0013](decisions/0013-media-3d-gpu-renderer.md), drawing backend: [ADR-0016](decisions/0016-drawing-backend.md).
 
-**Principle: deep engine, simple editor.** Most users drive Kynimo through their assistant, so every capability below is in the scene format and exposed as MCP tools. The editor is a usable companion (viewer, timeline, layers, inspector) and doesn't need a control for every capability. If the scene graph can't represent something, neither surface can do it.
+**Principle: deep engine, simple editor.** Most users drive Kynimo through their assistant, so every capability below is in the scene format and exposed as MCP tools. The human surface starts as a player with comments, then a simple editor (viewer, timeline, layers, inspector) that grows toward an After Effects-like workflow after beta (ADR-0035); it doesn't need a control for every capability. If the scene graph can't represent something, neither surface can do it.
+
+`beta` below is a plan, not a claim about the running build. What a build actually draws is in its capability manifest (`get_capabilities`, ADR-0028); what has shipped is checked off in [ROADMAP.md](ROADMAP.md).
 
 Status:
 
@@ -171,6 +173,8 @@ Code is a first-class way to build (ADR-0012). Agents and users write custom com
 | ProRes 4444 / PNG sequence with alpha      | later  |
 | Lottie export (subset)                     | later  |
 | Shareable preview links                    | beta   |
+| Share page: player, frame-pinned comments  | beta   |
+| In-chat player where the client renders UI | beta   |
 
 ## Determinism
 
@@ -196,6 +200,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 12. **Retry-safe writes.** Every mutating tool takes an idempotency key: a retry after a dropped connection returns the original result instead of applying twice, and `get_write_outcome` tells the agent whether a write landed (ADR-0018).
 13. **Bounded renders.** Render tools declare their limits in their schemas and reject oversized requests with values that fit. Deterministic results are cached; long renders are cancellable jobs with progress (ADR-0018).
 14. **Fidelity reports.** Imports and exports report missing assets and fonts, dropped, flattened and approximated features. Imports support a dry run (ADR-0018).
+15. **A bounded listing.** `tools/list` stays under 60 KB as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
 
 ### Tool groups (target)
 
@@ -212,5 +217,6 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5        |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3        |
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                                            | M7        |
+| Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8        |
 
 MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028); each catalog arrives with the milestone that creates its data.
