@@ -295,7 +295,7 @@ function uploadError(e: ToolError): ToolError {
         : root === "doc" && a === "assets"
           ? c
           : undefined;
-    if (key === undefined) return path;
+    if (key === undefined) return root === "ops" && a === 0 && b === "asset" ? ["data"] : path;
     return key === "id" || key === "name" || key === "family" ? [key] : ["data"];
   };
   return new ToolError(

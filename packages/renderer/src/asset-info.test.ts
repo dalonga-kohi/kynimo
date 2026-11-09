@@ -113,10 +113,14 @@ describe("hostile input", () => {
   it("JPEG: fill-byte runs, a cut-off SOF, short segments, a broken Exif block", async () => {
     const soi = [0xff, 0xd8];
     onlyAssetErrors(() => readImageInfo(Uint8Array.from([...soi, ...Array(5000).fill(0xff)])));
-    onlyAssetErrors(() => readImageInfo(Uint8Array.from([...soi, 0xff, 0xc0, 0x00, 0x11, 0x08])));
-    onlyAssetErrors(() => readImageInfo(Uint8Array.from([...soi, 0xff, 0xe0, 0x00, 0x01])));
+    expect(() => readImageInfo(Uint8Array.from([...soi, 0xff, 0xc0, 0x00, 0x11, 0x08]))).toThrow(
+      AssetInfoError,
+    );
+    expect(() => readImageInfo(Uint8Array.from([...soi, 0xff, 0xe0, 0x00, 0x01]))).toThrow(
+      AssetInfoError,
+    );
     const jpeg = await encodeImage(7, 3, gray, "jpeg");
-    // An Exif block whose IFD offset and entry count point far past its end is ignored.
+    // An Exif block whose IFD offset points far past its end is ignored.
     const broken = withOrientation(jpeg, 6, "MM");
     broken.set([0xff, 0xff, 0xff, 0xf0], 2 + 4 + 6 + 4);
     expect(readImageInfo(broken)).toMatchObject({ width: 7, height: 3 });
@@ -132,7 +136,7 @@ describe("hostile input", () => {
     const nameTable = v.getUint32(12 + 16 + 8);
     v.setUint16(nameTable + 6 + 10, 0xfff0);
     onlyAssetErrors(() => readFontInfo(pastEnd));
-    // An fvar claiming 65535 zero-sized axes: bounded by the u16 count, no wght found.
+    // An fvar whose 65535 claimed axes lie past the end of the file fails cleanly.
     const fvar = new Uint8Array(16);
     new DataView(fvar.buffer).setUint16(4, 16);
     new DataView(fvar.buffer).setUint16(8, 0xffff);

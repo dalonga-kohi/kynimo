@@ -176,6 +176,13 @@ export class S3BlobStore implements BlobStore {
     if (res.status === 404 || !res.ok) await res.body?.cancel();
     if (res.status === 404) return undefined;
     if (!res.ok) throw new Error(`asset storage: reading ${key} failed with HTTP ${res.status}`);
-    return new Uint8Array(await res.arrayBuffer());
+    try {
+      return new Uint8Array(await res.arrayBuffer());
+    } catch (e) {
+      const name = (e as { name?: unknown }).name;
+      if (name === "TimeoutError" || name === "AbortError")
+        throw new Error(`asset storage: GET ${key} timed out after ${this.timeoutMs / 1000} s`);
+      throw new Error(`asset storage: reading ${key} failed`);
+    }
   }
 }
