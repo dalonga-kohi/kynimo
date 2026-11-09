@@ -16,6 +16,11 @@ export interface PageRequest {
   frames: number[];
   /** Ids of the image and font assets whose bytes the host serves at `/assets/<id>`. */
   assets: string[];
+  /**
+   * Decoded video frames the host serves at `/assets/<assetId>/<frame>` (`videoFrameKey`), already
+   * checked against their frame manifests (ADR-0032). Only the frames this request shows.
+   */
+  videoFrames: string[];
   /** Longest output edge in pixels; larger frames are downscaled to it, smaller ones kept. */
   maxSize: number | null;
   /** Tile every frame into one image instead of returning them one by one. */

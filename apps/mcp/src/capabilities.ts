@@ -34,6 +34,7 @@ const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
     status: "renders",
     note: `formats: ${RENDERER_FORMATS.font.join(", ")}; add with upload_asset; bundled without an asset: ${RENDERER_FORMATS.bundledFonts.join(", ")}`,
   },
+  video: { status: "renders", note: "no tool adds one yet (see unavailable.video)" },
   audio: LAYER_SUPPORT.audio,
 };
 

@@ -14,10 +14,13 @@
  * 3: drawing layers carry `blendMode`, `matte` and `masks` (ADR-0020). The step from 2 adds
  *    `normal`, `null` and `[]`, which draw exactly as version 2 did.
  *
+ * 4: video assets (a frame manifest pinned by hash, size, frame rate, frame count) and video
+ *    layers (ADR-0032). Both are new variants, so the step from 3 changes nothing.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 3 as const;
+export const SCENE_FORMAT_VERSION = 4 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;

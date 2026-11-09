@@ -174,4 +174,38 @@ describe("asset ops", () => {
     if (!restored.ok) throw new Error(JSON.stringify(restored.errors));
     expect(restored.state.doc.assets).toEqual(again.state.doc.assets);
   });
+
+  it("adds video assets and layers, and checks the layer names a video asset", () => {
+    const video = {
+      type: "video",
+      name: "Clip",
+      uri: `assets/${SHA2}.json`,
+      sha256: SHA2,
+      width: 640,
+      height: 360,
+      fps: { num: 30000, den: 1001 },
+      frameCount: 300,
+    };
+    const videoLayer = (assetId: string) => ({ ...imageLayer("x", assetId), type: "video" });
+    const r = ok(
+      applyOps(doc([imageBody()]), [
+        { op: "addAsset", id: "clip", asset: video },
+        { op: "addLayer", composition: "main", id: "v", layer: omitId(videoLayer("clip")) },
+      ]),
+    );
+    expect(r.doc.compositions[0]?.layers[0]).toMatchObject({ type: "video", assetId: "clip" });
+    expect(errors(applyOps(r.doc, [{ op: "removeAsset", asset: "clip" }]))[0]?.message).toMatch(
+      /used by layer 'v'/,
+    );
+    const wrong = errors(
+      applyOps(doc([imageBody()]), [
+        { op: "addLayer", composition: "main", layer: omitId(videoLayer("a1")) },
+      ]),
+    );
+    expect(wrong[0]?.message).toMatch(/is image, but this is a video layer/);
+    expect(
+      errors(applyOps(doc(), [{ op: "addAsset", asset: { ...video, fps: { num: 0, den: 1 } } }]))[0]
+        ?.path,
+    ).toEqual(["ops", 0, "asset", "fps", "num"]);
+  });
 });

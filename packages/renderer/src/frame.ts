@@ -9,7 +9,7 @@ import type { CanvasKit } from "canvaskit-wasm";
 import { LAYER_SUPPORT } from "./capabilities.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
-import type { ImageLibrary } from "./images.js";
+import type { ImageLibrary, VideoFrameLibrary } from "./images.js";
 import { rasterizeMasks } from "./masks.js";
 import type {
   FramePlan,
@@ -42,6 +42,7 @@ export const MAX_FRAME_RASTER_PIXELS = 268_435_456;
 interface Context {
   ck: CanvasKit;
   images: ImageLibrary;
+  videos: VideoFrameLibrary | undefined;
   fonts: FontLibrary;
   /** Precomps shown at the same local frame share one resolved object (engine memo); plan it once. */
   nested: Map<ResolvedComposition, FramePlan>;
@@ -59,11 +60,23 @@ interface Context {
 export function rasterizeFrame(
   ck: CanvasKit,
   comp: ResolvedComposition,
-  { images, fonts }: { images: ImageLibrary; fonts: FontLibrary },
+  {
+    images,
+    fonts,
+    videos,
+  }: { images: ImageLibrary; fonts: FontLibrary; videos?: VideoFrameLibrary },
   { maxRasterPixels = MAX_FRAME_RASTER_PIXELS }: { maxRasterPixels?: number } = {},
 ): FramePlan {
   return planComposition(
-    { ck, images, fonts, nested: new Map(), limit: maxRasterPixels, remaining: maxRasterPixels },
+    {
+      ck,
+      images,
+      fonts,
+      videos,
+      nested: new Map(),
+      limit: maxRasterPixels,
+      remaining: maxRasterPixels,
+    },
     comp,
   );
 }
@@ -109,6 +122,16 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           throw new RenderError(
             `layer '${id}' shows image asset '${layer.assetId}', which was not loaded into the ImageLibrary`,
           );
+        return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
+      }
+      case "video": {
+        if (layer.sourceFrame === null) return null;
+        const raster = ctx.videos?.get(layer.assetId, layer.sourceFrame);
+        if (raster === undefined)
+          throw new RenderError(
+            `layer '${id}' shows frame ${layer.sourceFrame} of video asset '${layer.assetId}', which was not loaded into the VideoFrameLibrary`,
+          );
+        // A decoded frame draws exactly like an image of its pixels.
         return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
       }
       case "precomp": {

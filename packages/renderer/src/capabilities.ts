@@ -19,6 +19,10 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   shape: RENDERS,
   text: RENDERS,
   image: RENDERS,
+  video: {
+    status: "renders",
+    note: "frames decoded at upload; outside the clip the layer draws nothing",
+  },
   solid: RENDERS,
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },

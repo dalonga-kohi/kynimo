@@ -1,4 +1,9 @@
-import { type Project, ProjectSchema, springSettleFrames } from "@kynimo/scene";
+import {
+  type Project,
+  ProjectSchema,
+  SCENE_FORMAT_VERSION,
+  springSettleFrames,
+} from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
 import { describeMotion, type MotionOptions, summarizeValue } from "./motion.js";
@@ -8,7 +13,7 @@ const SIZE = { width: 1920, height: 1080, durationFrames: 90 } as never;
 /** A validated project whose main composition holds these add_layer bodies (ids l0, l1, …). */
 function comp(layers: Record<string, unknown>[], innerFps = 30): Project {
   return ProjectSchema.parse({
-    formatVersion: 3,
+    formatVersion: SCENE_FORMAT_VERSION,
     name: "M",
     mainCompositionId: "main",
     style: null,

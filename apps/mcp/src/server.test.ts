@@ -362,12 +362,12 @@ describe("MCP server", () => {
     expect(await text("kynimo://schema/ops")).toHaveProperty("oneOf");
     const text_ = await call(client, "get_layer_schema", { type: "text" });
     expect(await text("kynimo://schema/layer/text")).toEqual(text_.schema);
-    await expect(client.readResource({ uri: "kynimo://schema/layer/video" })).rejects.toMatchObject(
-      {
-        code: ErrorCode.InvalidParams,
-        message: expect.stringMatching(/unknown layer type 'video'/),
-      },
-    );
+    await expect(
+      client.readResource({ uri: "kynimo://schema/layer/camera" }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.InvalidParams,
+      message: expect.stringMatching(/unknown layer type 'camera'/),
+    });
   });
 
   it("finds layers and lists projects", async () => {

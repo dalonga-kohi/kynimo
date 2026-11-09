@@ -19,15 +19,18 @@ export const isValidFrameRate = (fps: { num: number; den: number }): boolean =>
   fps.num / fps.den >= MIN_FPS &&
   fps.num / fps.den <= MAX_FPS;
 
+/** Frame rate as an exact ratio, e.g. 30/1 or 30000/1001. */
+export const FrameRateSchema = z
+  .strictObject({ num: z.number().int().positive(), den: z.number().int().positive() })
+  .refine(isValidFrameRate, `frame rate must be between ${MIN_FPS} and ${MAX_FPS} fps`);
+
 export const CompositionSchema = z.strictObject({
   id: CompositionIdSchema,
   name: NameSchema,
   width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   /** Frame rate as an exact ratio, e.g. 30/1 or 30000/1001. All time is integer frames at this rate. */
-  fps: z
-    .strictObject({ num: z.number().int().positive(), den: z.number().int().positive() })
-    .refine(isValidFrameRate, `frame rate must be between ${MIN_FPS} and ${MAX_FPS} fps`),
+  fps: FrameRateSchema,
   durationFrames: z.number().int().positive().max(MAX_DURATION_FRAMES),
   /** `null` is transparent. */
   background: ColorSchema.nullable(),

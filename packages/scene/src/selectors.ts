@@ -8,6 +8,7 @@ const LAYER_TYPES = [
   "shape",
   "text",
   "image",
+  "video",
   "solid",
   "null",
   "precomp",

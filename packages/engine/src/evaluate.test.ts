@@ -573,3 +573,49 @@ describe("evaluateFrame: determinism", () => {
     expect(evaluateFrame(doc, 40)).toEqual(first);
   });
 });
+
+describe("video layers", () => {
+  const clip = (fps: { num: number; den: number }, frameCount: number) => ({
+    id: "clip",
+    name: "clip",
+    type: "video",
+    uri: `assets/${"0".repeat(64)}.json`,
+    sha256: "0".repeat(64),
+    width: 64,
+    height: 36,
+    fps,
+    frameCount,
+  });
+  const at = (doc: ReturnType<typeof project>, frame: number) =>
+    (evaluateFrame(doc, frame).layers[0] as { sourceFrame: number | null }).sourceFrame;
+
+  it("maps layer time to source frames with exact rational time, nothing outside the clip", () => {
+    // 24 fps footage in a 30 fps composition, starting at composition frame 10.
+    const doc = project(
+      [composition("main", [layer("v", "video", { assetId: "clip", startFrame: 10 })])],
+      { assets: [clip({ num: 24, den: 1 }, 48)] },
+    );
+    expect([0, 9, 10, 11, 14, 15, 69, 70].map((f) => at(doc, f))).toEqual([
+      null,
+      null,
+      0,
+      0,
+      3,
+      4,
+      47,
+      null,
+    ]);
+  });
+
+  it("maps NTSC rates exactly", () => {
+    const doc = project(
+      [
+        composition("main", [layer("v", "video", { assetId: "clip" })], {
+          fps: { num: 30000, den: 1001 },
+        }),
+      ],
+      { assets: [clip({ num: 30000, den: 1001 }, 90)] },
+    );
+    expect([0, 1, 89].map((f) => at(doc, f))).toEqual([0, 1, 89]);
+  });
+});

@@ -1,5 +1,6 @@
 import type {
   Animatable,
+  Asset,
   BezierPath,
   Composition,
   FrameRate,
@@ -88,6 +89,8 @@ export function nestedFrame(layerFrame: number, parent: FrameRate, nested: Frame
 
 interface Context {
   compositions: Map<string, Composition>;
+  /** Video assets by id, for mapping layer time to source frames. */
+  videos: Map<string, Extract<Asset, { type: "video" }>>;
   /** `compositionId@frame` → result. Shared precomp instances are evaluated once per call. */
   memo: Map<string, ResolvedComposition>;
   /** Units left in this call's {@link MAX_EVALUATION_UNITS} budget. */
@@ -310,6 +313,21 @@ function resolveLayer(
     }
     case "image":
       return { ...base, type: "image", assetId: layer.assetId };
+    case "video": {
+      const video = ctx.videos.get(layer.assetId);
+      if (video === undefined)
+        throw new RangeError(
+          `layer '${layer.id}' references unknown video asset '${layer.assetId}'`,
+        );
+      // Same exact mapping as a precomp: source frames at the clip's own rate, floored.
+      const source = nestedFrame(frame, fps, video.fps);
+      return {
+        ...base,
+        type: "video",
+        assetId: video.id,
+        sourceFrame: source >= 0 && source < video.frameCount ? source : null,
+      };
+    }
     case "solid":
       return {
         ...base,
@@ -369,8 +387,11 @@ export function evaluateFrame(
     throw new RangeError(
       `frame must be an integer from 0 to ${comp.durationFrames - 1} for composition '${comp.id}' (got ${frame})`,
     );
+  const videos = new Map<string, Extract<Asset, { type: "video" }>>();
+  for (const a of project.assets) if (a.type === "video") videos.set(a.id, a);
   const ctx: Context = {
     compositions,
+    videos,
     memo: new Map(),
     budget: MAX_EVALUATION_UNITS,
     costs: new Map(),
