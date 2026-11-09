@@ -213,4 +213,4 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3        |
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                                            | M7        |
 
-MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing.
+MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028); each catalog arrives with the milestone that creates its data.
