@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-09):** M0–M2 done; M3 done except deployment; M4 started. An agent can build a document and see frames. It cannot yet export a video, use intent tools, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-09):** M0–M2 done; M3 done except deployment; M4 started; M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It cannot yet export a video, use intent tools, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -47,7 +47,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog, also as an MCP resource), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens
-- [ ] Brief suite v1 (ADR-0035): five briefs run by a real model over MCP; a report of completion, tool calls, rejected calls, tokens and contact sheets, kept per run so milestones can be compared. Runs on demand, not in CI. Lands right after the intent tools; its first report sets the baseline
+- [ ] `run_script` (ADR-0036): TypeScript run once in the QuickJS sandbox against an SDK generated from the operation schemas, applied as one validated batch; `dry_run`; SDK types as an MCP resource; declared limits. Token names come from `@kynimo/guidelines`
+- [ ] Brief suite v1 (ADR-0035): five briefs run by a real model over MCP; a report of completion, tool calls, rejected calls, tokens and contact sheets, kept per run so milestones can be compared. Runs on demand, not in CI. Lands right after the intent tools; its first report sets the baseline and compares the same briefs with and without `run_script`
 - [ ] Reference scene: kinetic type (ADR-0018), built only with MCP tools
 - [ ] Effects: gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill; adjustment layers
 - [ ] SVG import → shape layer, with a fidelity report and dry run (ADR-0018)
@@ -55,8 +56,10 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M5 — Guidelines + quality checks
 
-- [ ] Token model (visual + motion) and guideline pack format; easing/spring tokens referenced by name, resolved against the pack version pinned in the document
-- [ ] First pack, authored by us (ADR-0035): tokens and rules derived from published motion systems and frame-by-frame analysis of reference videos; each rule cites its source; tuned on the brief suite. A second, contrasting pack follows to prove packs are data. An outside motion designer's critique is a gate before public launch
+- [x] Token model (visual + motion) and guideline pack format → ADR-0037: `@kynimo/guidelines`, packs as versioned JSON with fixed token names, rule thresholds with cited sources, packs validated against their own rules
+- [ ] Token references in documents: easing/spring and color tokens referenced by name (format bump), resolved against the pack version pinned in the document (ADR-0037, open question)
+- [x] First packs as drafts (0.1.0), authored by us (ADR-0035, ADR-0037): Keynote, Playful SaaS, Editorial, Brutalist; each rule cites its source
+- [ ] Packs to 1.0.0: measure reference videos frame by frame, a reference scene per pack that a person looks at, tuning on the brief suite; bundle a serif and a mono family so the packs differ in type. An outside motion designer's critique is a gate before public launch
 - [ ] Quality rules engine + report format (location, frame range, suggested fix op)
 - [ ] `list_styles`, `apply_style`, `get_tokens` and `check_quality` tools; token list of the pinned style as an MCP resource
 
@@ -65,7 +68,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Component model (props schema, evaluate, style-aware)
 - [ ] First components: kinetic type, logo reveal, lower third, transition set, background
 - [ ] `add_component` + `build_from_brief`
-- [ ] Sandbox for custom components (spike → decision ADR)
+- [ ] Sandbox for custom components (spike → decision ADR): can the QuickJS sandbox chosen for scripts (ADR-0036) evaluate component code per frame, in the browser, fast enough
 - [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012); component and shader catalogs as MCP resources
 - [ ] Built-in shader transitions
 

@@ -1,0 +1,12 @@
+{
+  "name": "kynimo-spike-script-sandbox",
+  "private": true,
+  "type": "module",
+  "description": "ADR-0036 spike: agent-written TypeScript run once in QuickJS (WebAssembly) to produce scene operations. Not part of the workspace.",
+  "scripts": {
+    "spike": "node run.mjs"
+  },
+  "dependencies": {
+    "quickjs-emscripten": "0.32.0"
+  }
+}

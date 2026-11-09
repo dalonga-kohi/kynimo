@@ -43,6 +43,18 @@ The tools agents should reach for first. Each expands to one `apply_ops` batch a
 5. A built-in default token set (four durations, four easings, three springs) so results look deliberate before M5 packs exist.
 6. Listing budget: move per-tool detail into `get_layer_schema`-style lookups so `tools/list` stays under 60 KB. Rewrite the server instructions to lead with intent tools.
 
+## `run_script` (M4, ADR-0036)
+
+1. `packages/script` (new): the sandbox runner from `spikes/script-sandbox` as a library. One WebAssembly instance per run, the prelude that removes `Date` and `Math.random`, counted limits, errors mapped back to source line and column.
+2. The SDK, generated from the operation and layer schemas: `kynimo.composition(id)`, layer builders per layer type, `layer.set`, `layer.animate` (the intent tools' expansion, shared code), `stagger`, presets, `kynimo.tokens` of the pinned pack, `kynimo.random()`. A test fails if an operation has no SDK path.
+3. Reads: the script gets a frozen snapshot (compositions, layers by id, name or selector, their resolved static properties). It can't read assets' bytes.
+4. Host side: validate every recorded op, apply as one batch through the existing `apply_ops` path (so `base_version`, `idempotency_key`, undo and change records need nothing new). Keep the source on the change record.
+5. `dry_run` returns the ops and what `describe_motion` would say, without writing.
+6. Type declarations as the resource `kynimo://sdk`; a short version in the tool description. Server instructions lead with: "for anything beyond a few edits, write a script".
+7. Tests: the spike's hostile cases as unit tests, a property test that script → ops is byte-identical across runs, an end-to-end test that rebuilds the title-card reference scene from one script and matches its approved frames.
+
+Open: TypeScript erasure uses `module.stripTypeScriptTypes`, which Node still marks experimental. Fallback is a small type stripper dependency; decide when building.
+
 ## Brief suite v1 (M4)
 
 1. `apps/evals`: briefs as data (prompt, optional assets, composition size, duration); a runner that starts a local server, connects a model through an MCP client, and stops at a call or token cap.
@@ -53,10 +65,13 @@ The tools agents should reach for first. Each expands to one `apply_ops` batch a
 
 Open: which model and client are the baseline, and whether a second client is run for comparison (recommended: one baseline, a second before beta).
 
-## First pack (M5) — how we author without a designer
+## Packs to 1.0.0 (M5, ADR-0037)
 
-1. Collect sources: published motion guidelines (Material, Apple HIG, IBM Carbon, Fluent) and 15–20 reference launch videos we admire.
-2. Measure the references frame by frame: entrance and exit durations, overlap between elements, hold time per word, stagger gaps, easing shapes, how many things move at once.
-3. Turn measurements into tokens and rules. Every rule has an id, a threshold, a source and a suggested fix op.
-4. Run the brief suite with and without the pack. A rule that never fires, or fires on videos that look right, is cut.
-5. Build the second pack with a deliberately different personality. Anything that had to change in code rather than data is a pack-format bug.
+The format and four draft packs (0.1.0) exist in `@kynimo/guidelines`. What is left of the authoring method:
+
+1. Collect 15–20 reference launch videos we admire, a few per pack personality.
+2. Measure them frame by frame: entrance and exit durations, overlap between elements, hold time per word, stagger gaps, easing shapes, how many things move at once. Replace every `kynimo-judgment` number the measurements contradict; cite the measurement set as a source.
+3. A reference scene per pack (same content, four looks), built with tokens only, approved frames looked at (ADR-0018). This is the first time anyone sees the packs.
+4. Bundle a serif and a mono family (open licence), then give Editorial and Brutalist their own type.
+5. Run the brief suite per pack. A rule that never fires, or fires on videos that look right, is cut or retuned.
+6. Publish as 1.0.0; 0.1.0 stays in `BUILT_IN_PACKS` for documents that pinned it.

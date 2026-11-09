@@ -20,7 +20,7 @@ Checked November 2026; re-check before each launch step (ADR-0035).
 | **HyperFrames, Remotion + agent skills**                       | The agent writes HTML or React; a framework renders it. Models already know these languages well.                        | The result is editable by non-developers, checked against guidelines, and hosted: nothing to install, no project to maintain.                                                                                                                                                                              |
 | **After Effects, Cavalry**                                     | Professional tools.                                                                                                      | No learning curve: the assistant drives; the human only finishes.                                                                                                                                                                                                                                          |
 
-The honest trade: code-first tools start ahead on first-draft quality, because models have seen far more HTML and React than Kynimo operations. Kynimo closes that gap with intent tools, presets, components and guidelines (M4–M6), and has to prove it with the brief suite (below), not assume it.
+The honest trade: code-first tools start ahead on first-draft quality, because models have seen far more HTML and React than Kynimo operations. Kynimo closes that gap with scripts (the agent writes TypeScript that compiles to operations, ADR-0036), intent tools, presets, components and guidelines (M4–M6), and has to prove it with the brief suite (below), not assume it.
 
 ## Who it's for (first)
 
@@ -55,7 +55,7 @@ Targets for the private beta:
 ## The four pillars
 
 1. **Scene format** — a versioned JSON scene graph: compositions, scenes, layers, component instances, keyframes, style reference. The single source of truth and the reason everything stays editable.
-2. **Guidelines** — complete motion design systems: visual tokens (color, type, spacing, grid, safe areas), motion tokens (durations, springs, easings, stagger rhythms), choreography rules, and automated quality checks (readability time, simultaneous motion, contrast, safe areas, token-only easing). Shipped as style packs ("Keynote", "Editorial", "Brutalist", "Playful SaaS", custom brand packs).
+2. **Guidelines** — complete motion design systems: visual tokens (color, type, spacing, grid, safe areas), motion tokens (durations, springs, easings, stagger rhythms), choreography rules, and automated quality checks (readability time, simultaneous motion, contrast, safe areas, token-only easing). Shipped as style packs ("Keynote", "Playful SaaS", "Editorial", "Brutalist" exist as drafts, ADR-0037; custom brand packs follow).
 3. **Components and code** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. **Agents and users write their own in code:** custom components in TypeScript and custom shaders in GLSL, sandboxed, with declared, animatable props. Code enters the document only as component or shader nodes with editable props, so it stays editable and quality-checked (ADR-0012).
 4. **Render cloud** — deterministic rendering: fast preview frames for the agent's check step, background export jobs, preview links.
 
@@ -64,6 +64,7 @@ Targets for the private beta:
 - Short-form motion graphics: **5–60 seconds**.
 - **After Effects-grade 2D engine** (beta subset): precomps, parenting, shape operators, text animators, bezier/spring keyframes, masks, mattes, blend modes, core effects, seeded behaviors. Full list: [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (ADR-0008).
 - Every engine capability reachable over MCP through batched, intent-aware tools.
+- **Scripts** (ADR-0036): the agent writes one TypeScript program against a typed SDK; it runs once in a sandbox and leaves ordinary, editable layers and keyframes behind. The main way to build anything larger than a few edits.
 - **Code authoring:** agents define custom components (TypeScript) and shaders (GLSL) over MCP (`define_component`, `define_shader`); built-in shader library for 2D effects, backgrounds and transitions (ADR-0012).
 - **Your own media:** photos, video (screen recordings, footage), SVG vectors and custom fonts (ADR-0013).
 - Remote MCP server usable from any MCP client, with OAuth sign-in.
@@ -81,7 +82,7 @@ Targets for the private beta:
 - Long-form "motion movies" (the format supports chaining scenes; we prove quality on short pieces first).
 - Voiceover generation, live/interactive runtime output.
 - Not in v1, planned for v1.x (ADR-0013): 3D compositing (3D layers, cameras, lights), glTF 3D models with shader materials, Lottie import.
-- Not in v1, direction only (ADR-0012): a TypeScript SDK for building whole scenes in code, a code panel in the editor, a local CLI.
+- Not in v1, direction only (ADR-0012): a code panel in the editor, a local CLI.
 
 ## Business model (direction)
 
@@ -96,7 +97,8 @@ Open core, decided before public launch: the scene format and component SDK may 
 ## Risks we carry knowingly
 
 - **No finished video until M7.** Export ships after motion depth, guidelines and components (order confirmed 2026-11-09). Until then nobody outside can use the product end to end, so the brief suite and rendered frames are our only evidence. If M4–M6 slip, pull a thin MP4 export forward first.
-- **Custom format versus code.** If the brief suite shows agents doing clearly better through `define_component` than through operations and intent tools, move the component model (M6) ahead of guidelines (M5).
+- **Custom format versus code.** Answered in design by scripts (ADR-0036): the model writes TypeScript, the document still gets ordinary operations. Not yet answered in evidence: the brief suite's first report compares the same briefs with and without `run_script`. If scripts don't close the gap, the next steps are moving the component model (M6) ahead of guidelines, then a canvas painter node.
+- **Draft packs.** The four packs are 0.1.0: standards-based thresholds are cited, but durations, springs and staggers are our judgment and no rendered frame has been looked at yet (ADR-0037).
 - **Tool listing weight.** `tools/list` is about 52 KB (ADR-0030) before M4–M7 add some twenty tools. Budget: the listing never grows past 60 KB; detail moves to on-demand schemas and resources.
 - **A model vendor ships this for free.** Claude Motion can reach every plan at any time. Depth, any-client reach and the editable document are the defence; "available where Claude Motion isn't" is not.
 - **Render cost.** Headless Chromium on a software rasterizer is slow per frame. Measure seconds per rendered second at the deploy item, before pricing on render minutes.

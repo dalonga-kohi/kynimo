@@ -1,6 +1,6 @@
 # 0012 — Code authoring: components and shaders as scene-graph nodes
 
-- Status: accepted (extends ADR-0001: how code enters the scene graph; amends ADR-0008: adds a `code` MCP tool group)
+- Status: accepted (extended by ADR-0036: scripts, and the scene-building SDK moves into beta; extends ADR-0001: how code enters the scene graph; amends ADR-0008: adds a `code` MCP tool group)
 - Date: 2026-11-06
 
 ## Context

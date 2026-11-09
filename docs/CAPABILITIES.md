@@ -147,7 +147,7 @@ Effects stack per layer and on adjustment layers. They render deterministically 
 
 ## 8. Components, code, guidelines, quality
 
-Code is a first-class way to build (ADR-0012). Agents and users write custom components (TypeScript, `evaluate(props, frame, style) → layer subtree`) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's `evaluate` runs every frame and returns a layer subtree derived at render time (not stored), so the instance is edited through its props. A shader's props are animatable uniforms; effect shaders get their input texture(s), the layer-local frame, fps, resolution and a document-derived seed. Code runs under resource limits. Nothing draws outside these nodes.
+Code is a first-class way to build (ADR-0012, ADR-0036). **Scripts** run once at authoring time: the agent writes TypeScript against an SDK generated from the operation schemas, and the result is an ordinary batch of operations, so nothing of the script is in the render path. Components and shaders run at render time: Agents and users write custom components (TypeScript, `evaluate(props, frame, style) → layer subtree`) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's `evaluate` runs every frame and returns a layer subtree derived at render time (not stored), so the instance is edited through its props. A shader's props are animatable uniforms; effect shaders get their input texture(s), the layer-local frame, fps, resolution and a document-derived seed. Code runs under resource limits. Nothing draws outside these nodes.
 
 | Capability                                                                                | Status |
 | ----------------------------------------------------------------------------------------- | ------ |
@@ -158,7 +158,7 @@ Code is a first-class way to build (ADR-0012). Agents and users write custom com
 | Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`) | beta   |
 | Built-in shader library: backgrounds, textures, transitions, looks                        | beta   |
 | Shaders on 3D layers and models (materials)                                               | v1.x   |
-| TypeScript SDK for building whole scenes in code                                          | later  |
+| Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`)    | beta   |
 | Code panel in the web editor; local CLI / dev mode                                        | later  |
 | Guideline packs: visual + motion tokens, choreography rules                               | beta   |
 | Quality report: rule id, severity, scene-graph location, frame range, suggested fix op    | beta   |
@@ -211,6 +211,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
 | Precise  | `add_effect`, `add_behavior`                                                                                                                                         | M4        |
 | Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                                       | M4        |
+| Code     | `run_script` (TypeScript → one validated batch of operations, ADR-0036)                                                                                              | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
 | Intent   | `sync_to_beats`                                                                                                                                                      | M7        |

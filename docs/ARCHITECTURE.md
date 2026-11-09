@@ -54,7 +54,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 - **Tokens:** color, typography, spacing, grid, safe areas; motion tokens (durations, springs as damping + response, easing curves, stagger rhythms).
 - **Rules:** choreography and quality checks expressed as code over the scene graph + rendered frames, e.g. minimum on-screen time per word, maximum concurrent motions, contrast, safe-area bounds, token-only easing.
 - **Output:** a machine-readable quality report (rule id, severity, location in the scene graph, suggested fix) that agents act on.
-- Packs are data (versioned), so new styles and custom brand packs don't require code changes.
+- Packs are data (versioned), so new styles and custom brand packs don't require code changes. Built so far (ADR-0037): the pack format with fixed token names, four draft packs, token resolution (milliseconds → frames, reference pixels → composition pixels) and a pack's validation against its own rules. The rules engine and report are M5.
 
 ### 3. Components — `@kynimo/components`
 
@@ -73,6 +73,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 - Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
 - Tool groups (project, read, precise, intent, code, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
+- Scripts (ADR-0036): `run_script` runs agent-written TypeScript once in a QuickJS (WebAssembly) sandbox, one fresh instance per script, with no clock, randomness or host access and counted limits. Its output is a batch of operations the host validates and applies like any other.
 - Reliability contracts (ADR-0018): a capability manifest generated from code, idempotency keys and outcome lookup on writes, declared limits and a content-addressed cache on renders, cancellable jobs, fidelity reports on every import and export.
 
 ## Web app — `apps/web`
@@ -95,7 +96,8 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2         |
 | `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2         |
 | `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3         |
-| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                                             | M5         |
+| `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M5         |
+| `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036)                                                                           | M4         |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
@@ -111,7 +113,8 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | ------------------------------------------------------------------------------------------------------------------ | --------- |
 | ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                                      | done      |
 | ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                                       | done      |
-| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012)               | M6        |
+| Sandbox for per-frame component code (QuickJS is chosen for scripts, ADR-0036); shader validation rules (ADR-0012) | M6        |
+| How documents refer to tokens (ADR-0037)                                                                           | M5        |
 | Hosting for API/MCP and workers                                                                                    | M3 / M7   |
 | ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
 | ~~Auth / OAuth provider~~ → external issuer, Kynimo as resource server; WorkOS AuthKit first (ADR-0033)            | done      |
