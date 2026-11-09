@@ -1,6 +1,6 @@
 # @kynimo/mcp
 
-Kynimo's MCP server. For now it runs locally over stdio; the remote transport comes later in M3. Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md).
+Kynimo's MCP server. For now it runs locally over stdio; the remote transport comes later in M3. Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md), [ADR-0029](../../docs/decisions/0029-postgres-project-store.md).
 
 ```bash
 pnpm --filter @kynimo/mcp build
@@ -28,4 +28,22 @@ Tools: `create_project`, `list_projects`, `get_project`, `get_scene`, `get_layer
 
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
 
-One server process owns a `--dir` at a time; a second one on the same folder refuses to start. Give each client its own folder until the shared database store (later in M3).
+Where projects live (ADR-0029):
+
+- **In memory** (default): lost on exit.
+- **`--dir <path>`**: JSON files in a folder. One server process owns a folder at a time; a second one on the same folder refuses to start.
+- **`KYNIMO_DATABASE_URL=postgres://…`**: Postgres, shared by any number of server processes. The schema is created and migrated on startup. Every version's document is kept; idempotency keys keep their outcome for 7 days (`get_write_outcome` then answers `expired`, and reusing the key fails with `key_expired`) and are forgotten after 90.
+
+```json
+{
+  "mcpServers": {
+    "kynimo": {
+      "command": "node",
+      "args": ["/absolute/path/to/kynimo/apps/mcp/dist/main.js"],
+      "env": { "KYNIMO_DATABASE_URL": "postgresql://user:password@host:5432/kynimo" }
+    }
+  }
+}
+```
+
+The store tests run on an in-process Postgres (PGlite). The multi-process tests in `src/store.postgres.test.ts` need a real server: set `KYNIMO_TEST_DATABASE_URL` to an empty, disposable database (CI runs a Postgres 16 service for them).

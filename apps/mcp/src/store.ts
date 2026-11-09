@@ -50,8 +50,8 @@ export interface Stacks {
   redo: Change[][];
 }
 
-/** Everything persisted for a project. Plain JSON, so any store can hold it. */
-export interface StoredProject {
+/** A project's current state: everything a write reads and replaces, apart from its keys. */
+export interface ProjectState {
   id: string;
   /** Starts at 1 and increases by one on every write that changes the document. */
   version: number;
@@ -59,6 +59,10 @@ export interface StoredProject {
   idCounter: number;
   /** Per-actor undo/redo stacks (ADR-0010, persisted per ADR-0018). */
   history: Record<string, Stacks>;
+}
+
+/** `FileStore`'s file format: the state plus its write keys. Plain JSON. */
+export interface StoredProject extends ProjectState {
   /** Most recent last; capped at MAX_WRITE_KEYS. */
   writes: WriteRecord[];
 }
@@ -70,44 +74,178 @@ export interface ProjectMeta {
 }
 
 /**
- * Where projects live. The local server uses `MemoryStore` or `FileStore`; the database store
- * (M3) implements the same interface. Callers serialize writes per project; a store only has to
- * make each `put` atomic.
+ * What a store knows about an idempotency key. `expired`: the key was used, but its outcome is
+ * past the store's retention window (only `PostgresStore` expires keys; the local stores drop
+ * the oldest keys past MAX_WRITE_KEYS, which then read as `unknown`).
+ */
+export type KeyLookup =
+  | { status: "found"; record: WriteRecord }
+  | { status: "expired" }
+  | { status: "unknown" };
+
+/** Keys an open transaction can read. */
+export interface KeyReader {
+  lookup(actor: string, key: string): Promise<KeyLookup>;
+}
+
+export interface ProjectTx extends KeyReader {
+  /** The project as of this transaction; a copy, free to change. */
+  readonly project: ProjectState;
+}
+
+/** What one write saves: always its key record, and the new state when the project changed. */
+export interface Commit {
+  record: WriteRecord;
+  project?: ProjectState;
+}
+
+/** A transaction's result; its commit, if any, is saved atomically before the call returns. */
+export interface Step<T> {
+  value: T;
+  commit?: Commit;
+}
+
+/**
+ * Where projects live: `MemoryStore`, `FileStore` (one local process) or `PostgresStore`
+ * (shared by many). A store serializes writes per project itself, so a version check and its
+ * write never interleave, and saves each commit atomically: document, version snapshot, undo
+ * history and key together (ADR-0029).
  */
 export interface ProjectStore {
   list(): Promise<ProjectMeta[]>;
-  get(id: string): Promise<StoredProject | undefined>;
-  put(project: StoredProject): Promise<void>;
-  /** `create_project` keys are scoped to the account, not to a project. */
-  getCreateRecords(): Promise<WriteRecord[]>;
-  putCreateRecords(records: WriteRecord[]): Promise<void>;
+  get(id: string): Promise<ProjectState | undefined>;
+  /** The document as it was at `version`, or undefined if the store has no such version. */
+  getVersion(id: string, version: number): Promise<Project | undefined>;
+  /** A key's record outside a transaction. `projectId` undefined: `create_project` keys. */
+  lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup>;
+  /** Runs `fn` with the project locked and saves its commit. Undefined if there is no project. */
+  transact<T>(
+    id: string,
+    fn: (tx: ProjectTx) => Promise<Step<T>>,
+  ): Promise<{ value: T } | undefined>;
+  /**
+   * Runs `fn` for `create_project`, whose keys are scoped to the account, and saves its commit:
+   * the new project (at version 1) and its key. `fn` must call `tx.lookup` for its key before
+   * committing: `PostgresStore` serializes creates with one key in that call.
+   */
+  create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T>;
 }
 
 const copy = <T>(value: T): T => structuredClone(value);
 
+/** Runs tasks one at a time per key, in arrival order; a failed task does not block the next. */
+export class KeyedMutex {
+  private readonly tails = new Map<string, Promise<unknown>>();
+
+  async run<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(key) ?? Promise.resolve();
+    const run = previous.then(fn, fn);
+    const tail = run.catch(() => undefined);
+    this.tails.set(key, tail);
+    try {
+      return await run;
+    } finally {
+      if (this.tails.get(key) === tail) this.tails.delete(key);
+    }
+  }
+}
+
+const find = (records: readonly WriteRecord[], actor: string, key: string): KeyLookup => {
+  const record = records.find((r) => r.actor === actor && r.key === key);
+  return record ? { status: "found", record: copy(record) } : { status: "unknown" };
+};
+
+const CREATE = "#create";
+
+/**
+ * A loaded document, migrated to the current format. When the format changed, undo history is
+ * dropped: its change records describe the old format.
+ */
+export function migrateLoaded(
+  id: string,
+  doc: unknown,
+  history: Record<string, Stacks>,
+): { doc: Project; history: Record<string, Stacks> } {
+  const migrated = migrateProject(doc);
+  if (!migrated.ok)
+    throw new Error(
+      `project ${id} in the store is not a valid document: ${migrated.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ")}`,
+    );
+  return { doc: migrated.doc, history: migrated.from !== migrated.to ? {} : history };
+}
+
+interface MemoryEntry {
+  state: ProjectState;
+  writes: WriteRecord[];
+  /** Superseded versions; the current one is `state.doc`. */
+  versions: Map<number, Project>;
+}
+
 export class MemoryStore implements ProjectStore {
-  private readonly projects = new Map<string, StoredProject>();
+  private readonly projects = new Map<string, MemoryEntry>();
   private creates: WriteRecord[] = [];
+  private readonly mutex = new KeyedMutex();
+  private readonly maxWriteKeys: number;
+
+  constructor(options: { maxWriteKeys?: number } = {}) {
+    this.maxWriteKeys = options.maxWriteKeys ?? MAX_WRITE_KEYS;
+  }
 
   async list(): Promise<ProjectMeta[]> {
-    return [...this.projects.values()].map((p) => ({
-      id: p.id,
-      name: p.doc.name,
-      version: p.version,
+    return [...this.projects.values()].map(({ state }) => ({
+      id: state.id,
+      name: state.doc.name,
+      version: state.version,
     }));
   }
-  async get(id: string): Promise<StoredProject | undefined> {
-    const p = this.projects.get(id);
-    return p && copy(p);
+  async get(id: string): Promise<ProjectState | undefined> {
+    const entry = this.projects.get(id);
+    return entry && copy(entry.state);
   }
-  async put(project: StoredProject): Promise<void> {
-    this.projects.set(project.id, copy(project));
+  async getVersion(id: string, version: number): Promise<Project | undefined> {
+    const entry = this.projects.get(id);
+    if (!entry) return undefined;
+    const doc = version === entry.state.version ? entry.state.doc : entry.versions.get(version);
+    return doc && copy(doc);
   }
-  async getCreateRecords(): Promise<WriteRecord[]> {
-    return copy(this.creates);
+  async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
+    if (projectId === undefined) return find(this.creates, actor, key);
+    return find(this.projects.get(projectId)?.writes ?? [], actor, key);
   }
-  async putCreateRecords(records: WriteRecord[]): Promise<void> {
-    this.creates = copy(records);
+  async transact<T>(
+    id: string,
+    fn: (tx: ProjectTx) => Promise<Step<T>>,
+  ): Promise<{ value: T } | undefined> {
+    return this.mutex.run(id, async () => {
+      const entry = this.projects.get(id);
+      if (!entry) return undefined;
+      const step = await fn({
+        project: copy(entry.state),
+        lookup: async (actor, key) => find(entry.writes, actor, key),
+      });
+      if (step.commit) {
+        const { record, project } = copy(step.commit);
+        if (project) {
+          if (project.version !== entry.state.version)
+            entry.versions.set(entry.state.version, entry.state.doc);
+          entry.state = project;
+        }
+        entry.writes = [...entry.writes, record].slice(-this.maxWriteKeys);
+      }
+      return { value: step.value };
+    });
+  }
+  async create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T> {
+    return this.mutex.run(CREATE, async () => {
+      const step = await fn({ lookup: async (actor, key) => find(this.creates, actor, key) });
+      if (step.commit) {
+        const { record, project } = copy(step.commit);
+        if (project)
+          this.projects.set(project.id, { state: project, writes: [], versions: new Map() });
+        this.creates = [...this.creates, record].slice(-this.maxWriteKeys);
+      }
+      return step.value;
+    });
   }
 }
 
@@ -138,15 +276,15 @@ const isMissing = (e: unknown) =>
   typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT";
 
 /**
- * One JSON file per project under `<dir>/projects`, plus `<dir>/create-keys.json`. Documents are
- * migrated on load; when a migration changes the format, undo history is dropped because its
- * records describe the old format.
+ * One JSON file per project under `<dir>/projects`, superseded versions under
+ * `<dir>/versions/<id>/<n>.json`, and `<dir>/create-keys.json`. Documents are migrated on load
+ * (`migrateLoaded`).
  */
 export class FileStore implements ProjectStore {
   private constructor(private readonly dir: string) {}
 
   /**
-   * Opens `dir` for this process only. The service's write lock is in memory, so two processes on
+   * Opens `dir` for this process only. The write lock is in memory, so two processes on
    * one folder could both pass a version check and lose a write; `<dir>/.lock` refuses a second
    * owner. The lock never exists without its pid: the pid is written to a temp file that is then
    * hard-linked into place, which fails atomically if a lock exists. A lock whose pid is gone is
@@ -201,8 +339,12 @@ export class FileStore implements ProjectStore {
     await rm(join(this.dir, ".lock"), { force: true });
   }
 
+  private readonly mutex = new KeyedMutex();
   private projectsDir = () => join(this.dir, "projects");
   private projectPath = (id: string) => join(this.projectsDir(), `${id}.json`);
+  private versionPath = (id: string, version: number) =>
+    join(this.dir, "versions", id, `${version}.json`);
+  private createKeysPath = () => join(this.dir, "create-keys.json");
 
   async list(): Promise<ProjectMeta[]> {
     let names: string[];
@@ -217,7 +359,7 @@ export class FileStore implements ProjectStore {
       const id = name.endsWith(".json") ? name.slice(0, -5) : "";
       if (!PROJECT_ID_PATTERN.test(id)) continue;
       try {
-        const p = await this.get(id);
+        const p = await this.read(id);
         if (p) metas.push({ id: p.id, name: p.doc.name, version: p.version });
       } catch {
         // One unreadable file must not hide every other project; get_project reports it by id.
@@ -226,56 +368,116 @@ export class FileStore implements ProjectStore {
     return metas;
   }
 
-  async get(id: string): Promise<StoredProject | undefined> {
-    if (!PROJECT_ID_PATTERN.test(id)) return undefined;
+  /** A JSON file, or undefined if it does not exist. */
+  private async readJson(path: string, what: string): Promise<unknown> {
     let raw: string;
     try {
-      raw = await readFile(this.projectPath(id), "utf8");
+      raw = await readFile(path, "utf8");
     } catch (e) {
       if (isMissing(e)) return undefined;
       throw e;
     }
-    let stored: StoredProject;
     try {
-      stored = JSON.parse(raw) as StoredProject;
+      return JSON.parse(raw);
     } catch (e) {
       throw new Error(
-        `project ${id} on disk is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+        `${what} on disk is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
-    const migrated = migrateProject(stored.doc);
-    if (!migrated.ok)
-      throw new Error(
-        `project ${id} on disk is not a valid document: ${migrated.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ")}`,
-      );
-    const formatChanged = migrated.from !== migrated.to;
-    return {
-      ...stored,
-      id,
-      doc: migrated.doc,
-      history: formatChanged ? {} : stored.history,
-    };
   }
 
-  async put(project: StoredProject): Promise<void> {
+  private async read(id: string): Promise<StoredProject | undefined> {
+    if (!PROJECT_ID_PATTERN.test(id)) return undefined;
+    const stored = (await this.readJson(this.projectPath(id), `project ${id}`)) as
+      | StoredProject
+      | undefined;
+    if (stored === undefined) return undefined;
+    return { ...stored, id, ...migrateLoaded(id, stored.doc, stored.history) };
+  }
+
+  async get(id: string): Promise<ProjectState | undefined> {
+    const stored = await this.read(id);
+    if (!stored) return undefined;
+    const { writes: _, ...state } = stored;
+    return state;
+  }
+
+  async getVersion(id: string, version: number): Promise<Project | undefined> {
+    const current = await this.read(id);
+    if (!current || !Number.isInteger(version) || version < 1) return undefined;
+    if (version === current.version) return current.doc;
+    const doc = await this.readJson(
+      this.versionPath(id, version),
+      `project ${id} version ${version}`,
+    );
+    return doc === undefined ? undefined : migrateLoaded(id, doc, {}).doc;
+  }
+
+  async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
+    if (projectId === undefined) return find(await this.createRecords(), actor, key);
+    return find((await this.read(projectId))?.writes ?? [], actor, key);
+  }
+
+  private async put(project: StoredProject): Promise<void> {
     if (!PROJECT_ID_PATTERN.test(project.id)) throw new Error(`invalid project id ${project.id}`);
     await mkdir(this.projectsDir(), { recursive: true });
     await writeAtomic(this.projectPath(project.id), JSON.stringify(project));
   }
 
-  async getCreateRecords(): Promise<WriteRecord[]> {
-    try {
-      return JSON.parse(
-        await readFile(join(this.dir, "create-keys.json"), "utf8"),
-      ) as WriteRecord[];
-    } catch (e) {
-      if (isMissing(e)) return [];
-      throw e;
-    }
+  /**
+   * Saves the superseded version's snapshot first, then the project file. A crash between the two
+   * leaves a snapshot of a version that really existed, which the next write overwrites.
+   */
+  async transact<T>(
+    id: string,
+    fn: (tx: ProjectTx) => Promise<Step<T>>,
+  ): Promise<{ value: T } | undefined> {
+    return this.mutex.run(id, async () => {
+      const stored = await this.read(id);
+      if (!stored) return undefined;
+      const { writes, ...state } = stored;
+      const step = await fn({
+        project: copy(state),
+        lookup: async (actor, key) => find(writes, actor, key),
+      });
+      if (step.commit) {
+        const { record, project = state } = step.commit;
+        if (project.version !== state.version) {
+          await mkdir(join(this.dir, "versions", id), { recursive: true });
+          await writeAtomic(this.versionPath(id, state.version), JSON.stringify(state.doc));
+        }
+        await this.put({ ...project, id, writes: [...writes, record].slice(-MAX_WRITE_KEYS) });
+      }
+      return { value: step.value };
+    });
   }
 
-  async putCreateRecords(records: WriteRecord[]): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    await writeAtomic(join(this.dir, "create-keys.json"), JSON.stringify(records));
+  private async createRecords(): Promise<WriteRecord[]> {
+    return (
+      ((await this.readJson(this.createKeysPath(), "create-keys.json")) as
+        | WriteRecord[]
+        | undefined) ?? []
+    );
+  }
+
+  /**
+   * Two files: the project, then its key. A crash between them leaves a project without its key,
+   * so a retry creates a second one; `PostgresStore` saves both in one transaction.
+   */
+  async create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T> {
+    return this.mutex.run(CREATE, async () => {
+      const records = await this.createRecords();
+      const step = await fn({ lookup: async (actor, key) => find(records, actor, key) });
+      if (step.commit) {
+        const { record, project } = step.commit;
+        if (project) await this.put({ ...project, writes: [] });
+        await mkdir(this.dir, { recursive: true });
+        await writeAtomic(
+          this.createKeysPath(),
+          JSON.stringify([...records, record].slice(-MAX_WRITE_KEYS)),
+        );
+      }
+      return step.value;
+    });
   }
 }

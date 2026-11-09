@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
 import { KynimoService, ToolError } from "./service.js";
-import { MAX_WRITE_KEYS, MemoryStore } from "./store.js";
+import { MemoryStore } from "./store.js";
 
 const settings = {
   width: 1920,
@@ -233,21 +233,20 @@ describe("KynimoService", () => {
     expect((await svc.getProject(project)).version).toBe(2);
   });
 
-  it("keeps at most MAX_WRITE_KEYS keys per project", async () => {
-    let v = 1;
-    const p = await store.get(project);
-    if (!p) throw new Error("missing");
-    p.writes = Array.from({ length: MAX_WRITE_KEYS }, (_, i) => ({
-      actor: "agent",
-      key: `old-${i}`,
-      fingerprint: "x",
-      outcome: { status: "rejected", kind: "invalid", message: "", errors: [], currentVersion: 1 },
-    }));
-    await store.put(p);
-    v = (await write(v, "new", [addSolid("a")])).version;
-    expect(v).toBe(2);
-    expect(await svc.getWriteOutcome("old-0", project)).toEqual({ status: "unknown" });
-    expect(await svc.getWriteOutcome("new", project)).toMatchObject({ status: "applied" });
+  it("keeps at most the store's key limit per project, dropping the oldest", async () => {
+    const small = new KynimoService(new MemoryStore({ maxWriteKeys: 3 }), "agent", { makeId: ids });
+    const id = (await small.createProject({ name: "S", idempotency_key: "c", ...settings })).id;
+    for (const key of ["old-0", "old-1", "old-2"])
+      await rejection(
+        small.write({ project_id: id, base_version: 9, idempotency_key: key }, { kind: "undo" }),
+      );
+    await small.write(
+      { project_id: id, base_version: 1, idempotency_key: "new" },
+      { kind: "ops", ops: [addSolid("a")] },
+    );
+    expect(await small.getWriteOutcome("old-0", id)).toEqual({ status: "unknown" });
+    expect(await small.getWriteOutcome("old-1", id)).toMatchObject({ status: "rejected" });
+    expect(await small.getWriteOutcome("new", id)).toMatchObject({ status: "applied" });
   });
 
   it("finds layers by selector and gets one in full", async () => {
