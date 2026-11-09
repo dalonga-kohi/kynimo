@@ -1,5 +1,5 @@
 export * from "./asset-info.js";
-export { bindPaints, MAX_EXPANDED_SHAPE_ITEMS, type PaintOp } from "./binding.js";
+export { bindPaints, MAX_SHAPE_LAYER_WORK, type PaintOp } from "./binding.js";
 export { type CanvasKit, loadCanvasKit } from "./canvaskit.js";
 export * from "./capabilities.js";
 export { compositeReference } from "./compositor/reference.js";

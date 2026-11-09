@@ -1,5 +1,5 @@
 import type { BlendMode, LayerType, MaskMode, Paint, ShapeItem, TrackMatte } from "@kynimo/scene";
-import { MAX_EXPANDED_SHAPE_ITEMS } from "./binding.js";
+import { MAX_SHAPE_LAYER_WORK } from "./binding.js";
 import { BLEND_MODE_IDS } from "./compositor/pipeline.js";
 import { BUNDLED_FONTS, FONT_FORMATS } from "./fonts.js";
 import { IMAGE_FORMATS } from "./images.js";
@@ -61,7 +61,7 @@ export const SHAPE_ITEM_SUPPORT: Readonly<Record<ShapeItem["type"], Support>> = 
   },
   repeater: {
     status: "renders",
-    note: `copies everything listed above it; at most ${MAX_EXPANDED_SHAPE_ITEMS} items per layer after copying`,
+    note: `copies everything listed above it; a shape layer may take at most ${MAX_SHAPE_LAYER_WORK} units of path work per frame (items times copies, plus path segments per paint and operator)`,
   },
 };
 

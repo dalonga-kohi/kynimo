@@ -180,6 +180,23 @@ describe("roundCorners", () => {
     expect(roundCorners(box, 0)).toBe(box);
   });
 
+  it("rounds the corners next to a repeated closing vertex", () => {
+    // `M0,0 L10,0 L10,10 L0,10 L0,0 Z`: the closing side has no length.
+    const square: Contour = {
+      start: [0, 0],
+      segments: [
+        { kind: "line", to: [10, 0] },
+        { kind: "line", to: [10, 10] },
+        { kind: "line", to: [0, 10] },
+        { kind: "line", to: [0, 0] },
+      ],
+      closed: true,
+    };
+    const rounded = roundCorners(square, 2);
+    expect(rounded.segments.filter((s) => s.kind === "cubic")).toHaveLength(4);
+    expect(rounded.start).toEqual([0, 2]);
+  });
+
   it("rounds the corners of a polygon whose closing side is implicit", () => {
     const triangle: Contour = {
       start: [0, -10],

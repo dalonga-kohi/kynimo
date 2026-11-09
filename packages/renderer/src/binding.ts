@@ -29,11 +29,14 @@ export interface PaintOp {
 }
 
 /**
- * Items one shape layer may expand to once repeaters have made their copies (every path, paint
- * and operator of every copy counts). Repeaters multiply: two nested 1000-copy repeaters would
- * otherwise draw a million paths.
+ * Path work one shape layer may take per frame, in units: one per item visited (every copy of
+ * every item a repeater copies), and one per segment plus one per contour each time a path is
+ * built, changed by an operator, or handed to a paint. Repeaters multiply items, paints and
+ * operators below a repeater act on every copy, and wrapping trims split contours, so a small
+ * document could otherwise ask for minutes of CPU or more memory than the process has. Charged
+ * before the work is done, so a refused layer allocates nothing large.
  */
-export const MAX_EXPANDED_SHAPE_ITEMS = 20_000;
+export const MAX_SHAPE_LAYER_WORK = 500_000;
 
 /**
  * The shape tree as the binder walks it: repeaters are already expanded into one group per copy,
@@ -61,9 +64,29 @@ type Node =
  */
 export function bindPaints(items: readonly ResolvedShapeItem[]): PaintOp[] {
   const pending: Pending[] = [];
-  walk(toNodes(items), null, 1, pending, { left: MAX_EXPANDED_SHAPE_ITEMS });
-  return pending.reverse().map(({ refs, ...op }) => ({ ...op, contours: refs.flatMap(resolve) }));
+  const budget = new Budget();
+  walk(toNodes(items), null, 1, pending, budget);
+  return pending.reverse().map(({ refs, ...op }) => {
+    budget.charge(refs.reduce((sum, ref) => sum + cost(ref.slot.contours), 0));
+    return { ...op, contours: refs.flatMap(resolve) };
+  });
 }
+
+/** Counts path work against {@link MAX_SHAPE_LAYER_WORK}. */
+class Budget {
+  private left = MAX_SHAPE_LAYER_WORK;
+  charge(units: number): void {
+    this.left -= units;
+    if (this.left < 0)
+      throw new RenderError(
+        `a shape layer needs more than ${MAX_SHAPE_LAYER_WORK} units of path work for one frame (items times repeater copies, plus path segments for every paint and operator that reads them); lower the repeater copy counts, the number of paints or operators below a repeater, or the paths' vertex counts`,
+      );
+  }
+}
+
+/** Work units for building, changing or painting these contours. */
+const cost = (contours: readonly Contour[]): number =>
+  contours.reduce((sum, c) => sum + c.segments.length + 1, 0);
 
 function toNodes(items: readonly ResolvedShapeItem[]): Node[] {
   let out: Node[] = [];
@@ -186,18 +209,18 @@ function walk(
   matrix: Affine | null,
   opacity: number,
   pending: Pending[],
-  budget: { left: number },
+  budget: Budget,
 ): Ref[] {
   const above: Ref[] = [];
   for (const node of nodes) {
-    if (--budget.left < 0)
-      throw new RenderError(
-        `a shape layer expands to more than ${MAX_EXPANDED_SHAPE_ITEMS} items once repeaters make their copies; lower the repeater copy counts or repeat fewer items`,
-      );
+    budget.charge(1);
     switch (node.kind) {
-      case "geometry":
-        above.push({ slot: { contours: [itemContour(node.item)] }, chain: [] });
+      case "geometry": {
+        const contours = [itemContour(node.item)];
+        budget.charge(cost(contours));
+        above.push({ slot: { contours }, chain: [] });
         break;
+      }
       case "group": {
         const inner = matrix === null ? node.local : multiply(matrix, node.local);
         for (const ref of walk(node.items, inner, opacity * node.opacity, pending, budget))
@@ -209,7 +232,7 @@ function walk(
           pending.push({ paint: node.item, matrix: matrix ?? IDENTITY, refs: [...above], opacity });
         break;
       case "operator":
-        operate(node.item, above);
+        operate(node.item, above, budget);
         break;
     }
   }
@@ -217,27 +240,41 @@ function walk(
 }
 
 /** Applies one operator, in its own group's space, to every path above it. */
-function operate(item: OperatorItem, refs: readonly Ref[]): void {
+function operate(item: OperatorItem, refs: readonly Ref[], budget: Budget): void {
+  // Reading the paths and writing the result both scale with their size; charge both up front
+  // for the input, and again for the output before it is mapped back and kept.
+  budget.charge(refs.reduce((sum, ref) => sum + cost(ref.slot.contours), 0));
   const views = refs.map(resolve);
-  let results: Contour[][];
+  // Per ref, per input contour: what the operator made of it.
+  let results: Contour[][][];
   if (item.type === "round-corners")
-    results = views.map((contours) => contours.map((c) => roundCorners(c, item.radius)));
+    results = views.map((contours) => contours.map((c) => [roundCorners(c, item.radius)]));
   else {
     // Individual trims run over every contour in order, so flatten and regroup per slot.
     const flat = trimContours(views.flat(), item);
     let at = 0;
     results = views.map((contours) => {
-      const mine = flat.slice(at, at + contours.length).flat();
+      const mine = flat.slice(at, at + contours.length);
       at += contours.length;
       return mine;
     });
   }
+  budget.charge(results.reduce((sum, r) => sum + cost(r.flat()), 0));
   refs.forEach((ref, i) => {
-    const result = results[i] as Contour[];
     const view = views[i] as Contour[];
-    // Untouched contours come back as the same objects; keep the slot's own, exact ones.
-    if (result.length === view.length && result.every((c, j) => c === view[j])) return;
-    // A path seen through a collapsing group is degenerate where it is drawn: nothing remains.
-    ref.slot.contours = ref.chain.length === 0 ? result : (down(result, ref.chain) ?? []);
+    const own = ref.slot.contours;
+    const next: Contour[] = [];
+    (results[i] as Contour[][]).forEach((made, j) => {
+      // An untouched contour comes back as the same object: keep the slot's own, exact one.
+      if (made.length === 1 && made[0] === view[j]) next.push(own[j] as Contour);
+      else if (ref.chain.length === 0) next.push(...made);
+      else {
+        // A path seen through a collapsing group has no area where it is drawn, and no way back
+        // into that group's space: nothing of it remains (ADR-0034).
+        const back = down(made, ref.chain);
+        if (back !== null) next.push(...back);
+      }
+    });
+    ref.slot.contours = next;
   });
 }

@@ -39,7 +39,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M4 — Motion depth
 
-- [x] Shape operators: trim paths, repeater, round corners; path morphing (equal vertex counts) → ADR-0034: format v5, After Effects reach (operators change the paths above them, every paint draws the result), our own fixed-work arc length, repeater copies as groups with a 20 000-item budget per layer; morphing already shipped with schema v1 part 2
+- [x] Shape operators: trim paths, repeater, round corners; path morphing (equal vertex counts) → ADR-0034: format v5, After Effects reach (operators change the paths above them, every paint draws the result), our own fixed-work arc length, repeater copies as groups, a per-layer path work budget (500 000 units) charged before the work; morphing already shipped with schema v1 part 2
 - [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog, also as an MCP resource), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or a small built-in default token set; M5 replaces the defaults with the pinned pack's tokens

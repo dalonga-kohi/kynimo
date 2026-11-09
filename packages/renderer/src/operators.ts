@@ -126,6 +126,11 @@ function subPiece(piece: Piece, l0: number, l1: number): { from: Point; segment:
   const table = piece.table as number[];
   const t0 = l0 <= 0 ? 0 : paramAt(table, l0);
   const t1 = l1 >= length ? 1 : paramAt(table, l1);
+  if (t0 >= t1) {
+    // Nothing between the cuts: a point, which callers drop, not a near-zero cubic.
+    const at = split([from, segment.c1, segment.c2, segment.to], t0)[0][3];
+    return { from: at, segment: { kind: "line", to: at } };
+  }
   let curve: Cubic = [from, segment.c1, segment.c2, segment.to];
   if (t1 < 1) curve = split(curve, t1)[0];
   if (t0 > 0) curve = split(curve, t1 > 0 ? t0 / t1 : 0)[1];
@@ -256,7 +261,9 @@ const sharpStart = (p: Piece): boolean => p.segment.kind === "line" || same(p.se
  */
 export function roundCorners(contour: Contour, radius: number): Contour {
   if (!(radius > 0)) return contour;
-  const list = pieces(contour);
+  // Zero-length sides (a closed path that repeats its first vertex, common in imports) have no
+  // direction; drop them so the corners on either side are seen and rounded.
+  const list = pieces(contour).filter((p) => p.length > 0);
   const n = list.length;
   if (n < 2) return contour;
   // cutStart[k] / cutEnd[k]: arc length removed at the start / end of piece k.
