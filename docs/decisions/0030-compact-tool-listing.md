@@ -9,7 +9,7 @@ Every MCP client sends the full `tools/list` response to the model on connect, a
 
 ## Decision
 
-- **Compact the listing, losslessly.** `compactToolListing` wraps the SDK's own `tools/list` handler as it is installed (through the public `setRequestHandler`) and runs every input and output schema through `compactJsonSchema`, which drops exactly those three things. Everything else (names, titles, annotations, real bounds, closed objects) passes through untouched, and the server still validates input against the full zod schemas.
+- **Compact the listing, losslessly apart from the safe-integer range (which the server still enforces).** `compactToolListing` wraps the SDK's own `tools/list` handler as it is installed (through the public `setRequestHandler`) and runs every input and output schema through `compactJsonSchema`, which drops exactly those three things, at schema positions only (property names and `default` / `const` / `enum` values pass through). The handler is matched by its method name, `tools/list`. Everything else (names, titles, annotations, real bounds, closed objects) passes through untouched, and the server still validates input against the full zod schemas.
 - **No `$schema`.** MCP reads a schema without one as JSON Schema 2020-12. The listing uses no keyword that means something else under draft-07 (tuple `items`, `additionalItems`, `definitions`, `dependencies`, `$ref`), and a test keeps it that way.
 - **Budgets.** The whole listing stays under 60 KB, `apply_ops` under 13 KB and every other tool under 4.5 KB, so one tool can't use up the room unnoticed.
 - Not chosen: declaring `apply_ops` items loosely (another ~9 KB) would hide the exact op shapes models rely on; it stays an option for later.

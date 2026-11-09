@@ -32,6 +32,30 @@ describe("compactJsonSchema", () => {
     });
   });
 
+  it("leaves property names and data values alone", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        $schema: { type: "string" },
+        additionalProperties: {},
+        n: {
+          type: "integer",
+          default: { additionalProperties: {} },
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+      },
+      $schema: "http://json-schema.org/draft-07/schema#",
+    };
+    expect(compactJsonSchema(schema)).toEqual({
+      type: "object",
+      properties: {
+        $schema: { type: "string" },
+        additionalProperties: {},
+        n: { type: "integer", default: { additionalProperties: {} } },
+      },
+    });
+  });
+
   it("keeps real bounds, closed objects and typed additionalProperties", () => {
     const schema = {
       type: "object",
