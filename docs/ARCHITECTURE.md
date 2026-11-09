@@ -88,18 +88,18 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 
 ## Package map (target)
 
-| Path                  | Package                                                                                                                                         | Created in       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                                         | M1               |
-| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators                                                 | M1               |
-| `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2               |
-| `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2               |
-| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3               |
-| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                                             | M5               |
-| `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6               |
-| `apps/worker`         | render/export workers                                                                                                                           | M7               |
-| `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4               |
-| `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9          |
+| Path                  | Package                                                                                                                                         | Created in |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                                         | M1         |
+| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators                                                 | M1         |
+| `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2         |
+| `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2         |
+| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3         |
+| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                                             | M5         |
+| `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
+| `apps/worker`         | render/export workers                                                                                                                           | M7         |
+| `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
+| `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9    |
 
 ## Invariants
 
