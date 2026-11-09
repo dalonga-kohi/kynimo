@@ -6,7 +6,13 @@ import { SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
 import { KynimoService, ToolError } from "./service.js";
-import { FileStore, MemoryStore, type ProjectStore } from "./store.js";
+import {
+  type AccountStore,
+  FileStore,
+  LOCAL_ACCOUNT,
+  MemoryStore,
+  type ProjectStore,
+} from "./store.js";
 import {
   type Database,
   MIGRATIONS,
@@ -216,6 +222,63 @@ for (const [name, make] of Object.entries(backends)) {
   });
 }
 
+const accountBackends: Record<string, () => Promise<AccountStore>> = {
+  memory: async () => new MemoryStore(),
+  postgres: async () => PostgresStore.open(await freshDatabase()),
+};
+
+for (const [name, make] of Object.entries(accountBackends)) {
+  describe(`AccountStore: ${name}`, () => {
+    const setup = async () => {
+      const root = await make();
+      const alice = root.forAccount("user:alice");
+      const bob = root.forAccount("user:bob");
+      // One actor name in both accounts: keys must still not cross.
+      const a = new KynimoService(alice, "agent");
+      const b = new KynimoService(bob, "agent");
+      const { id } = await a.createProject({ name: "Alice's", idempotency_key: "c", ...settings });
+      return { root, alice, bob, a, b, id };
+    };
+
+    it("starts as the local account and lists only the account's own projects", async () => {
+      const { root, alice, bob, b, id } = await setup();
+      expect(root.account).toBe(LOCAL_ACCOUNT);
+      expect(alice.account).toBe("user:alice");
+      expect(await alice.list()).toEqual([{ id, name: "Alice's", version: 1 }]);
+      expect(await bob.list()).toEqual([]);
+      expect(await root.list()).toEqual([]);
+      await b.createProject({ name: "Bob's", idempotency_key: "c", ...settings });
+      expect((await bob.list()).map((p) => p.name)).toEqual(["Bob's"]);
+      expect((await alice.list()).map((p) => p.name)).toEqual(["Alice's"]);
+    });
+
+    it("hides another account's project from every read and write", async () => {
+      const { bob, b, id } = await setup();
+      expect(await bob.get(id)).toBeUndefined();
+      expect(await bob.getVersion(id, 1)).toBeUndefined();
+      expect(await bob.lookupWrite(id, "agent", "c")).toEqual({ status: "unknown" });
+      expect(await bob.transact(id, async () => ({ value: 1 }))).toBeUndefined();
+      const write = b.write(
+        { project_id: id, base_version: 1, idempotency_key: "w" },
+        { kind: "ops", ops: [addSolid("x")] },
+      );
+      expect((await rejection(write)).kind).toBe("not_found");
+      expect((await rejection(b.getProject(id))).kind).toBe("not_found");
+      expect((await rejection(b.getWriteOutcome("c", id))).kind).toBe("not_found");
+    });
+
+    it("scopes create_project keys to the account", async () => {
+      const { a, b, id } = await setup();
+      expect(await b.getWriteOutcome("c")).toEqual({ status: "unknown" });
+      const bobs = await b.createProject({ name: "Bob's", idempotency_key: "c", ...settings });
+      expect(bobs).toMatchObject({ replayed: false });
+      expect(bobs.id).not.toBe(id);
+      const replay = await a.createProject({ name: "Alice's", idempotency_key: "c", ...settings });
+      expect(replay).toMatchObject({ id, replayed: true });
+    });
+  });
+}
+
 describe("PostgresStore", () => {
   let db: Database;
   const start = async (options?: PostgresStoreOptions) => {
@@ -237,6 +300,45 @@ describe("PostgresStore", () => {
     expect(await db.query("select version from kynimo_schema_migrations")).toEqual(
       MIGRATIONS.map((_, i) => ({ version: i + 1 })),
     );
+  });
+
+  it("gives projects and create keys stored before accounts to the local account", async () => {
+    db = await freshDatabase();
+    // A database as the first schema left it, with one project and its create key.
+    await db.query("create table kynimo_schema_migrations (version integer primary key)");
+    for (const sql of MIGRATIONS[0] ?? []) await db.query(sql);
+    await db.query("insert into kynimo_schema_migrations (version) values (1)");
+    const memory = new MemoryStore();
+    const made = await new KynimoService(memory, "agent").createProject({
+      name: "Old",
+      idempotency_key: "c",
+      ...settings,
+    });
+    const doc = (await memory.get(made.id))?.doc;
+    const key = await memory.lookupWrite(undefined, "agent", "c");
+    if (key.status !== "found") throw new Error("no key");
+    await db.query(
+      "insert into kynimo_projects (id, name, version, id_counter, history) values ($1, 'Old', 1, 0, '{}')",
+      [made.id],
+    );
+    await db.query(
+      "insert into kynimo_project_versions (project_id, version, doc) values ($1, 1, $2)",
+      [made.id, JSON.stringify(doc)],
+    );
+    await db.query(
+      "insert into kynimo_write_keys (scope, actor, key, fingerprint, outcome) values ('#create', 'agent', 'c', $1, $2)",
+      [key.record.fingerprint, JSON.stringify(key.record.outcome)],
+    );
+
+    const store = await PostgresStore.open(db);
+    expect(await store.list()).toEqual([{ id: made.id, name: "Old", version: 1 }]);
+    expect(await store.forAccount("user:x").list()).toEqual([]);
+    const replay = await new KynimoService(store, "agent").createProject({
+      name: "Old",
+      idempotency_key: "c",
+      ...settings,
+    });
+    expect(replay).toEqual({ id: made.id, name: "Old", version: 1, replayed: true });
   });
 
   it("refuses a database migrated by a newer build", async () => {
