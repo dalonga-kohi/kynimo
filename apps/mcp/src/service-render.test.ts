@@ -3,7 +3,7 @@ import type { Project } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
 import type { FrameRenderer } from "./render.js";
-import { KynimoService, ToolError } from "./service.js";
+import { KynimoService, ServiceRuntime, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";
 
 /** Records every call and answers with fake PNGs that name what was drawn. */
@@ -120,6 +120,26 @@ describe("KynimoService: rendering", () => {
     renderer.buildId = "build-2";
     await frames([0]);
     expect(renderer.calls).toHaveLength(4);
+  });
+
+  it("shares the render cache between services on one runtime", async () => {
+    const store = new MemoryStore();
+    const runtime = new ServiceRuntime({ renderer });
+    const first = new KynimoService(store, "agent", runtime);
+    const { id } = await first.createProject({
+      name: "Shared",
+      idempotency_key: "c",
+      width: 64,
+      height: 64,
+      fps: { num: 30, den: 1 },
+      duration_frames: 10,
+      background: null,
+    });
+    await first.renderFrames(id, { frames: [0], max_size: 64 });
+    const second = new KynimoService(store, "other", runtime);
+    const { result } = await second.renderFrames(id, { frames: [0], max_size: 64 });
+    expect(result.frames.map((f) => f.cached)).toEqual([true]);
+    expect(renderer.calls).toHaveLength(1);
   });
 
   it("renders again once the document changes", async () => {
