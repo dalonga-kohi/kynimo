@@ -66,6 +66,14 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
   const obj = o as z.ZodObject<z.ZodRawShape>;
   if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
   if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "addAsset")
+    return obj.extend({
+      asset: z
+        .looseObject({})
+        .describe(
+          "An asset entry without its id. Use upload_asset instead: it stores the bytes and derives these fields.",
+        ),
+    });
   if (name === "updateMask")
     return obj.extend({
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
@@ -75,7 +83,7 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask` and `updateMask.set`,
+ * `addMask.mask`, `updateMask.set` and `addAsset.asset`,
  * which the server validates in full against `OpSchema` before anything is applied.
  */
 export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);
@@ -251,6 +259,8 @@ export const WriteOutput = z.looseObject({
   /** Added after v1, so optional (ADR-0024). */
   compositions_added: z.array(z.string()).optional(),
   compositions_removed: z.array(z.string()).optional(),
+  assets_added: z.array(z.string()).optional(),
+  assets_removed: z.array(z.string()).optional(),
   replayed: z.boolean(),
 });
 

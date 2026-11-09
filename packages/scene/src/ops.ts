@@ -1,6 +1,13 @@
 import { z } from "zod";
+import { type Asset, AssetSchema } from "./asset.js";
 import { MaskSchema, TrackMatteSchema } from "./compositing.js";
-import { CompositionIdSchema, LayerIdSchema, MarkerIdSchema, MaskIdSchema } from "./ids.js";
+import {
+  AssetIdSchema,
+  CompositionIdSchema,
+  LayerIdSchema,
+  MarkerIdSchema,
+  MaskIdSchema,
+} from "./ids.js";
 import type { Animatable, PositionTrack } from "./keyframes.js";
 import { type Layer, LayerSchema } from "./layer.js";
 import { MAX_LAYERS } from "./limits.js";
@@ -168,6 +175,27 @@ const precompose = z.strictObject({
   layerId: LayerIdSchema.optional(),
 });
 
+/** An asset without its id: the id is supplied by the op or generated from the seeded counter. */
+export type AssetInput = Asset extends infer A ? (A extends Asset ? Omit<A, "id"> : never) : never;
+const AssetInputSchema = z.discriminatedUnion(
+  "type",
+  (AssetSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
+) as unknown as z.ZodType<AssetInput>;
+
+/**
+ * Adds an asset entry (appended to the project's list). The bytes live in the asset store; the
+ * entry pins them by `sha256`. Normally written by `upload_asset`, which derives the fields.
+ */
+const addAsset = z.strictObject({
+  op: z.literal("addAsset"),
+  /** Optional; generated (`asset-N`) from the seeded counter when omitted. */
+  id: AssetIdSchema.optional(),
+  asset: AssetInputSchema,
+});
+
+/** Removes an asset entry no layer uses. Its bytes stay in the asset store. */
+const removeAsset = z.strictObject({ op: z.literal("removeAsset"), asset: AssetIdSchema });
+
 export const OpSchema = z.discriminatedUnion("op", [
   addLayer,
   updateLayer,
@@ -182,6 +210,8 @@ export const OpSchema = z.discriminatedUnion("op", [
   removeMask,
   setMatte,
   precompose,
+  addAsset,
+  removeAsset,
 ]);
 export type Op = z.infer<typeof OpSchema>;
 

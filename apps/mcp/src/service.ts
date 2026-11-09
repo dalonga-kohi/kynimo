@@ -120,8 +120,14 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
   const markersRemoved = new Set<string>();
   const compsAdded = new Set<string>();
   const compsRemoved = new Set<string>();
+  const assetsAdded = new Set<string>();
+  const assetsRemoved = new Set<string>();
   for (const c of changes) {
-    if (c.type === "composition.insert") {
+    if (c.type === "asset.insert") {
+      if (!assetsRemoved.delete(c.assetId)) assetsAdded.add(c.assetId);
+    } else if (c.type === "asset.remove") {
+      if (!assetsAdded.delete(c.assetId)) assetsRemoved.add(c.assetId);
+    } else if (c.type === "composition.insert") {
       if (!compsRemoved.delete(c.compositionId)) compsAdded.add(c.compositionId);
     } else if (c.type === "composition.remove") {
       if (!compsAdded.delete(c.compositionId)) compsRemoved.add(c.compositionId);
@@ -147,6 +153,8 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
     markers_removed: [...markersRemoved],
     compositions_added: [...compsAdded],
     compositions_removed: [...compsRemoved],
+    assets_added: [...assetsAdded],
+    assets_removed: [...assetsRemoved],
   };
 }
 
