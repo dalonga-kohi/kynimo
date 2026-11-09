@@ -106,7 +106,7 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012)               | M6        |
 | Hosting for API/MCP and workers                                                                                    | M3 / M7   |
 | ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
-| Auth / OAuth provider                                                                                              | M3        |
+| ~~Auth / OAuth provider~~ → external issuer, Kynimo as resource server; WorkOS AuthKit first (ADR-0033)            | done      |
 | Job queue                                                                                                          | M7        |
 | ~~Object storage for assets~~ → S3-compatible, Cloudflare R2 first, content-addressed (ADR-0031); CDN for previews | M7        |
 | ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                                   | done      |

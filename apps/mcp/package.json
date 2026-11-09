@@ -2,7 +2,7 @@
   "name": "@kynimo/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Kynimo MCP server: project, read and precise tools over the scene operations (local stdio mode).",
+  "description": "Kynimo MCP server: project, read and precise tools over the scene operations (stdio, or Streamable HTTP with OAuth).",
   "type": "module",
   "bin": {
     "kynimo-mcp": "./dist/main.js"
@@ -32,6 +32,7 @@
     "@kynimo/scene": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "aws4fetch": "1.0.20",
+    "jose": "6.2.15",
     "pg": "8.23.1",
     "zod": "^4.6.7"
   },

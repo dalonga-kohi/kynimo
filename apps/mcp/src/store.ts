@@ -11,6 +11,13 @@ export const PROJECT_ID_PATTERN = /^p-[a-f0-9]{32}$/;
 
 export const newProjectId = (): string => `p-${randomUUID().replaceAll("-", "")}`;
 
+/**
+ * The account of a local (stdio) server, and the owner of every project stored before accounts
+ * existed. Remote accounts are namespaced (`user:<subject>`, see `accountForSubject`), so no
+ * signed-in user can be this one.
+ */
+export const LOCAL_ACCOUNT = "local";
+
 export type WriteOutcome =
   | { status: "applied"; version: number; result: WriteResult }
   | {
@@ -134,6 +141,16 @@ export interface ProjectStore {
   create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T>;
 }
 
+/**
+ * A store holding many accounts' projects. Every `ProjectStore` method acts for one account:
+ * `list` shows only its projects, and another account's project reads as missing, so a caller
+ * cannot tell it exists. `forAccount` returns a view on the same data for another account.
+ */
+export interface AccountStore extends ProjectStore {
+  readonly account: string;
+  forAccount(account: string): AccountStore;
+}
+
 const copy = <T>(value: T): T => structuredClone(value);
 
 /** Runs tasks one at a time per key, in arrival order; a failed task does not block the next. */
@@ -178,49 +195,79 @@ export function migrateLoaded(
 }
 
 interface MemoryEntry {
+  account: string;
   state: ProjectState;
   writes: WriteRecord[];
   /** Superseded versions; the current one is `state.doc`. */
   versions: Map<number, Project>;
 }
 
-export class MemoryStore implements ProjectStore {
-  private readonly projects = new Map<string, MemoryEntry>();
-  private creates: WriteRecord[] = [];
-  private readonly mutex = new KeyedMutex();
-  private readonly maxWriteKeys: number;
+/** What every account view of one `MemoryStore` shares. */
+interface MemoryData {
+  projects: Map<string, MemoryEntry>;
+  /** `create_project` keys per account. */
+  creates: Map<string, WriteRecord[]>;
+  mutex: KeyedMutex;
+  maxWriteKeys: number;
+}
 
-  constructor(options: { maxWriteKeys?: number } = {}) {
-    this.maxWriteKeys = options.maxWriteKeys ?? MAX_WRITE_KEYS;
+export class MemoryStore implements AccountStore {
+  private readonly data: MemoryData;
+
+  /**
+   * A new, empty store for `account` (default LOCAL_ACCOUNT). Given another `MemoryStore`, it is
+   * a view on that store's data instead (`forAccount`).
+   */
+  constructor(
+    options: { maxWriteKeys?: number } | MemoryStore = {},
+    readonly account: string = LOCAL_ACCOUNT,
+  ) {
+    this.data =
+      options instanceof MemoryStore
+        ? options.data
+        : {
+            projects: new Map(),
+            creates: new Map(),
+            mutex: new KeyedMutex(),
+            maxWriteKeys: options.maxWriteKeys ?? MAX_WRITE_KEYS,
+          };
+  }
+
+  forAccount(account: string): MemoryStore {
+    return new MemoryStore(this, account);
+  }
+
+  /** The project, if it exists and belongs to this account. */
+  private entry(id: string): MemoryEntry | undefined {
+    const entry = this.data.projects.get(id);
+    return entry?.account === this.account ? entry : undefined;
   }
 
   async list(): Promise<ProjectMeta[]> {
-    return [...this.projects.values()].map(({ state }) => ({
-      id: state.id,
-      name: state.doc.name,
-      version: state.version,
-    }));
+    return [...this.data.projects.values()]
+      .filter((e) => e.account === this.account)
+      .map(({ state }) => ({ id: state.id, name: state.doc.name, version: state.version }));
   }
   async get(id: string): Promise<ProjectState | undefined> {
-    const entry = this.projects.get(id);
+    const entry = this.entry(id);
     return entry && copy(entry.state);
   }
   async getVersion(id: string, version: number): Promise<Project | undefined> {
-    const entry = this.projects.get(id);
+    const entry = this.entry(id);
     if (!entry) return undefined;
     const doc = version === entry.state.version ? entry.state.doc : entry.versions.get(version);
     return doc && copy(doc);
   }
   async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
-    if (projectId === undefined) return find(this.creates, actor, key);
-    return find(this.projects.get(projectId)?.writes ?? [], actor, key);
+    if (projectId === undefined) return find(this.data.creates.get(this.account) ?? [], actor, key);
+    return find(this.entry(projectId)?.writes ?? [], actor, key);
   }
   async transact<T>(
     id: string,
     fn: (tx: ProjectTx) => Promise<Step<T>>,
   ): Promise<{ value: T } | undefined> {
-    return this.mutex.run(id, async () => {
-      const entry = this.projects.get(id);
+    return this.data.mutex.run(id, async () => {
+      const entry = this.entry(id);
       if (!entry) return undefined;
       const step = await fn({
         project: copy(entry.state),
@@ -233,19 +280,26 @@ export class MemoryStore implements ProjectStore {
             entry.versions.set(entry.state.version, entry.state.doc);
           entry.state = project;
         }
-        entry.writes = [...entry.writes, record].slice(-this.maxWriteKeys);
+        entry.writes = [...entry.writes, record].slice(-this.data.maxWriteKeys);
       }
       return { value: step.value };
     });
   }
   async create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T> {
-    return this.mutex.run(CREATE, async () => {
-      const step = await fn({ lookup: async (actor, key) => find(this.creates, actor, key) });
+    // One lock per account: an id is never reused, so creates of different accounts can't clash.
+    return this.data.mutex.run(`${CREATE}:${this.account}`, async () => {
+      const creates = this.data.creates.get(this.account) ?? [];
+      const step = await fn({ lookup: async (actor, key) => find(creates, actor, key) });
       if (step.commit) {
         const { record, project } = copy(step.commit);
         if (project)
-          this.projects.set(project.id, { state: project, writes: [], versions: new Map() });
-        this.creates = [...this.creates, record].slice(-this.maxWriteKeys);
+          this.data.projects.set(project.id, {
+            account: this.account,
+            state: project,
+            writes: [],
+            versions: new Map(),
+          });
+        this.data.creates.set(this.account, [...creates, record].slice(-this.data.maxWriteKeys));
       }
       return step.value;
     });
@@ -279,7 +333,7 @@ const isMissing = (e: unknown) =>
   typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT";
 
 /**
- * One JSON file per project under `<dir>/projects`, superseded versions under
+ * A single-account store (LOCAL_ACCOUNT) for one local process: one JSON file per project under `<dir>/projects`, superseded versions under
  * `<dir>/versions/<id>/<n>.json`, and `<dir>/create-keys.json`. Documents are migrated on load
  * (`migrateLoaded`).
  */

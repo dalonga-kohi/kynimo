@@ -34,7 +34,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on every write, `get_write_outcome`, undo history persisted with the project (ADR-0018) → ADR-0029: Postgres on `pg` (PGlite in tests), a snapshot per version, row-locked transactions in the store, keys kept 7 days then `expired`
 - [x] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, fonts; SVG moves to SVG import in M4); the tool listing was slimmed first → ADR-0030: lossless compaction of `tools/list`, 59.8 → 52.2 KB; ADR-0031: content-addressed blobs (memory, `--dir`, S3-compatible with R2 first), `addAsset`/`removeAsset` ops, base64 uploads up to 8 MB with metadata read from the file
 - [x] Video assets: FFmpeg pre-decode to frames at upload; draw video layers; audio uploads (duration from FFmpeg) → ADR-0032: format v4 (video asset with a pinned frame manifest, video layer), exact rational source frames, system FFmpeg sandboxed by protocol/format whitelists, JPEG frames ≤ 1920 px / 60 fps / 60 s, FLAC audio, retries fingerprinted on the source bytes
-- [ ] Remote transport (Streamable HTTP) + OAuth
+- [x] Remote transport (Streamable HTTP) + OAuth → ADR-0033: Kynimo as OAuth resource server for an external issuer (WorkOS AuthKit first; JWTs checked against its JWKS, RFC 9728 metadata), stateless Streamable HTTP, accounts from the token subject with per-account stores (Postgres migration 2)
 - [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT
 
 ## M4 — Motion depth

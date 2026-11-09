@@ -1,14 +1,15 @@
 import type { Project } from "@kynimo/scene";
 import pg from "pg";
 import {
+  type AccountStore,
   type Commit,
   type KeyLookup,
   type KeyReader,
+  LOCAL_ACCOUNT,
   migrateLoaded,
   PROJECT_ID_PATTERN,
   type ProjectMeta,
   type ProjectState,
-  type ProjectStore,
   type ProjectTx,
   type Stacks,
   type Step,
@@ -108,6 +109,15 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     // Keys whose outcome is still kept: the outcome purge scans only rows it will change.
     "create index kynimo_write_keys_live on kynimo_write_keys (scope, created_at) where outcome is not null",
   ],
+  // Accounts (ADR-0033): every project has an owner. Projects and create keys made before
+  // accounts belong to the local account, which no signed-in user can be.
+  [
+    // The default stays: a build from before accounts, still running during a rolling deploy,
+    // keeps creating (local) projects instead of failing.
+    `alter table kynimo_projects add column account text not null default '${LOCAL_ACCOUNT}'`,
+    "create index kynimo_projects_account on kynimo_projects (account, created_at, id)",
+    `update kynimo_write_keys set scope = '#create:${LOCAL_ACCOUNT}' where scope = '#create'`,
+  ],
 ];
 
 /** Any constant; it only has to be the same in every process migrating one database. */
@@ -145,7 +155,8 @@ export interface PostgresStoreOptions {
   tombstoneSeconds?: number;
 }
 
-const CREATE_SCOPE = "#create";
+/** The key scope of an account's `create_project` keys. Project ids never start with `#`. */
+const createScope = (account: string) => `#create:${account}`;
 
 interface ProjectRow {
   version: number;
@@ -157,21 +168,23 @@ interface ProjectRow {
 const SELECT_PROJECT = `select p.version, p.id_counter, p.history, v.doc
   from kynimo_projects p
   join kynimo_project_versions v on v.project_id = p.id and v.version = p.version
-  where p.id = $1`;
+  where p.id = $1 and p.account = $2`;
 
 /**
  * Projects in Postgres, shared by any number of server processes (ADR-0029). A write locks its
  * project row (`select … for update`) for the whole check-and-apply, and saves the new version's
  * document, the undo history and the key in the same transaction. `create_project` takes a
- * transaction-scoped advisory lock on its (actor, key). Keys are kept by age, not count.
+ * transaction-scoped advisory lock on its (account, actor, key). Keys are kept by age, not count.
+ * Each instance acts for one account (LOCAL_ACCOUNT from `open`); `forAccount` gives another.
  */
-export class PostgresStore implements ProjectStore {
+export class PostgresStore implements AccountStore {
   private readonly outcomeSeconds: number;
   private readonly tombstoneSeconds: number;
 
   private constructor(
     private readonly db: Database,
-    options: PostgresStoreOptions,
+    private readonly options: PostgresStoreOptions,
+    readonly account: string,
   ) {
     this.outcomeSeconds = options.outcomeSeconds ?? 7 * DAY;
     this.tombstoneSeconds = options.tombstoneSeconds ?? 90 * DAY;
@@ -182,7 +195,11 @@ export class PostgresStore implements ProjectStore {
   /** Migrates the database schema, then opens the store. */
   static async open(db: Database, options: PostgresStoreOptions = {}): Promise<PostgresStore> {
     await migrateDatabase(db);
-    return new PostgresStore(db, options);
+    return new PostgresStore(db, options, LOCAL_ACCOUNT);
+  }
+
+  forAccount(account: string): PostgresStore {
+    return new PostgresStore(this.db, this.options, account);
   }
 
   private state(id: string, row: ProjectRow): ProjectState {
@@ -196,21 +213,24 @@ export class PostgresStore implements ProjectStore {
 
   async list(): Promise<ProjectMeta[]> {
     return this.db.query<ProjectMeta>(
-      "select id, name, version from kynimo_projects order by created_at, id",
+      "select id, name, version from kynimo_projects where account = $1 order by created_at, id",
+      [this.account],
     );
   }
 
   async get(id: string): Promise<ProjectState | undefined> {
     if (!PROJECT_ID_PATTERN.test(id)) return undefined;
-    const [row] = await this.db.query<ProjectRow>(SELECT_PROJECT, [id]);
+    const [row] = await this.db.query<ProjectRow>(SELECT_PROJECT, [id, this.account]);
     return row && this.state(id, row);
   }
 
   async getVersion(id: string, version: number): Promise<Project | undefined> {
     if (!PROJECT_ID_PATTERN.test(id) || !Number.isInteger(version) || version < 1) return undefined;
     const [row] = await this.db.query<{ doc: unknown }>(
-      "select doc from kynimo_project_versions where project_id = $1 and version = $2",
-      [id, version],
+      `select v.doc from kynimo_project_versions v
+       join kynimo_projects p on p.id = v.project_id
+       where v.project_id = $1 and v.version = $2 and p.account = $3`,
+      [id, version, this.account],
     );
     return row && migrateLoaded(id, row.doc, {}).doc;
   }
@@ -238,9 +258,17 @@ export class PostgresStore implements ProjectStore {
   }
 
   async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
-    if (projectId !== undefined && !PROJECT_ID_PATTERN.test(projectId))
-      return { status: "unknown" };
-    return this.lookup(this.db.query, projectId ?? CREATE_SCOPE, actor, key);
+    if (projectId === undefined)
+      return this.lookup(this.db.query, createScope(this.account), actor, key);
+    if (!PROJECT_ID_PATTERN.test(projectId)) return { status: "unknown" };
+    // Another account's project has no keys this account can see.
+    const owned = await this.db.query(
+      "select 1 from kynimo_projects where id = $1 and account = $2",
+      [projectId, this.account],
+    );
+    return owned.length === 0
+      ? { status: "unknown" }
+      : this.lookup(this.db.query, projectId, actor, key);
   }
 
   /** Saves a key (replacing a forgotten row with the same name) and ages out the scope's keys. */
@@ -281,9 +309,12 @@ export class PostgresStore implements ProjectStore {
       // after waiting for a competing write, Postgres re-checks the locked project row at its new
       // version but keeps the joined version row from the old snapshot, so the join drops it and
       // the project looks missing. Each statement here gets a snapshot taken after the lock.
-      const locked = await q("select 1 from kynimo_projects where id = $1 for update", [id]);
+      const locked = await q(
+        "select 1 from kynimo_projects where id = $1 and account = $2 for update",
+        [id, this.account],
+      );
       if (locked.length === 0) return undefined;
-      const [row] = await q<ProjectRow>(SELECT_PROJECT, [id]);
+      const [row] = await q<ProjectRow>(SELECT_PROJECT, [id, this.account]);
       if (!row) throw new Error(`project ${id} has no document for its current version`);
       const current = this.state(id, row);
       const step = await fn({
@@ -311,14 +342,15 @@ export class PostgresStore implements ProjectStore {
   }
 
   async create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T> {
+    const scope = createScope(this.account);
     return this.db.transaction(async (q) => {
       const step = await fn({
         lookup: async (actor, key) => {
           // Two creates with one key wait for each other here, so only one of them inserts.
           await q("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
-            JSON.stringify([CREATE_SCOPE, actor, key]),
+            JSON.stringify([scope, actor, key]),
           ]);
-          return this.lookup(q, CREATE_SCOPE, actor, key);
+          return this.lookup(q, scope, actor, key);
         },
       });
       const { commit } = step;
@@ -326,9 +358,10 @@ export class PostgresStore implements ProjectStore {
         const project = commit.project;
         if (project) {
           await q(
-            "insert into kynimo_projects (id, name, version, id_counter, history) values ($1, $2, $3, $4, $5)",
+            "insert into kynimo_projects (id, account, name, version, id_counter, history) values ($1, $2, $3, $4, $5, $6)",
             [
               project.id,
+              this.account,
               project.doc.name,
               project.version,
               project.idCounter,
@@ -337,7 +370,7 @@ export class PostgresStore implements ProjectStore {
           );
           await this.insertVersion(q, project);
         }
-        await this.saveKey(q, CREATE_SCOPE, commit);
+        await this.saveKey(q, scope, commit);
       }
       return step.value;
     });

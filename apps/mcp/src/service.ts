@@ -516,29 +516,23 @@ export interface Rendered<T> {
 type CacheValue = { kind: "frame"; frame: CapturedFrame } | { kind: "sheet"; sheet: CapturedSheet };
 
 /**
- * The MCP tools' logic, independent of the transport. Every write goes through `write`, which
- * runs in a store transaction that holds the project's lock, checks `base_version` (optimistic
- * concurrency), applies one atomic batch through `@kynimo/scene` and saves the idempotency key
- * with its outcome (ADR-0018, ADR-0029).
+ * What every service of one process shares, whichever account it acts for: the renderer, the
+ * render and asset caches (keyed by content, so safe to share across accounts) and the FFmpeg
+ * slots. A remote server builds one per process and a `KynimoService` per request.
  */
-export class KynimoService {
-  private readonly makeId: () => string;
-  private readonly renderer: FrameRenderer | undefined;
-  private readonly renders: RenderCache<CacheValue>;
-  private readonly blobs: BlobStore | undefined;
-  private readonly blobsUnavailable: string;
-  private readonly assetBytes: RenderCache<Uint8Array>;
-  private readonly media: MediaTools | undefined;
-  private readonly decodeSlots = new Slots(MEDIA_CONCURRENCY);
-  private readonly maxRenderAssetBytes: number;
-  private readonly mediaUnavailable: string;
+export class ServiceRuntime {
+  readonly makeId: () => string;
+  readonly renderer: FrameRenderer | undefined;
+  readonly renders: RenderCache<CacheValue>;
+  readonly blobs: BlobStore | undefined;
+  readonly blobsUnavailable: string;
+  readonly assetBytes: RenderCache<Uint8Array>;
+  readonly media: MediaTools | undefined;
+  readonly decodeSlots = new Slots(MEDIA_CONCURRENCY);
+  readonly maxRenderAssetBytes: number;
+  readonly mediaUnavailable: string;
 
-  constructor(
-    private readonly store: ProjectStore,
-    /** The authenticated actor; the local server has exactly one. */
-    readonly actor: string,
-    options: ServiceOptions = {},
-  ) {
+  constructor(options: ServiceOptions = {}) {
     this.makeId = options.makeId ?? newProjectId;
     this.renderer = options.renderer;
     this.renders = new RenderCache(options.renderCacheBytes ?? 256 * 1024 * 1024);
@@ -549,6 +543,26 @@ export class KynimoService {
     this.maxRenderAssetBytes = options.maxRenderAssetBytes ?? RENDER_LIMITS.maxAssetBytes;
     this.mediaUnavailable =
       options.mediaUnavailable ?? "this server has no FFmpeg (install ffmpeg and ffprobe)";
+  }
+}
+
+/**
+ * The MCP tools' logic, independent of the transport. Every write goes through `write`, which
+ * runs in a store transaction that holds the project's lock, checks `base_version` (optimistic
+ * concurrency), applies one atomic batch through `@kynimo/scene` and saves the idempotency key
+ * with its outcome (ADR-0018, ADR-0029).
+ */
+export class KynimoService {
+  private readonly rt: ServiceRuntime;
+
+  constructor(
+    private readonly store: ProjectStore,
+    /** The authenticated actor; the local server has exactly one. */
+    readonly actor: string,
+    /** Options for a runtime of its own, or a runtime shared with other services. */
+    options: ServiceOptions | ServiceRuntime = {},
+  ) {
+    this.rt = options instanceof ServiceRuntime ? options : new ServiceRuntime(options);
   }
 
   /**
@@ -562,9 +576,12 @@ export class KynimoService {
     meta: WriteMeta,
     input: UploadAssetInput,
   ): Promise<WriteReply & { asset: Asset; audio_asset?: Asset }> {
-    const blobs = this.blobs;
+    const blobs = this.rt.blobs;
     if (blobs === undefined)
-      throw new ToolError("unavailable", `asset upload is unavailable: ${this.blobsUnavailable}`);
+      throw new ToolError(
+        "unavailable",
+        `asset upload is unavailable: ${this.rt.blobsUnavailable}`,
+      );
     const bytes = decodeBase64(input.data);
     if (bytes.length > MAX_UPLOAD_BYTES) throw tooLarge();
     if (bytes.length === 0)
@@ -589,7 +606,7 @@ export class KynimoService {
           { path: ["id"], message: "at most 58 characters: a clip's sound gets '<id>-audio'" },
         ]);
       const prepared = isMediaFile(bytes)
-        ? await this.decodeSlots.run(() => this.prepareMedia(blobs, input, bytes))
+        ? await this.rt.decodeSlots.run(() => this.prepareMedia(blobs, input, bytes))
         : prepareFile(input, bytes);
       await putAll(blobs, prepared.blobs);
       const ops = prepared.entries.map((asset, i) => {
@@ -634,11 +651,11 @@ export class KynimoService {
     input: UploadAssetInput,
     bytes: Uint8Array,
   ): Promise<Prepared> {
-    const media = this.media;
+    const media = this.rt.media;
     if (media === undefined)
       throw new ToolError(
         "unavailable",
-        `video and audio upload is unavailable: ${this.mediaUnavailable}`,
+        `video and audio upload is unavailable: ${this.rt.mediaUnavailable}`,
       );
     if (input.family !== undefined)
       throw new ToolError("invalid", "family applies to fonts only", [
@@ -838,10 +855,10 @@ export class KynimoService {
     let total = 0;
     let pixels = 0;
     const check = () => {
-      if (total > this.maxRenderAssetBytes || pixels > RENDER_LIMITS.maxDecodedAssetBytes)
+      if (total > this.rt.maxRenderAssetBytes || pixels > RENDER_LIMITS.maxDecodedAssetBytes)
         throw new ToolError(
           "invalid",
-          `this render needs more than ${total > this.maxRenderAssetBytes ? `${this.maxRenderAssetBytes} bytes of stored` : `${RENDER_LIMITS.maxDecodedAssetBytes} bytes of decoded`} images, fonts and video frames, the limit for one call; render fewer frames at a time, or use smaller assets`,
+          `this render needs more than ${total > this.rt.maxRenderAssetBytes ? `${this.rt.maxRenderAssetBytes} bytes of stored` : `${RENDER_LIMITS.maxDecodedAssetBytes} bytes of decoded`} images, fonts and video frames, the limit for one call; render fewer frames at a time, or use smaller assets`,
         );
     };
     for (const a of used) {
@@ -880,11 +897,11 @@ export class KynimoService {
 
   /** Bytes under a content key, checked against their hash and cached; `failed` when absent or wrong. */
   private async blob(key: string, sha256: string, failed: () => ToolError): Promise<Uint8Array> {
-    const cached = this.assetBytes.get(sha256);
+    const cached = this.rt.assetBytes.get(sha256);
     if (cached !== undefined) return cached;
-    const read = this.blobs === undefined ? undefined : await this.blobs.get(key);
+    const read = this.rt.blobs === undefined ? undefined : await this.rt.blobs.get(key);
     if (read === undefined || sha256Of(read) !== sha256) throw failed();
-    this.assetBytes.set(sha256, read, read.byteLength);
+    this.rt.assetBytes.set(sha256, read, read.byteLength);
     return read;
   }
 
@@ -974,7 +991,7 @@ export class KynimoService {
         };
         return { commit: { record: record(outcome) }, value: rejectionError(outcome) };
       }
-      const id = this.makeId();
+      const id = this.rt.makeId();
       const result = summarizeChanges(id, 1, []);
       return {
         commit: {
@@ -1261,7 +1278,7 @@ export class KynimoService {
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */
   private async renderTarget(projectId: string, composition: string | undefined) {
-    const renderer = this.renderer;
+    const renderer = this.rt.renderer;
     if (renderer === undefined)
       throw new ToolError("unavailable", "rendering is not available on this server");
     const p = await this.load(projectId);
@@ -1307,7 +1324,7 @@ export class KynimoService {
       fingerprint(["frame", p.id, docHash, comp.id, frame, input.max_size, build]);
     const found = new Map<number, CapturedFrame>();
     for (const f of frames) {
-      const hit = this.renders.get(key(f));
+      const hit = this.rt.renders.get(key(f));
       if (hit?.kind === "frame") found.set(f, hit.frame);
     }
     const misses = frames.filter((f) => !found.has(f));
@@ -1319,7 +1336,7 @@ export class KynimoService {
       );
       for (const f of drawn) {
         found.set(f.frame, f);
-        this.renders.set(key(f.frame), { kind: "frame", frame: f }, f.png.byteLength + 1024);
+        this.rt.renders.set(key(f.frame), { kind: "frame", frame: f }, f.png.byteLength + 1024);
       }
     }
     const ordered = frames.map((f) => {
@@ -1414,7 +1431,7 @@ export class KynimoService {
       gap,
       build,
     ]);
-    const hit = this.renders.get(key);
+    const hit = this.rt.renders.get(key);
     let sheet: CapturedSheet;
     if (hit?.kind === "sheet") sheet = hit.sheet;
     else {
@@ -1422,7 +1439,7 @@ export class KynimoService {
       sheet = await this.draw(() =>
         renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, media),
       );
-      this.renders.set(key, { kind: "sheet", sheet }, sheet.png.byteLength + 1024);
+      this.rt.renders.set(key, { kind: "sheet", sheet }, sheet.png.byteLength + 1024);
     }
     return {
       result: {

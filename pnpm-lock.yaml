@@ -202,6 +202,9 @@ importers:
       aws4fetch:
         specifier: 1.0.20
         version: 1.0.20
+      jose:
+        specifier: 6.2.15
+        version: 6.2.15
       pg:
         specifier: 8.23.1
         version: 8.23.1
