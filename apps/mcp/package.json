@@ -2,7 +2,7 @@
   "name": "@kynimo/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "Kynimo MCP server: project, read and precise tools over the scene operations (local stdio mode).",
+  "description": "Kynimo MCP server: project, read and precise tools over the scene operations (stdio, or Streamable HTTP with OAuth).",
   "type": "module",
   "bin": {
     "kynimo-mcp": "./dist/main.js"

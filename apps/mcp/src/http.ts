@@ -7,6 +7,7 @@ import {
   accountForSubject,
   authenticate,
   challenge,
+  isLoopback,
   metadataUrl,
   type Principal,
   resourceMetadata,
@@ -162,5 +163,65 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
       if (!res.headersSent) send(res, 500, rpcError(-32603, "internal server error"));
       else res.destroy();
     });
+  };
+}
+
+/** Remote settings read from the environment, before the issuer's keys are located. */
+export interface RemoteEnv {
+  resource: URL;
+  issuer: string;
+  audience: string[];
+  /** Explicit JWKS URL; otherwise discovered from the issuer. */
+  jwksUri?: URL;
+  requiredScopes: string[];
+  allowedOrigins: string[];
+}
+
+const list = (value: string | undefined): string[] =>
+  (value ?? "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+const httpsUrl = (name: string, value: string): URL => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a URL, got ${JSON.stringify(value)}`);
+  }
+  if (url.protocol !== "https:" && !isLoopback(url.hostname))
+    throw new Error(`${name} must be an https URL (http only on localhost)`);
+  if (url.search !== "" || url.hash !== "")
+    throw new Error(`${name} must not have a query or fragment`);
+  return url;
+};
+
+/**
+ * Reads KYNIMO_PUBLIC_URL (the MCP endpoint as clients reach it), KYNIMO_OAUTH_ISSUER and the
+ * optional KYNIMO_OAUTH_AUDIENCE, KYNIMO_OAUTH_JWKS_URL, KYNIMO_OAUTH_SCOPES and
+ * KYNIMO_ALLOWED_ORIGINS (comma or space separated). Throws with the variable's name.
+ */
+export function remoteEnv(env: Record<string, string | undefined>): RemoteEnv {
+  const publicUrl = env.KYNIMO_PUBLIC_URL;
+  const issuer = env.KYNIMO_OAUTH_ISSUER;
+  if (!publicUrl) throw new Error("set KYNIMO_PUBLIC_URL to the MCP endpoint's public URL");
+  if (!issuer) throw new Error("set KYNIMO_OAUTH_ISSUER to the authorization server's issuer");
+  const resource = httpsUrl("KYNIMO_PUBLIC_URL", publicUrl);
+  httpsUrl("KYNIMO_OAUTH_ISSUER", issuer);
+  const audience = list(env.KYNIMO_OAUTH_AUDIENCE);
+  const allowedOrigins = list(env.KYNIMO_ALLOWED_ORIGINS);
+  for (const origin of allowedOrigins)
+    if (new URL(origin).origin !== origin)
+      throw new Error(`KYNIMO_ALLOWED_ORIGINS: ${origin} is not an origin (scheme://host[:port])`);
+  return {
+    resource,
+    issuer,
+    audience: audience.length > 0 ? audience : [resource.href],
+    ...(env.KYNIMO_OAUTH_JWKS_URL
+      ? { jwksUri: httpsUrl("KYNIMO_OAUTH_JWKS_URL", env.KYNIMO_OAUTH_JWKS_URL) }
+      : {}),
+    requiredScopes: list(env.KYNIMO_OAUTH_SCOPES),
+    allowedOrigins,
   };
 }

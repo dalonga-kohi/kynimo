@@ -5,7 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { AuthConfig } from "./auth.js";
 import { testIssuer } from "./auth.test-util.js";
-import { type Caller, createHttpHandler, type HttpOptions } from "./http.js";
+import { type Caller, createHttpHandler, type HttpOptions, remoteEnv } from "./http.js";
 import { createServer } from "./server.js";
 import { KynimoService, ServiceRuntime } from "./service.js";
 import { MemoryStore } from "./store.js";
@@ -26,8 +26,9 @@ beforeAll(async () => {
 
 let open: Server | undefined;
 afterEach(async () => {
-  await new Promise((r) => open?.close(r));
+  const server = open;
   open = undefined;
+  if (server) await new Promise((r) => server.close(r));
 });
 
 /** Serves the handler on a free loopback port; the resource URL is that port's `/mcp`. */
@@ -185,5 +186,51 @@ describe("remote MCP over Streamable HTTP", () => {
     await call(client, "create_project", { name: "Local", idempotency_key: "c", ...settings });
     expect((await store.list()).map((p) => p.name)).toEqual(["Local"]);
     expect(callers[0]).toEqual({ account: "local", actor: "local" });
+  });
+});
+
+describe("remoteEnv", () => {
+  const base = {
+    KYNIMO_PUBLIC_URL: "https://mcp.example.com/mcp",
+    KYNIMO_OAUTH_ISSUER: ISSUER,
+  };
+
+  it("defaults the audience to the public URL and reads lists", () => {
+    expect(remoteEnv(base)).toEqual({
+      resource: new URL("https://mcp.example.com/mcp"),
+      issuer: ISSUER,
+      audience: ["https://mcp.example.com/mcp"],
+      requiredScopes: [],
+      allowedOrigins: [],
+    });
+    const full = remoteEnv({
+      ...base,
+      KYNIMO_OAUTH_AUDIENCE: "a, b",
+      KYNIMO_OAUTH_SCOPES: "kynimo openid",
+      KYNIMO_OAUTH_JWKS_URL: "https://auth.example.com/jwks",
+      KYNIMO_ALLOWED_ORIGINS: "https://app.example.com",
+    });
+    expect(full).toMatchObject({
+      audience: ["a", "b"],
+      requiredScopes: ["kynimo", "openid"],
+      jwksUri: new URL("https://auth.example.com/jwks"),
+      allowedOrigins: ["https://app.example.com"],
+    });
+  });
+
+  it("names the variable that is missing or wrong", () => {
+    expect(() => remoteEnv({})).toThrow(/KYNIMO_PUBLIC_URL/);
+    expect(() => remoteEnv({ KYNIMO_PUBLIC_URL: base.KYNIMO_PUBLIC_URL })).toThrow(
+      /KYNIMO_OAUTH_ISSUER/,
+    );
+    expect(() => remoteEnv({ ...base, KYNIMO_PUBLIC_URL: "http://mcp.example.com/mcp" })).toThrow(
+      /https/,
+    );
+    expect(
+      remoteEnv({ ...base, KYNIMO_PUBLIC_URL: "http://localhost:8787/mcp" }).resource.port,
+    ).toBe("8787");
+    expect(() =>
+      remoteEnv({ ...base, KYNIMO_ALLOWED_ORIGINS: "https://app.example.com/x" }),
+    ).toThrow(/not an origin/);
   });
 });

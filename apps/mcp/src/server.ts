@@ -119,7 +119,7 @@ const WRITE = {
 /** Writes that can remove layers or discard work: clients should not auto-approve them. */
 const DESTRUCTIVE = { ...WRITE, destructiveHint: true } as const;
 
-/** Builds the MCP server on a service. The transport (stdio now, Streamable HTTP later) is the caller's. */
+/** Builds the MCP server on a service. The transport (stdio, or Streamable HTTP per request) is the caller's. */
 export function createServer(service: KynimoService): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
