@@ -254,7 +254,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Get write outcome",
       description:
-        "Whether a write with this idempotency_key landed: applied (with its version), rejected (with errors) or unknown (never arrived). Omit project_id to look up a create_project key.",
+        "Whether a write with this idempotency_key landed: applied (with its version), rejected (with errors), expired (too old to tell) or unknown (never arrived). Omit project_id to look up a create_project key.",
       inputSchema: z.object({
         project_id: ProjectIdSchema.optional(),
         idempotency_key: IdempotencyKeySchema,

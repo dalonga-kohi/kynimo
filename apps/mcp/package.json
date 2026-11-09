@@ -30,6 +30,11 @@
     "@kynimo/renderer": "workspace:*",
     "@kynimo/scene": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
+    "pg": "8.23.1",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "@types/pg": "8.15.6"
   }
 }
