@@ -1,3 +1,4 @@
+import type { Asset } from "./asset.js";
 import {
   applyChange,
   type Change,
@@ -9,7 +10,7 @@ import {
 } from "./changes.js";
 import type { Mask } from "./compositing.js";
 import type { Composition } from "./composition.js";
-import type { CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
+import type { AssetId, CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
 import type { Layer } from "./layer.js";
 import { BatchSchema, type Op } from "./ops.js";
 import type { Json } from "./primitives.js";
@@ -47,8 +48,8 @@ interface Ctx {
   draft: Project;
   changes: Change[];
   counter: number;
-  /** Layer, marker and composition ids are separate namespaces. Mask ids are per layer. */
-  usedIds: { layer: Set<string>; marker: Set<string>; comp: Set<string> };
+  /** Layer, marker, composition and asset ids are separate namespaces. Mask ids are per layer. */
+  usedIds: { layer: Set<string>; marker: Set<string>; comp: Set<string>; asset: Set<string> };
 }
 
 const emit = (ctx: Ctx, change: Change): void => {
@@ -60,10 +61,10 @@ const emit = (ctx: Ctx, change: Change): void => {
 /** Ids come from a counter carried by the caller (ADR-0009), skipping any id already in use. */
 function nextId(
   ctx: Ctx,
-  prefix: "layer" | "marker" | "comp" | "mask",
+  prefix: "layer" | "marker" | "comp" | "asset" | "mask",
   taken?: Set<string>,
 ): string {
-  const used = taken ?? ctx.usedIds[prefix as "layer" | "marker" | "comp"];
+  const used = taken ?? ctx.usedIds[prefix as "layer" | "marker" | "comp" | "asset"];
   let id: string;
   do {
     ctx.counter += 1;
@@ -340,7 +341,67 @@ function run(ctx: Ctx, op: Op, i: number): void {
       precomposeLayers(ctx, op, i);
       return;
     }
+    case "addAsset": {
+      if (op.id !== undefined && ctx.usedIds.asset.has(op.id))
+        fail([i, "id"], `asset id '${op.id}' is already in use; choose another or omit it`);
+      const id = (op.id ?? nextId(ctx, "asset")) as AssetId;
+      ctx.usedIds.asset.add(id);
+      const asset = { ...op.asset, id } as Asset;
+      emit(ctx, {
+        op: i,
+        type: "asset.insert",
+        assetId: id,
+        index: ctx.draft.assets.length,
+        asset,
+      });
+      return;
+    }
+    case "removeAsset": {
+      const index = ctx.draft.assets.findIndex((a) => a.id === op.asset);
+      const asset = ctx.draft.assets[index];
+      if (asset === undefined)
+        fail(
+          [i, "asset"],
+          `asset '${op.asset}' does not exist; list_assets shows this project's assets`,
+        );
+      const users = assetUsers(ctx.draft, asset);
+      if (users.length > 0)
+        fail(
+          [i, "asset"],
+          `asset '${asset.id}' is still used by ${users.length === 1 ? "layer" : "layers"} ${users
+            .slice(0, 5)
+            .map((u) => `'${u}'`)
+            .join(
+              ", ",
+            )}${users.length > 5 ? ", ..." : ""}; remove those layers or point them at another ${asset.type === "font" ? "font family" : "asset"} first`,
+        );
+      emit(ctx, {
+        op: i,
+        type: "asset.remove",
+        assetId: asset.id,
+        index,
+        asset: clone(asset),
+      });
+      return;
+    }
   }
+}
+
+/**
+ * Layers that need `asset`: image and audio layers naming it, and, for a font, text layers of its
+ * family when no other font asset of that family is left.
+ */
+function assetUsers(doc: Project, asset: Asset): string[] {
+  const layers = doc.compositions.flatMap((c) => c.layers);
+  if (asset.type !== "font")
+    return layers
+      .filter((l) => (l.type === "image" || l.type === "audio") && l.assetId === asset.id)
+      .map((l) => l.id);
+  const others = doc.assets.some(
+    (a) => a.type === "font" && a.id !== asset.id && a.family === asset.family,
+  );
+  if (others) return [];
+  return layers.filter((l) => l.type === "text" && l.font.family === asset.family).map((l) => l.id);
 }
 
 function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: number): void {
@@ -504,6 +565,7 @@ export function applyOps(doc: Project, ops: unknown, idCounter = 0): ApplyResult
       layer: new Set<string>(),
       marker: new Set<string>(),
       comp: new Set<string>(),
+      asset: new Set<string>(doc.assets.map((a) => a.id)),
     };
     for (const c of doc.compositions) {
       usedIds.comp.add(c.id);

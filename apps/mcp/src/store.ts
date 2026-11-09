@@ -35,6 +35,9 @@ export interface WriteResult {
   /** Optional: outcomes stored before precompose existed have none. */
   compositions_added?: string[];
   compositions_removed?: string[];
+  /** Optional: outcomes stored before asset ops existed have none. */
+  assets_added?: string[];
+  assets_removed?: string[];
 }
 
 /** One idempotency key and what it did. `fingerprint` identifies the request it was used with. */

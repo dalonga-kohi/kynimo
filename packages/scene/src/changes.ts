@@ -1,5 +1,6 @@
+import type { Asset } from "./asset.js";
 import type { Composition } from "./composition.js";
-import type { CompositionId, LayerId, MarkerId } from "./ids.js";
+import type { AssetId, CompositionId, LayerId, MarkerId } from "./ids.js";
 import type { Layer } from "./layer.js";
 import type { Json, Marker } from "./primitives.js";
 import type { Project } from "./project.js";
@@ -46,6 +47,9 @@ export type Change = { op: number } & (
       index: number;
       composition: Composition;
     }
+  /** An asset entry at `index` in the project's list; its bytes are not part of the document. */
+  | { type: "asset.insert"; assetId: AssetId; index: number; asset: Asset }
+  | { type: "asset.remove"; assetId: AssetId; index: number; asset: Asset }
 );
 
 export const invert = (c: Change): Change => {
@@ -66,6 +70,10 @@ export const invert = (c: Change): Change => {
       return { ...c, type: "composition.remove" };
     case "composition.remove":
       return { ...c, type: "composition.insert" };
+    case "asset.insert":
+      return { ...c, type: "asset.remove" };
+    case "asset.remove":
+      return { ...c, type: "asset.insert" };
   }
 };
 
@@ -194,6 +202,19 @@ export function applyChange(doc: Project, c: Change): string | undefined {
       if (!jsonEqual(found, c.composition))
         return `composition '${c.compositionId}' was changed by a later edit`;
       doc.compositions.splice(index, 1);
+      return undefined;
+    }
+    case "asset.insert": {
+      if (doc.assets.some((a) => a.id === c.assetId)) return `asset '${c.assetId}' already exists`;
+      doc.assets.splice(Math.min(c.index, doc.assets.length), 0, clone(c.asset));
+      return undefined;
+    }
+    case "asset.remove": {
+      const index = doc.assets.findIndex((a) => a.id === c.assetId);
+      const found = doc.assets[index];
+      if (found === undefined) return `asset '${c.assetId}' no longer exists`;
+      if (!jsonEqual(found, c.asset)) return `asset '${c.assetId}' was changed by a later edit`;
+      doc.assets.splice(index, 1);
       return undefined;
     }
   }

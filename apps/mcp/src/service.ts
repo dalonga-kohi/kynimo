@@ -1,10 +1,20 @@
+import { createHash } from "node:crypto";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
 import {
+  AssetInfoError,
+  readFontInfo,
+  readImageInfo,
+  sniffFontFormat,
+  sniffImageFormat,
+} from "@kynimo/renderer";
+import {
+  type Asset,
   applyBatch,
   type Change,
   type Composition,
   type Layer,
   LayerSelectorSchema,
+  MAX_COMPOSITION_SIZE,
   matchLayers,
   type OpError,
   type Project,
@@ -16,6 +26,7 @@ import {
   undo,
 } from "@kynimo/scene";
 import type { z } from "zod";
+import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import { fingerprint } from "./hash.js";
 import { describeMotion, type MotionDescription } from "./motion.js";
 import {
@@ -120,8 +131,14 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
   const markersRemoved = new Set<string>();
   const compsAdded = new Set<string>();
   const compsRemoved = new Set<string>();
+  const assetsAdded = new Set<string>();
+  const assetsRemoved = new Set<string>();
   for (const c of changes) {
-    if (c.type === "composition.insert") {
+    if (c.type === "asset.insert") {
+      if (!assetsRemoved.delete(c.assetId)) assetsAdded.add(c.assetId);
+    } else if (c.type === "asset.remove") {
+      if (!assetsAdded.delete(c.assetId)) assetsRemoved.add(c.assetId);
+    } else if (c.type === "composition.insert") {
       if (!compsRemoved.delete(c.compositionId)) compsAdded.add(c.compositionId);
     } else if (c.type === "composition.remove") {
       if (!compsAdded.delete(c.compositionId)) compsRemoved.add(c.compositionId);
@@ -147,6 +164,8 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
     markers_removed: [...markersRemoved],
     compositions_added: [...compsAdded],
     compositions_removed: [...compsRemoved],
+    assets_added: [...assetsAdded],
+    assets_removed: [...assetsRemoved],
   };
 }
 
@@ -209,6 +228,140 @@ export interface ServiceOptions {
   renderer?: FrameRenderer;
   /** Bytes the render cache may hold. Default 256 MB. */
   renderCacheBytes?: number;
+  /** Where asset bytes live; without one `upload_asset` answers `unavailable`. */
+  blobs?: BlobStore;
+  /** Why there is no blob store, for the `unavailable` message. */
+  blobsUnavailable?: string;
+  /** Asset bytes kept in memory for renders. Default 128 MB. */
+  assetCacheBytes?: number;
+}
+
+/** Largest file `upload_asset` takes, decoded (ADR-0031). */
+export const MAX_UPLOAD_BYTES = MAX_ASSET_BYTES;
+
+export interface UploadAssetInput {
+  name: string;
+  /** The file, base64-encoded. */
+  data: string;
+  id?: string | undefined;
+  /** Font family override; default: the family the file names. */
+  family?: string | undefined;
+}
+
+export interface AssetSummary {
+  id: string;
+  name: string;
+  type: Asset["type"];
+  sha256: string;
+  width?: number;
+  height?: number;
+  family?: string;
+  weight?: { min: number; max: number };
+  duration_ms?: number;
+  /** Layers that use it (for a font: text layers of its family), up to 20. */
+  used_by: string[];
+}
+
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** Decodes strict base64 (whitespace allowed), refusing anything Buffer would silently skip. */
+function decodeBase64(data: string): Uint8Array {
+  const compact = data.replace(/\s+/g, "");
+  if (compact.length % 4 !== 0 || !BASE64.test(compact))
+    throw new ToolError("invalid", "data is not valid base64", [
+      { path: ["data"], message: "must be standard base64 (A-Z a-z 0-9 + /, = padding)" },
+    ]);
+  if ((compact.length / 4) * 3 > MAX_UPLOAD_BYTES + 3) throw tooLarge();
+  return new Uint8Array(Buffer.from(compact, "base64"));
+}
+
+const tooLarge = () =>
+  new ToolError("invalid", `files may be at most ${MAX_UPLOAD_BYTES} bytes (8 MB) decoded`, [
+    { path: ["data"], message: `at most ${MAX_UPLOAD_BYTES} bytes decoded` },
+  ]);
+
+/**
+ * Rejections of the generated addAsset op, with paths in upload_asset's own fields: `id`,
+ * `name` and `family` as given, anything else derived from the file (`data`).
+ */
+function uploadError(e: ToolError): ToolError {
+  const field = (path: (string | number)[]): (string | number)[] => {
+    const [root, a, b, c] = path;
+    const key =
+      root === "ops" && a === 0
+        ? b === "asset"
+          ? c
+          : b
+        : root === "doc" && a === "assets"
+          ? c
+          : undefined;
+    if (key === undefined) return root === "ops" && a === 0 && b === "asset" ? ["data"] : path;
+    return key === "id" || key === "name" || key === "family" ? [key] : ["data"];
+  };
+  return new ToolError(
+    e.kind,
+    "the asset was rejected; nothing was added to the project. Fix the listed fields and retry with a new idempotency_key",
+    e.errors.map((err) => ({ ...err, path: field(err.path) })),
+    e.currentVersion,
+  );
+}
+
+const sha256Of = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+/** The asset entry (without id) the bytes describe; the fields come from the file itself. */
+function describeUpload(input: UploadAssetInput, bytes: Uint8Array) {
+  const sha256 = sha256Of(bytes);
+  const invalid = (message: string) =>
+    new ToolError("invalid", message, [{ path: ["data"], message }]);
+  try {
+    if (sniffImageFormat(bytes) !== null) {
+      if (input.family !== undefined)
+        throw new ToolError("invalid", "family applies to fonts only; this file is an image", [
+          { path: ["family"], message: "omit it for images" },
+        ]);
+      const info = readImageInfo(bytes);
+      if (info.width > MAX_COMPOSITION_SIZE || info.height > MAX_COMPOSITION_SIZE)
+        throw invalid(
+          `images may be at most ${MAX_COMPOSITION_SIZE}×${MAX_COMPOSITION_SIZE} pixels (got ${info.width}×${info.height}); downscale it before uploading`,
+        );
+      const ext = info.format === "png" ? "png" : "jpg";
+      return {
+        key: blobKey(sha256, ext),
+        contentType: `image/${info.format}`,
+        asset: {
+          type: "image" as const,
+          name: input.name,
+          uri: blobKey(sha256, ext),
+          sha256,
+          width: info.width,
+          height: info.height,
+        },
+      };
+    }
+    const font = sniffFontFormat(bytes);
+    if (font !== null || /^(wOFF|wOF2|ttcf)/.test(String.fromCharCode(...bytes.subarray(0, 4)))) {
+      const info = readFontInfo(bytes);
+      const ext = info.format === "opentype" ? "otf" : "ttf";
+      return {
+        key: blobKey(sha256, ext),
+        contentType: `font/${ext}`,
+        asset: {
+          type: "font" as const,
+          name: input.name,
+          uri: blobKey(sha256, ext),
+          sha256,
+          family: input.family ?? info.family,
+          weight: info.weight,
+        },
+      };
+    }
+  } catch (e) {
+    if (e instanceof AssetInfoError) throw invalid(e.message);
+    throw e;
+  }
+  throw invalid(
+    "unsupported file type: upload a PNG or JPEG image, or a TrueType/OpenType font (.ttf/.otf). Audio, video and SVG uploads are not available yet (see get_capabilities)",
+  );
 }
 
 export interface RenderFramesInput {
@@ -283,6 +436,9 @@ export class KynimoService {
   private readonly makeId: () => string;
   private readonly renderer: FrameRenderer | undefined;
   private readonly renders: RenderCache<CacheValue>;
+  private readonly blobs: BlobStore | undefined;
+  private readonly blobsUnavailable: string;
+  private readonly assetBytes: RenderCache<Uint8Array>;
 
   constructor(
     private readonly store: ProjectStore,
@@ -293,6 +449,119 @@ export class KynimoService {
     this.makeId = options.makeId ?? newProjectId;
     this.renderer = options.renderer;
     this.renders = new RenderCache(options.renderCacheBytes ?? 256 * 1024 * 1024);
+    this.blobs = options.blobs;
+    this.blobsUnavailable = options.blobsUnavailable ?? "this server has no asset storage";
+    this.assetBytes = new RenderCache(options.assetCacheBytes ?? 128 * 1024 * 1024);
+  }
+
+  /**
+   * Stores a file and adds its asset entry in one write. The bytes go to the blob store first,
+   * under their content key, so a retry (same key, same bytes) stores nothing new and replays the
+   * write; a rejected write leaves an unreferenced object, which is harmless (ADR-0031).
+   */
+  async uploadAsset(
+    meta: WriteMeta,
+    input: UploadAssetInput,
+  ): Promise<WriteReply & { asset: Asset }> {
+    const blobs = this.blobs;
+    if (blobs === undefined)
+      throw new ToolError("unavailable", `asset upload is unavailable: ${this.blobsUnavailable}`);
+    const bytes = decodeBase64(input.data);
+    if (bytes.length > MAX_UPLOAD_BYTES) throw tooLarge();
+    if (bytes.length === 0)
+      throw new ToolError("invalid", "data is empty", [{ path: ["data"], message: "empty file" }]);
+    const { key, contentType, asset } = describeUpload(input, bytes);
+    await this.load(meta.project_id);
+    await blobs.put(key, bytes, contentType);
+    const op = { op: "addAsset", ...(input.id === undefined ? {} : { id: input.id }), asset };
+    let reply: WriteReply;
+    try {
+      reply = await this.write(meta, { kind: "ops", ops: [op] });
+    } catch (e) {
+      throw e instanceof ToolError && e.kind === "invalid" ? uploadError(e) : e;
+    }
+    const id = reply.assets_added?.[0];
+    if (id === undefined) throw new ToolError("invalid", "the asset was not added");
+    return { ...reply, asset: { ...asset, id } as Asset };
+  }
+
+  async listAssets(projectId: string): Promise<{
+    project_id: string;
+    version: number;
+    assets: AssetSummary[];
+  }> {
+    const p = await this.load(projectId);
+    const layers = p.doc.compositions.flatMap((c) => c.layers);
+    const users = (a: Asset) =>
+      layers
+        .filter((l) =>
+          a.type === "font"
+            ? l.type === "text" && l.font.family === a.family
+            : (l.type === "image" || l.type === "audio") && l.assetId === a.id,
+        )
+        .slice(0, 20)
+        .map((l) => l.id as string);
+    return {
+      project_id: p.id,
+      version: p.version,
+      assets: p.doc.assets.map((a) => ({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        sha256: a.sha256,
+        ...(a.type === "image" ? { width: a.width, height: a.height } : {}),
+        ...(a.type === "font" ? { family: a.family, weight: a.weight } : {}),
+        ...(a.type === "audio" ? { duration_ms: a.durationMs } : {}),
+        used_by: users(a),
+      })),
+    };
+  }
+
+  /**
+   * Bytes of the image and font assets the composition draws (its precomps included), by id,
+   * for the renderer. Each is checked against its pin here, so a corrupt object reads as missing
+   * rather than as other pixels. Assets nothing in the tree uses are not loaded.
+   */
+  private async assetsFor(doc: Project, compositionId: string): Promise<Map<string, Uint8Array>> {
+    const images = new Set<string>();
+    const families = new Set<string>();
+    const seen = new Set<string>();
+    const walk = [compositionId];
+    for (let id = walk.pop(); id !== undefined; id = walk.pop()) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const l of doc.compositions.find((c) => c.id === id)?.layers ?? []) {
+        if (l.type === "image") images.add(l.assetId);
+        else if (l.type === "text") families.add(l.font.family);
+        else if (l.type === "precomp") walk.push(l.compositionId);
+      }
+    }
+    const used = doc.assets.filter((a) =>
+      a.type === "image" ? images.has(a.id) : a.type === "font" && families.has(a.family),
+    );
+    const out = new Map<string, Uint8Array>();
+    let total = 0;
+    for (const a of used) {
+      const failed = (why: string) =>
+        new ToolError("render_failed", `asset '${a.id}' (${a.uri}) ${why}; upload the file again`);
+      let bytes = this.assetBytes.get(a.sha256);
+      if (bytes === undefined) {
+        if (!isBlobKey(a.uri)) throw failed("was not stored by upload_asset");
+        const read = this.blobs === undefined ? undefined : await this.blobs.get(a.uri);
+        if (read === undefined) throw failed("is missing from this server's asset storage");
+        if (sha256Of(read) !== a.sha256) throw failed("is corrupt in this server's asset storage");
+        bytes = read;
+        this.assetBytes.set(a.sha256, bytes, bytes.byteLength);
+      }
+      total += bytes.byteLength;
+      if (total > RENDER_LIMITS.maxAssetBytes)
+        throw new ToolError(
+          "invalid",
+          `composition '${compositionId}' uses more than ${RENDER_LIMITS.maxAssetBytes} bytes of image and font assets, the limit for one render; use smaller files or fewer of them`,
+        );
+      out.set(a.id, bytes);
+    }
+    return out;
   }
 
   private async load(projectId: string): Promise<ProjectState> {
@@ -682,7 +951,10 @@ export class KynimoService {
     const misses = frames.filter((f) => !found.has(f));
     const cachedFrames = new Set(found.keys());
     if (misses.length > 0) {
-      const drawn = await this.draw(() => renderer.frames(p.doc, comp.id, misses, input.max_size));
+      const assets = await this.assetsFor(p.doc, comp.id);
+      const drawn = await this.draw(() =>
+        renderer.frames(p.doc, comp.id, misses, input.max_size, assets),
+      );
       for (const f of drawn) {
         found.set(f.frame, f);
         this.renders.set(key(f.frame), { kind: "frame", frame: f }, f.png.byteLength + 1024);
@@ -784,8 +1056,9 @@ export class KynimoService {
     let sheet: CapturedSheet;
     if (hit?.kind === "sheet") sheet = hit.sheet;
     else {
+      const assets = await this.assetsFor(p.doc, comp.id);
       sheet = await this.draw(() =>
-        renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }),
+        renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, assets),
       );
       this.renders.set(key, { kind: "sheet", sheet }, sheet.png.byteLength + 1024);
     }

@@ -13,6 +13,7 @@ import {
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { z } from "zod";
+import { MAX_ASSET_BASE64 } from "./blobs.js";
 import { RENDER_LIMITS } from "./render.js";
 
 /** Every layer type, from the schema itself so new types appear here automatically. */
@@ -66,6 +67,14 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
   const obj = o as z.ZodObject<z.ZodRawShape>;
   if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
   if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "addAsset")
+    return obj.extend({
+      asset: z
+        .looseObject({})
+        .describe(
+          "An asset entry without its id. Use upload_asset instead: it stores the bytes and derives these fields.",
+        ),
+    });
   if (name === "updateMask")
     return obj.extend({
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
@@ -75,7 +84,7 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask` and `updateMask.set`,
+ * `addMask.mask`, `updateMask.set` and `addAsset.asset`,
  * which the server validates in full against `OpSchema` before anything is applied.
  */
 export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);
@@ -251,6 +260,8 @@ export const WriteOutput = z.looseObject({
   /** Added after v1, so optional (ADR-0024). */
   compositions_added: z.array(z.string()).optional(),
   compositions_removed: z.array(z.string()).optional(),
+  assets_added: z.array(z.string()).optional(),
+  assets_removed: z.array(z.string()).optional(),
   replayed: z.boolean(),
 });
 
@@ -557,4 +568,43 @@ export const DescribeMotionOutput = z.looseObject({
     }),
   ),
   truncated_segments: z.number().int(),
+});
+
+export const UploadAssetInput = z.object({
+  ...writeMeta,
+  name: z.string().min(1).max(200).describe("Display name, e.g. the file name."),
+  data: z
+    .string()
+    .min(1)
+    .max(MAX_ASSET_BASE64)
+    .describe(
+      "The file, base64-encoded, at most 8 MB decoded: PNG or JPEG image, or TrueType/OpenType font. The type, size, font family and weights are read from the file.",
+    ),
+  id: z.string().min(1).max(64).optional().describe("Optional asset id; generated when omitted."),
+  family: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      "Fonts only: the family text layers name it by. Default: the family the file declares.",
+    ),
+});
+
+export const UploadAssetOutput = WriteOutput.extend({
+  asset: z.looseObject({ id: z.string(), type: z.string(), sha256: z.string() }),
+});
+
+export const ListAssetsOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  assets: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+      sha256: z.string(),
+      used_by: z.array(z.string()),
+    }),
+  ),
 });

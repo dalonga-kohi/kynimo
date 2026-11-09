@@ -28,11 +28,11 @@ export const RESOURCES = {
 const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
   image: {
     status: "renders",
-    note: `formats: ${RENDERER_FORMATS.image.join(", ")}; no tool adds one yet (see unavailable.asset_upload)`,
+    note: `formats: ${RENDERER_FORMATS.image.join(", ")}; add with upload_asset`,
   },
   font: {
     status: "renders",
-    note: `formats: ${RENDERER_FORMATS.font.join(", ")}; bundled without an asset: ${RENDERER_FORMATS.bundledFonts.join(", ")}`,
+    note: `formats: ${RENDERER_FORMATS.font.join(", ")}; add with upload_asset; bundled without an asset: ${RENDERER_FORMATS.bundledFonts.join(", ")}`,
   },
   audio: LAYER_SUPPORT.audio,
 };
@@ -45,8 +45,8 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  asset_upload: unavailable("upload_asset and list_assets arrive later in M3"),
   video: unavailable("video assets and layers arrive later in M3"),
+  audio_upload: unavailable("audio uploads arrive with video assets later in M3"),
   effects: unavailable(
     "blur, drop shadow, glow, color effects and adjustment layers that use them arrive in M4",
   ),
