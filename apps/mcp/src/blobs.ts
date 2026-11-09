@@ -9,6 +9,14 @@ import { AwsClient } from "aws4fetch";
  */
 export const BLOB_KEY_PATTERN = /^assets\/[0-9a-f]{64}\.(png|jpg|ttf|otf)$/;
 
+/** Largest asset file, decoded: what `upload_asset` takes (ADR-0031). */
+export const MAX_ASSET_BYTES = 8 * 1024 * 1024;
+
+/** Base64 characters for MAX_ASSET_BYTES, with room for line breaks a client may add. */
+export const MAX_ASSET_BASE64 = Math.ceil((Math.ceil(MAX_ASSET_BYTES / 3) * 4 * 1.05) / 4) * 4;
+
+export const isBlobKey = (key: string): boolean => BLOB_KEY_PATTERN.test(key);
+
 export const blobKey = (sha256: string, ext: "png" | "jpg" | "ttf" | "otf"): string =>
   `assets/${sha256}.${ext}`;
 
@@ -120,6 +128,8 @@ export class S3BlobStore implements BlobStore {
   constructor(
     config: S3Config,
     private readonly send: Fetch = (r) => fetch(r),
+    /** Per request; a stalled bucket must not hang an upload or a render. */
+    private readonly timeoutMs = 30_000,
   ) {
     this.client = new AwsClient({
       accessKeyId: config.accessKeyId,
@@ -134,7 +144,18 @@ export class S3BlobStore implements BlobStore {
   private async request(method: "GET" | "PUT", key: string, init: RequestInit = {}) {
     checkKey(key);
     const signed = await this.client.sign(this.base + key, { method, ...init });
-    return this.send(signed);
+    try {
+      return await this.send(new Request(signed, { signal: AbortSignal.timeout(this.timeoutMs) }));
+    } catch (e) {
+      const name = (e as { name?: unknown }).name;
+      if (name === "TimeoutError" || name === "AbortError")
+        throw new Error(
+          `asset storage: ${method} ${key} timed out after ${this.timeoutMs / 1000} s`,
+        );
+      throw new Error(
+        `asset storage: ${method} ${key} failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   async put(key: string, bytes: Uint8Array, contentType: string): Promise<void> {
@@ -146,11 +167,13 @@ export class S3BlobStore implements BlobStore {
         "x-amz-content-sha256": createHash("sha256").update(bytes).digest("hex"),
       },
     });
+    await res.body?.cancel();
     if (!res.ok) throw new Error(`asset storage: storing ${key} failed with HTTP ${res.status}`);
   }
 
   async get(key: string): Promise<Uint8Array | undefined> {
     const res = await this.request("GET", key);
+    if (res.status === 404 || !res.ok) await res.body?.cancel();
     if (res.status === 404) return undefined;
     if (!res.ok) throw new Error(`asset storage: reading ${key} failed with HTTP ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());

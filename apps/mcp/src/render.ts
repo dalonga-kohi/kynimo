@@ -26,6 +26,8 @@ export const RENDER_LIMITS = {
   maxSheetSize: 2048,
   /** Transparent pixels between cells. */
   sheetGap: 4,
+  /** Bytes of image and font assets one render may load (those its composition tree uses). */
+  maxAssetBytes: 64 * 1024 * 1024,
 } as const;
 
 /** Draws documents. `@kynimo/capture` in production; tests use fakes. */

@@ -84,8 +84,13 @@ function pngSize(r: Reader) {
 /** Start-of-frame markers: baseline, progressive, lossless and arithmetic variants. */
 const SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
 
+/**
+ * The size the image decodes to. CanvasKit applies the EXIF orientation of a JPEG, and
+ * orientations 5–8 turn it a quarter, swapping width and height; PNG `eXIf` is not applied.
+ */
 function jpegSize(r: Reader): { width: number; height: number } | undefined {
   let o = 2;
+  let orientation = 1;
   while (o < r.bytes.length) {
     if (r.u8(o) !== 0xff) fail(r, "has a malformed segment");
     let marker = r.u8(o + 1);
@@ -100,10 +105,55 @@ function jpegSize(r: Reader): { width: number; height: number } | undefined {
     if (marker === 0xd9 || marker === 0xda) return undefined;
     const length = r.u16(o);
     if (length < 2) fail(r, "has a malformed segment");
-    if (SOF.has(marker)) return { height: r.u16(o + 3), width: r.u16(o + 5) };
+    if (marker === 0xe1 && orientation === 1) orientation = exifOrientation(r, o + 2, length - 2);
+    if (SOF.has(marker)) {
+      const height = r.u16(o + 3);
+      const width = r.u16(o + 5);
+      return orientation >= 5 && orientation <= 8
+        ? { width: height, height: width }
+        : { width, height };
+    }
     o += length;
   }
   return undefined;
+}
+
+const EXIF_ORIENTATION = 0x0112;
+
+/** The orientation (1–8) in an APP1 Exif segment at `start`; 1 when absent or unreadable. */
+function exifOrientation(r: Reader, start: number, size: number): number {
+  const end = start + size;
+  if (size < 14 || end > r.bytes.length) return 1;
+  if (r.tag(start) !== "Exif" || r.u16(start + 4) !== 0) return 1;
+  const tiff = start + 6;
+  const order = r.tag(tiff).slice(0, 2);
+  if (order !== "II" && order !== "MM") return 1;
+  const le = order === "II";
+  const u16 = (o: number) => {
+    if (o + 2 > end) return undefined;
+    const v = r.u16(o);
+    return le ? ((v & 0xff) << 8) | (v >> 8) : v;
+  };
+  const u32 = (o: number) => {
+    const hi = u16(le ? o + 2 : o);
+    const lo = u16(le ? o : o + 2);
+    return hi === undefined || lo === undefined ? undefined : hi * 0x10000 + lo;
+  };
+  if (u16(tiff + 2) !== 42) return 1;
+  const ifdOffset = u32(tiff + 4);
+  if (ifdOffset === undefined) return 1;
+  const ifd = tiff + ifdOffset;
+  const count = u16(ifd);
+  if (count === undefined) return 1;
+  for (let i = 0; i < count; i++) {
+    const entry = ifd + 2 + i * 12;
+    const tag = u16(entry);
+    if (tag === undefined) return 1;
+    if (tag !== EXIF_ORIENTATION) continue;
+    const value = u16(entry + 8);
+    return value !== undefined && value >= 1 && value <= 8 ? value : 1;
+  }
+  return 1;
 }
 
 const NAME_TYPOGRAPHIC_FAMILY = 16;

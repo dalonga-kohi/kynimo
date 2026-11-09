@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -103,6 +104,30 @@ describe("uploaded assets in rendered frames", () => {
     const image = await frame0(withImage);
     expect(image).toMatchObject({ skipped: [], warnings: [] });
     expect(image.pixels).toBe((await frame0(withSolid)).pixels);
+  }, 60_000);
+
+  it("draws a camera JPEG turned by its EXIF orientation, with the turned size recorded", async () => {
+    // 40×20 pixels stored, orientation 6: it decodes (and draws) 20×40.
+    const jpeg = new Uint8Array(
+      readFileSync(new URL("./fixtures/rotated-40x20-orientation-6.jpg", import.meta.url)),
+    );
+    const p = await project("jpeg");
+    const up = await call("upload_asset", {
+      project_id: p,
+      base_version: 1,
+      idempotency_key: "u",
+      name: "photo.jpg",
+      data: base64(jpeg),
+    });
+    expect(up.asset).toMatchObject({ type: "image", width: 20, height: 40 });
+    await call("add_layer", {
+      project_id: p,
+      base_version: 2,
+      idempotency_key: "l",
+      composition: "main",
+      layer: { type: "image", name: "Photo", assetId: (up.asset as { id: string }).id },
+    });
+    expect(await frame0(p)).toMatchObject({ skipped: [], warnings: [] });
   }, 60_000);
 
   it("shapes text with an uploaded font exactly like the same bundled file", async () => {

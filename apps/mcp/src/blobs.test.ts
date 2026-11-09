@@ -93,6 +93,18 @@ describe("S3BlobStore", () => {
     expect(auth).toContain("x-amz-content-sha256");
   });
 
+  it("times out a stalled request, naming the key", async () => {
+    const store = new S3BlobStore(
+      config,
+      (r) =>
+        new Promise((_, reject) =>
+          r.signal.addEventListener("abort", () => reject(r.signal.reason)),
+        ),
+      20,
+    );
+    await expect(store.get(KEY)).rejects.toThrow(`asset storage: GET ${KEY} timed out`);
+  });
+
   it("reports other statuses by code only", async () => {
     const store = new S3BlobStore(
       config,

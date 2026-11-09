@@ -26,7 +26,7 @@ import {
   undo,
 } from "@kynimo/scene";
 import type { z } from "zod";
-import { type BlobStore, blobKey } from "./blobs.js";
+import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import { fingerprint } from "./hash.js";
 import { describeMotion, type MotionDescription } from "./motion.js";
 import {
@@ -237,7 +237,7 @@ export interface ServiceOptions {
 }
 
 /** Largest file `upload_asset` takes, decoded (ADR-0031). */
-export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = MAX_ASSET_BYTES;
 
 export interface UploadAssetInput {
   name: string;
@@ -280,6 +280,32 @@ const tooLarge = () =>
     { path: ["data"], message: `at most ${MAX_UPLOAD_BYTES} bytes decoded` },
   ]);
 
+/**
+ * Rejections of the generated addAsset op, with paths in upload_asset's own fields: `id`,
+ * `name` and `family` as given, anything else derived from the file (`data`).
+ */
+function uploadError(e: ToolError): ToolError {
+  const field = (path: (string | number)[]): (string | number)[] => {
+    const [root, a, b, c] = path;
+    const key =
+      root === "ops" && a === 0
+        ? b === "asset"
+          ? c
+          : b
+        : root === "doc" && a === "assets"
+          ? c
+          : undefined;
+    if (key === undefined) return path;
+    return key === "id" || key === "name" || key === "family" ? [key] : ["data"];
+  };
+  return new ToolError(
+    e.kind,
+    "the asset was rejected; nothing was added to the project. Fix the listed fields and retry with a new idempotency_key",
+    e.errors.map((err) => ({ ...err, path: field(err.path) })),
+    e.currentVersion,
+  );
+}
+
 const sha256Of = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 /** The asset entry (without id) the bytes describe; the fields come from the file itself. */
@@ -289,6 +315,10 @@ function describeUpload(input: UploadAssetInput, bytes: Uint8Array) {
     new ToolError("invalid", message, [{ path: ["data"], message }]);
   try {
     if (sniffImageFormat(bytes) !== null) {
+      if (input.family !== undefined)
+        throw new ToolError("invalid", "family applies to fonts only; this file is an image", [
+          { path: ["family"], message: "omit it for images" },
+        ]);
       const info = readImageInfo(bytes);
       if (info.width > MAX_COMPOSITION_SIZE || info.height > MAX_COMPOSITION_SIZE)
         throw invalid(
@@ -444,7 +474,12 @@ export class KynimoService {
     await this.load(meta.project_id);
     await blobs.put(key, bytes, contentType);
     const op = { op: "addAsset", ...(input.id === undefined ? {} : { id: input.id }), asset };
-    const reply = await this.write(meta, { kind: "ops", ops: [op] });
+    let reply: WriteReply;
+    try {
+      reply = await this.write(meta, { kind: "ops", ops: [op] });
+    } catch (e) {
+      throw e instanceof ToolError && e.kind === "invalid" ? uploadError(e) : e;
+    }
     const id = reply.assets_added?.[0];
     if (id === undefined) throw new ToolError("invalid", "the asset was not added");
     return { ...reply, asset: { ...asset, id } as Asset };
@@ -483,26 +518,47 @@ export class KynimoService {
   }
 
   /**
-   * Bytes of the document's image and font assets, by id, for the renderer. Each is checked
-   * against its pin here, so a corrupt object reads as missing rather than as other pixels.
+   * Bytes of the image and font assets the composition draws (its precomps included), by id,
+   * for the renderer. Each is checked against its pin here, so a corrupt object reads as missing
+   * rather than as other pixels. Assets nothing in the tree uses are not loaded.
    */
-  private async assetsFor(doc: Project): Promise<Map<string, Uint8Array>> {
+  private async assetsFor(doc: Project, compositionId: string): Promise<Map<string, Uint8Array>> {
+    const images = new Set<string>();
+    const families = new Set<string>();
+    const seen = new Set<string>();
+    const walk = [compositionId];
+    for (let id = walk.pop(); id !== undefined; id = walk.pop()) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const l of doc.compositions.find((c) => c.id === id)?.layers ?? []) {
+        if (l.type === "image") images.add(l.assetId);
+        else if (l.type === "text") families.add(l.font.family);
+        else if (l.type === "precomp") walk.push(l.compositionId);
+      }
+    }
+    const used = doc.assets.filter((a) =>
+      a.type === "image" ? images.has(a.id) : a.type === "font" && families.has(a.family),
+    );
     const out = new Map<string, Uint8Array>();
-    const drawn = doc.assets.filter((a) => a.type === "image" || a.type === "font");
-    if (drawn.length === 0) return out;
-    const blobs = this.blobs;
-    for (const a of drawn) {
+    let total = 0;
+    for (const a of used) {
+      const failed = (why: string) =>
+        new ToolError("render_failed", `asset '${a.id}' (${a.uri}) ${why}; upload the file again`);
       let bytes = this.assetBytes.get(a.sha256);
       if (bytes === undefined) {
-        const read = blobs === undefined ? undefined : await blobs.get(a.uri);
-        if (read === undefined || sha256Of(read) !== a.sha256)
-          throw new ToolError(
-            "render_failed",
-            `the bytes of asset '${a.id}' (${a.uri}) are ${read === undefined ? "missing from" : "corrupt in"} this server's asset storage; upload the file again`,
-          );
+        if (!isBlobKey(a.uri)) throw failed("was not stored by upload_asset");
+        const read = this.blobs === undefined ? undefined : await this.blobs.get(a.uri);
+        if (read === undefined) throw failed("is missing from this server's asset storage");
+        if (sha256Of(read) !== a.sha256) throw failed("is corrupt in this server's asset storage");
         bytes = read;
         this.assetBytes.set(a.sha256, bytes, bytes.byteLength);
       }
+      total += bytes.byteLength;
+      if (total > RENDER_LIMITS.maxAssetBytes)
+        throw new ToolError(
+          "invalid",
+          `composition '${compositionId}' uses more than ${RENDER_LIMITS.maxAssetBytes} bytes of image and font assets, the limit for one render; use smaller files or fewer of them`,
+        );
       out.set(a.id, bytes);
     }
     return out;
@@ -895,7 +951,7 @@ export class KynimoService {
     const misses = frames.filter((f) => !found.has(f));
     const cachedFrames = new Set(found.keys());
     if (misses.length > 0) {
-      const assets = await this.assetsFor(p.doc);
+      const assets = await this.assetsFor(p.doc, comp.id);
       const drawn = await this.draw(() =>
         renderer.frames(p.doc, comp.id, misses, input.max_size, assets),
       );
@@ -1000,7 +1056,7 @@ export class KynimoService {
     let sheet: CapturedSheet;
     if (hit?.kind === "sheet") sheet = hit.sheet;
     else {
-      const assets = await this.assetsFor(p.doc);
+      const assets = await this.assetsFor(p.doc, comp.id);
       sheet = await this.draw(() =>
         renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, assets),
       );

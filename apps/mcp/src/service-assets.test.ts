@@ -96,7 +96,10 @@ describe("assets", () => {
       service.uploadAsset(meta(1, "f1"), { name: "inter.ttf", data: base64(interTtf()) }),
     );
     expect(clash.kind).toBe("invalid");
-    expect(clash.errors[0]?.message).toMatch(/bundled font family/);
+    expect(clash.errors[0]).toMatchObject({
+      path: ["family"],
+      message: expect.stringMatching(/bundled font family/),
+    });
     const r = await service.uploadAsset(meta(1, "f2"), {
       name: "inter.ttf",
       data: base64(interTtf()),
@@ -138,6 +141,13 @@ describe("assets", () => {
       expect(e.message + JSON.stringify(e.errors), String(message)).toMatch(message);
     }
     expect((await service.getProject(project_id)).version).toBe(1);
+  });
+
+  it("refuses family for an image", async () => {
+    const e = await rejection(
+      service.uploadAsset(meta(1, "x"), { name: "a", data: base64(solidPng(2, 2)), family: "F" }),
+    );
+    expect(e.errors).toEqual([{ path: ["family"], message: expect.any(String) }]);
   });
 
   it("is unavailable without a blob store, saying why", async () => {
@@ -182,28 +192,87 @@ describe("assets", () => {
     expect(removed.errors[0]?.message).toMatch(/still used by layer 'pic'/);
   });
 
-  it("gives renders the bytes of the document's assets, and fails clearly when they are gone", async () => {
+  const imageLayer = (assetId: string) =>
+    withLayerDefaults({ type: "image", name: assetId, assetId }, {
+      width: 320,
+      height: 180,
+      durationFrames: 30,
+    } as never);
+
+  it("gives renders the bytes of the assets the composition tree uses, and only those", async () => {
     const png = solidPng(3, 3);
     await service.uploadAsset(meta(1, "u"), { name: "a", data: base64(png), id: "a" });
+    await service.uploadAsset(meta(2, "u2"), { name: "b", data: base64(solidPng(4, 4)), id: "b" });
+    // An entry nothing draws, whose bytes this server never had: it must not block renders.
+    await service.write(meta(3, "x"), {
+      kind: "ops",
+      ops: [
+        {
+          op: "addAsset",
+          id: "stray",
+          asset: {
+            type: "image",
+            name: "stray",
+            uri: "assets/stray.png",
+            sha256: "c".repeat(64),
+            width: 1,
+            height: 1,
+          },
+        },
+        { op: "addLayer", composition: "main", id: "pic", layer: imageLayer("a") },
+        { op: "addLayer", composition: "main", id: "other", layer: imageLayer("b") },
+        { op: "precompose", layers: ["other"], id: "inner" },
+      ],
+    });
     await service.renderFrames(project_id, { frames: [0], max_size: 64 });
-    expect(renderer.given[0]).toEqual(new Map([["a", png]]));
+    expect([...(renderer.given[0]?.keys() ?? [])].sort()).toEqual(["a", "b"]);
+    expect(renderer.given[0]?.get("a")).toEqual(png);
+  });
 
-    // A server whose storage lost the object (or never had it) refuses to draw other pixels.
+  it("fails a render clearly when a used asset's bytes are gone or were never uploaded", async () => {
     const empty = new KynimoService(new MemoryStore(), "agent", {
       blobs: new MemoryBlobStore(),
       renderer,
     });
     const { id } = await empty.createProject({ name: "P", idempotency_key: "c", ...settings });
-    const doc = (await service.getScene(project_id, "full")) as { document: Project };
-    const { id: _, ...entry } = doc.document.assets[0] as Project["assets"][number];
+    const entry = (uri: string) => ({
+      type: "image",
+      name: "x",
+      uri,
+      sha256: "d".repeat(64),
+      width: 1,
+      height: 1,
+    });
     await empty.write(
       { project_id: id, base_version: 1, idempotency_key: "a" },
-      { kind: "ops", ops: [{ op: "addAsset", id: "a", asset: entry }] },
+      {
+        kind: "ops",
+        ops: [
+          { op: "addAsset", id: "a", asset: entry(`assets/${"d".repeat(64)}.png`) },
+          { op: "addLayer", composition: "main", layer: imageLayer("a") },
+        ],
+      },
     );
-    const e = await rejection(empty.renderFrames(id, { frames: [0], max_size: 64 }));
-    expect(e).toMatchObject({
+    expect(await rejection(empty.renderFrames(id, { frames: [0], max_size: 64 }))).toMatchObject({
       kind: "render_failed",
-      message: expect.stringMatching(/missing from/),
+      message: expect.stringMatching(/'a'.*missing from/),
+    });
+    // An entry written by hand (apply_ops) with a key upload_asset never makes.
+    await empty.write(
+      { project_id: id, base_version: 2, idempotency_key: "b" },
+      {
+        kind: "ops",
+        ops: [
+          { op: "addAsset", id: "hand", asset: entry("assets/logo.png") },
+          { op: "addLayer", composition: "main", layer: imageLayer("hand") },
+          { op: "removeLayer", layer: { name: "a" } },
+          { op: "removeAsset", asset: "a" },
+        ],
+      },
+    );
+    expect(await rejection(empty.renderFrames(id, { frames: [0], max_size: 64 }))).toMatchObject({
+      kind: "render_failed",
+      message: expect.stringMatching(/'hand'.*not stored by upload_asset/),
     });
   });
 });

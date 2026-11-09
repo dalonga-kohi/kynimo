@@ -14,15 +14,16 @@ The format has image, font and audio assets since M2: an entry with a store-rela
 - **Object storage: S3-compatible, Cloudflare R2 first.** A `BlobStore` interface (`put`, `get`) with three adapters:
   - memory (default, tests);
   - one file per key under `<dir>/blobs` with `--dir`;
-  - an S3-compatible bucket configured by `KYNIMO_S3_*`. It uses path-style URLs and SigV4 signing through `aws4fetch` (MIT, about 65 KB, no dependencies). It signs a SHA-256 of the body rather than `UNSIGNED-PAYLOAD`, so the bucket rejects bytes altered in transit. The same code serves R2, S3, MinIO and Tigris. R2 comes first because it has no egress fees, and renders and previews read assets often.
+  - an S3-compatible bucket configured by `KYNIMO_S3_*`, with a 30 s timeout per request, so a stalled bucket can't hang an upload or a render. It uses path-style URLs and SigV4 signing through `aws4fetch` (MIT, about 65 KB, no dependencies). It signs a SHA-256 of the body rather than `UNSIGNED-PAYLOAD`, so the bucket rejects bytes altered in transit. The same code serves R2, S3, MinIO and Tigris. R2 comes first because it has no egress fees, and renders and previews read assets often.
   - Postgres projects without a bucket have uploads switched off (`unavailable`, with the reason), never put in memory that other processes can't see.
 - **`upload_asset` takes base64 inline, at most 8 MB decoded,** so it works over stdio and any client today. Presigned upload URLs come with the remote transport. The server reads the type and metadata from the file and never trusts the client for them:
-  - PNG/JPEG size from IHDR/SOF;
+  - PNG/JPEG size from IHDR/SOF. For a JPEG this is the size it decodes to: CanvasKit applies EXIF orientation, so orientations 5–8 swap width and height, as camera photos usually need;
   - the font family (name id 16, else 1) and weights (`fvar` wght range, rounded inward to steps of 100, else `OS/2` weight class) from TrueType/OpenType tables.
-  - The only override is `family`, for a font whose own name clashes with a bundled family.
+  - The only override is `family`, for a font whose own name clashes with a bundled family. It is refused for images. Rejections of the generated op are reported on `upload_asset`'s own fields (`family`, `id`, `name`, else `data`).
+  - The schema declares the base64 length limit, so a client sees it and oversized calls fail at the boundary.
   - Accepted types are PNG, JPEG, TTF and OTF: exactly what renders. SVG comes with SVG import (M4), audio with the FFmpeg video item.
 - **Order and retries.** The server validates the file, stores the bytes, then writes the op through the normal write path (`base_version`, idempotency key, fingerprint over the entry, which includes the hash). A retry with the same key and bytes stores nothing new and replays. The same key with other bytes is `key_reused`. A rejected write leaves an unreferenced object, which is harmless.
-- **Renders get the bytes.** Before calling capture, the service loads the bytes of the document's image and font assets from the blob store into an in-memory LRU (128 MB by default) and checks each against its pin. Missing or corrupt bytes are a `render_failed` that names the asset, never other pixels. Capture serves them from memory, so nothing in the render path touches the network.
+- **Renders get the bytes.** Before calling capture, the service loads the bytes of the assets the rendered composition tree uses: image layers, and font files of the families its text uses, following precomps. Assets nothing draws are not loaded, so a stray entry never blocks a render. A render may load at most `RENDER_LIMITS.maxAssetBytes` (64 MB). The service caches them in an in-memory LRU (128 MB by default) and checks each against its pin. Missing or corrupt bytes are a `render_failed` that names the asset, never other pixels. Capture serves them from memory, so nothing in the render path touches the network.
 - `list_assets` returns each entry's id, type, hash and metadata, and the layers that use it.
 
 ## Consequences

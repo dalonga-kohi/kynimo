@@ -166,7 +166,6 @@ export function createServer(service: KynimoService): McpServer {
     guard(async (a) => service.getProject(a.project_id)),
   );
 
-  // Read
   server.registerTool(
     "upload_asset",
     {
@@ -200,6 +199,7 @@ export function createServer(service: KynimoService): McpServer {
     guard(async ({ project_id }) => ({ ...(await service.listAssets(project_id)) })),
   );
 
+  // Read
   server.registerTool(
     "get_scene",
     {

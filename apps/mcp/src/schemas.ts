@@ -13,6 +13,7 @@ import {
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { z } from "zod";
+import { MAX_ASSET_BASE64 } from "./blobs.js";
 import { RENDER_LIMITS } from "./render.js";
 
 /** Every layer type, from the schema itself so new types appear here automatically. */
@@ -575,6 +576,7 @@ export const UploadAssetInput = z.object({
   data: z
     .string()
     .min(1)
+    .max(MAX_ASSET_BASE64)
     .describe(
       "The file, base64-encoded, at most 8 MB decoded: PNG or JPEG image, or TrueType/OpenType font. The type, size, font family and weights are read from the file.",
     ),
