@@ -14,6 +14,9 @@ async function connect(): Promise<Client> {
   await server.connect(serverSide);
   const client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(clientSide);
+  // Listing caches the client's output validators, so every call below is checked against the
+  // (compacted) output schemas the way an SDK-based client checks it.
+  await client.listTools();
   return client;
 }
 

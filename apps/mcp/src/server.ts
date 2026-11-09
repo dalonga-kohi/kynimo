@@ -5,6 +5,7 @@ import { z } from "zod";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
 import { withLayerDefaults } from "./defaults.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
+import { compactToolListing } from "./listing.js";
 import {
   AddLayerInput,
   AddMaskInput,
@@ -121,6 +122,7 @@ export function createServer(service: KynimoService): McpServer {
     { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: INSTRUCTIONS },
   );
+  compactToolListing(server);
 
   // Project
   server.registerTool(
