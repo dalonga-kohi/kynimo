@@ -1,6 +1,6 @@
 # 0024 — Local MCP server: store, write contract and compact schemas
 
-- Status: accepted (implements ADR-0018's retry-safe writes for the first M3 tools; amends ADR-0010's note that the store owns `SceneState`)
+- Status: accepted (implements ADR-0018's retry-safe writes for the first M3 tools; amends ADR-0010's note that the store owns `SceneState`; store locking amended by ADR-0029)
 - Date: 2026-11-08
 
 ## Context

@@ -81,17 +81,17 @@ Simple editor in v1: sign in, project list, viewer with timeline scrubbing, laye
 
 ## Package map (target)
 
-| Path                  | Package                                                                                                                         | Created in       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                         | M1 (stub exists) |
-| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators                                 | M1               |
-| `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                            | M2               |
-| `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                 | M2               |
-| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project store interface, render tools via capture (ADR-0024, ADR-0026) | M3 (local stdio) |
-| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                             | M5               |
-| `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                              | M6               |
-| `apps/worker`         | render/export workers                                                                                                           | M7               |
-| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                                                      | M8               |
+| Path                  | Package                                                                                                                                         | Created in       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `packages/scene`      | `@kynimo/scene` — schema, types, operations, migrations                                                                                         | M1 (stub exists) |
+| `packages/engine`     | `@kynimo/engine` — timeline, interpolation, springs, behaviors, text animators, shape operators                                                 | M1               |
+| `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2               |
+| `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2               |
+| `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3 (local stdio) |
+| `packages/guidelines` | `@kynimo/guidelines` — tokens, packs, quality rules                                                                                             | M5               |
+| `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6               |
+| `apps/worker`         | render/export workers                                                                                                                           | M7               |
+| `apps/web`            | web app (Next.js on Vercel, ADR-0007) — placeholder exists                                                                                      | M8               |
 
 ## Invariants
 
@@ -105,7 +105,7 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                         | done      |
 | Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012) | M6        |
 | Hosting for API/MCP and workers                                                                      | M3 / M7   |
-| Database for project store (Postgres flavor)                                                         | M3        |
+| ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                          | done      |
 | Auth / OAuth provider                                                                                | M3        |
 | Job queue                                                                                            | M7        |
 | Object storage (M3, assets) + CDN for previews (M7)                                                  | M3 / M7   |
