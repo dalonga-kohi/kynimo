@@ -87,7 +87,8 @@ describe("invert", () => {
     const [x, y] = applyToPoint(inverse, applyToPoint(m, [7, 11]));
     expect(x).toBeCloseTo(7, 12);
     expect(y).toBeCloseTo(11, 12);
-    expect(invert(IDENTITY)).toEqual(IDENTITY);
+    // `+ 0` turns -0 (from negating a zero entry) into 0.
+    expect(invert(IDENTITY)?.map((x) => x + 0)).toEqual(IDENTITY);
     expect(invert([0, 0, 0, 1, 5, 5])).toBeNull();
   });
 });
