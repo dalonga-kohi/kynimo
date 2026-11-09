@@ -58,7 +58,7 @@ Status:
 | Render switches: hidden, solo                             | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color              | Layer switches   | beta   |
 
-Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload.
+Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload. Limits and storage: ADR-0032 (frames as JPEG at most 1920 px and 60 fps, clips up to 60 s, audio as 48 kHz FLAC).
 
 ## 3. Transform, hierarchy and compositing
 

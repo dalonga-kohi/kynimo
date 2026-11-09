@@ -33,7 +33,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] MCP resources: scene schema, preset/component/token catalogs; capability manifest as a resource and `get_capabilities` tool (ADR-0018) → ADR-0028: support tables in the renderer typed over the scene unions, manifest + `kynimo://capabilities`, scene/op/layer schema resources; catalog resources are listed on their M4–M6 items
 - [x] Project store (database) + versioned documents + optimistic concurrency; idempotency keys on every write, `get_write_outcome`, undo history persisted with the project (ADR-0018) → ADR-0029: Postgres on `pg` (PGlite in tests), a snapshot per version, row-locked transactions in the store, keys kept 7 days then `expired`
 - [x] Asset storage (object storage decision) + `upload_asset` / `list_assets` (images, fonts; SVG moves to SVG import in M4); the tool listing was slimmed first → ADR-0030: lossless compaction of `tools/list`, 59.8 → 52.2 KB; ADR-0031: content-addressed blobs (memory, `--dir`, S3-compatible with R2 first), `addAsset`/`removeAsset` ops, base64 uploads up to 8 MB with metadata read from the file
-- [ ] Video assets: FFmpeg pre-decode to frames at upload; draw video layers; audio uploads (duration from FFmpeg)
+- [x] Video assets: FFmpeg pre-decode to frames at upload; draw video layers; audio uploads (duration from FFmpeg) → ADR-0032: format v4 (video asset with a pinned frame manifest, video layer), exact rational source frames, system FFmpeg sandboxed by protocol/format whitelists, JPEG frames ≤ 1920 px / 60 fps / 60 s, FLAC audio, retries fingerprinted on the source bytes
 - [ ] Remote transport (Streamable HTTP) + OAuth
 - [ ] Deploy to the first hosting environment; connect from Claude and ChatGPT
 
