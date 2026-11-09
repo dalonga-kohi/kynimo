@@ -1,5 +1,6 @@
 export { bindPaints, type PaintOp } from "./binding.js";
 export { type CanvasKit, loadCanvasKit } from "./canvaskit.js";
+export * from "./capabilities.js";
 export { compositeReference } from "./compositor/reference.js";
 export {
   type Compositor,

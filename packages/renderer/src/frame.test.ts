@@ -1,5 +1,5 @@
 import { evaluateFrame } from "@kynimo/engine";
-import { AssetSchema } from "@kynimo/scene";
+import { AssetSchema, LayerSchema } from "@kynimo/scene";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit } from "./canvaskit.js";
 import {
@@ -10,6 +10,7 @@ import {
   pixel,
   sha256,
 } from "./canvaskit.test-util.js";
+import { LAYER_SUPPORT } from "./capabilities.js";
 import { compositeReference } from "./compositor/reference.js";
 import {
   composition,
@@ -25,6 +26,7 @@ import {
   shapeLayer,
   solidPaint,
   stroke,
+  textLayer,
   transform,
 } from "./fixtures.test-util.js";
 import type { FontLibrary } from "./fonts.js";
@@ -431,6 +433,57 @@ describe("precomps and unsupported layers", () => {
 });
 
 describe("raster budget", () => {
+  it("skips exactly the layer types the capability manifest marks accepted", async () => {
+    const bytes = await encodeImage(4, 2, () => [255, 255, 255, 255], "png");
+    const asset = AssetSchema.parse({
+      id: "img",
+      name: "img",
+      type: "image",
+      uri: "assets/img.png",
+      sha256: sha256(bytes),
+      width: 4,
+      height: 2,
+    }) as ImageAsset;
+    const images = new ImageLibrary(ck);
+    await images.add(asset, bytes);
+    const one: Record<string, Obj> = {
+      shape: shapeLayer("shape", [rect([10, 10], [10, 10]), fill()]),
+      text: textLayer("text", "Hi", { transform: transform({ position: prop([20, 60]) }) }),
+      image: layer("image", "image", { assetId: "img" }),
+      solid: layer("solid", "solid", { width: 10, height: 10, color: "#ff0000" }),
+      precomp: layer("precomp", "precomp", { compositionId: "inner" }),
+      adjustment: layer("adjustment", "adjustment"),
+      component: layer("component", "component", {
+        componentId: "badge",
+        componentVersion: "1.0.0",
+        props: {},
+      }),
+      null: layer("null", "null"),
+      audio: layer("audio", "audio", { assetId: "img", volume: prop(1) }),
+    };
+    expect(Object.keys(one).sort()).toEqual(
+      LayerSchema.options.map((o) => o.shape.type.value).sort(),
+    );
+    for (const [type, fixture] of Object.entries(one)) {
+      if (type === "audio") continue; // not a frame layer: the engine resolves it as sound
+      const inner = composition("inner", [
+        layer("dot", "solid", { width: 10, height: 10, color: "#ff0000" }),
+      ]);
+      const doc = project([composition("main", [fixture]), inner], { assets: [asset] });
+      const p = rasterizeFrame(ck, evaluateFrame(doc, 0), res(images));
+      const support = LAYER_SUPPORT[type as keyof typeof LAYER_SUPPORT];
+      const skipped = p.skipped.find((s) => s.id === type);
+      expect(skipped !== undefined, type).toBe(support.status === "accepted");
+      if (skipped !== undefined && support.status === "accepted")
+        expect(skipped.reason).toBe(support.reason);
+      if (type !== "null")
+        expect(
+          p.layers.some((l) => l.id === type),
+          type,
+        ).toBe(skipped === undefined);
+    }
+  });
+
   it("refuses a frame, precomps included, once it would pass the pixel limit", () => {
     const doc = project([
       composition("main", [

@@ -356,6 +356,12 @@ export const GetLayerSchemaOutput = z.looseObject({
   schema: z.record(z.string(), z.unknown()),
 });
 
+/** Open, like every output, and minimal: the manifest gains entries as features ship. */
+export const GetCapabilitiesOutput = z.looseObject({
+  scene_format_version: z.number(),
+  layer_types: z.record(z.string(), z.unknown()),
+});
+
 export const WriteOutcomeOutput = z.looseObject({
   status: z.enum(["applied", "rejected", "expired", "unknown"]),
   version: z.number().int().optional(),

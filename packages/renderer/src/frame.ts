@@ -6,6 +6,7 @@ import {
   type ResolvedSolidLayer,
 } from "@kynimo/engine";
 import type { CanvasKit } from "canvaskit-wasm";
+import { LAYER_SUPPORT } from "./capabilities.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary } from "./images.js";
@@ -23,10 +24,13 @@ import { rasterizeTextLayer, textWarnings } from "./text.js";
 
 export { RenderError };
 
-const NOT_YET: Record<"adjustment" | "component", string> = {
-  adjustment: "adjustment layers apply effects, which arrive in M4",
-  component: "component evaluation arrives in M6",
-};
+/** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
+function notYet(type: "adjustment" | "component"): string {
+  const support = LAYER_SUPPORT[type];
+  if (support.status !== "accepted")
+    throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
+  return support.reason;
+}
 
 /**
  * Raster pixels one frame may allocate, precomps included: 1 GiB of RGBA8, about 128 full 1080p
@@ -118,7 +122,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       }
       case "adjustment":
       case "component":
-        skipped.push({ id, type: layer.type, reason: NOT_YET[layer.type] });
+        skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
         return null;
     }
   };

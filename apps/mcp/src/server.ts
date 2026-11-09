@@ -1,8 +1,10 @@
-import { LayerSchema, LayerSelectorSchema } from "@kynimo/scene";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { LayerSelectorSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { capabilityManifest, RESOURCES } from "./capabilities.js";
 import { withLayerDefaults } from "./defaults.js";
+import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
 import {
   AddLayerInput,
   AddMaskInput,
@@ -12,6 +14,7 @@ import {
   DescribeMotionInput,
   DescribeMotionOutput,
   FindLayersOutput,
+  GetCapabilitiesOutput,
   GetLayerOutput,
   GetLayerSchemaOutput,
   GetProjectOutput,
@@ -36,8 +39,10 @@ import { type KynimoService, type Rendered, ToolError, type WriteMeta } from "./
 
 export const SERVER_NAME = "kynimo";
 export const SERVER_VERSION = "0.1.0";
+const SERVER = { name: SERVER_NAME, version: SERVER_VERSION };
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
+Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).`;
@@ -109,21 +114,6 @@ const WRITE = {
 } as const;
 /** Writes that can remove layers or discard work: clients should not auto-approve them. */
 const DESTRUCTIVE = { ...WRITE, destructiveHint: true } as const;
-
-/** Schemas for `get_layer_schema`, computed once: a layer type without its id. */
-const layerSchemaCache = new Map<string, Record<string, unknown>>();
-function layerJsonSchema(type: (typeof LAYER_TYPES)[number]): Record<string, unknown> {
-  let schema = layerSchemaCache.get(type);
-  if (!schema) {
-    const option = LayerSchema.options.find((o) => o.shape.type.value === type);
-    if (!option) throw new ToolError("invalid", `unknown layer type '${type}'`);
-    // Every option is a plain object schema; the cast only picks one `omit` signature from the union.
-    const body = (option as unknown as z.ZodObject<z.ZodRawShape>).omit({ id: true });
-    schema = z.toJSONSchema(body, { reused: "ref", io: "input" }) as Record<string, unknown>;
-    layerSchemaCache.set(type, schema);
-  }
-  return schema;
-}
 
 /** Builds the MCP server on a service. The transport (stdio now, Streamable HTTP later) is the caller's. */
 export function createServer(service: KynimoService): McpServer {
@@ -244,6 +234,19 @@ export function createServer(service: KynimoService): McpServer {
       annotations: READ,
     },
     guard(async (a) => ({ type: a.type, schema: layerJsonSchema(a.type) })),
+  );
+
+  server.registerTool(
+    "get_capabilities",
+    {
+      title: "Get capabilities",
+      description:
+        "What this build draws: each layer type and feature is renders, accepted (valid, left out of frames, with why) or unavailable (with when). Also render limits. Same as kynimo://capabilities.",
+      inputSchema: z.object({}),
+      outputSchema: GetCapabilitiesOutput,
+      annotations: READ,
+    },
+    guard(async () => ({ ...capabilityManifest(SERVER) })),
   );
 
   server.registerTool(
@@ -457,5 +460,75 @@ export function createServer(service: KynimoService): McpServer {
     guard(async (a) => ({ ...(await service.write(meta(a), { kind: "redo" })) })),
   );
 
+  registerResources(server);
+
   return server;
+}
+
+const json = (uri: URL, value: unknown) => ({
+  contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(value) }],
+});
+
+/** Look-up data as MCP resources (ADR-0028). Tools cover the same data for clients that hide resources. */
+function registerResources(server: McpServer): void {
+  server.registerResource(
+    "capabilities",
+    RESOURCES.capabilities,
+    {
+      title: "Capability manifest",
+      description:
+        "What this build renders, accepts without rendering (and why), or lacks. Same as get_capabilities.",
+      mimeType: "application/json",
+    },
+    (uri) => json(uri, capabilityManifest(SERVER)),
+  );
+  server.registerResource(
+    "scene-schema",
+    RESOURCES.scene,
+    {
+      title: "Scene document schema",
+      description: `JSON Schema of a whole project document (format version ${SCENE_FORMAT_VERSION}).`,
+      mimeType: "application/schema+json",
+    },
+    (uri) => json(uri, sceneJsonSchema()),
+  );
+  server.registerResource(
+    "ops-schema",
+    RESOURCES.ops,
+    {
+      title: "Scene operation schema",
+      description: "JSON Schema of one scene operation: the item type of apply_ops.ops.",
+      mimeType: "application/schema+json",
+    },
+    (uri) => json(uri, opJsonSchema()),
+  );
+  server.registerResource(
+    "layer-schema",
+    new ResourceTemplate(RESOURCES.layer, {
+      list: () => ({
+        resources: LAYER_TYPES.map((type) => ({
+          uri: RESOURCES.layer.replace("{type}", type),
+          name: `layer-schema-${type}`,
+          title: `${type} layer schema`,
+          mimeType: "application/schema+json",
+        })),
+      }),
+      complete: { type: (prefix) => LAYER_TYPES.filter((t) => t.startsWith(prefix)) },
+    }),
+    {
+      title: "Layer schema",
+      description: "JSON Schema of one layer type without its id. Same as get_layer_schema.",
+      mimeType: "application/schema+json",
+    },
+    (uri, { type }) => {
+      const name = Array.isArray(type) ? type[0] : type;
+      const known = LAYER_TYPES.find((t) => t === name);
+      if (known === undefined)
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `unknown layer type '${name}'; one of ${LAYER_TYPES.join(", ")}`,
+        );
+      return json(uri, layerJsonSchema(known));
+    },
+  );
 }
