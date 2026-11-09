@@ -571,6 +571,70 @@ describe("ProjectSchema: integrity", () => {
   });
 });
 
+describe("path operators (format 5)", () => {
+  const shapeWith = (contents: unknown[]) =>
+    project({
+      compositions: [composition("main", [{ ...visual("s"), type: "shape", contents }])],
+    });
+  const trimItem = (fields: Record<string, unknown> = {}) => ({
+    type: "trim",
+    id: "t",
+    name: "Trim",
+    start: prop(0),
+    end: prop(0.5),
+    offset: prop(90),
+    mode: "simultaneous",
+    ...fields,
+  });
+  const repeaterItem = (copies: unknown) => ({
+    type: "repeater",
+    id: "r",
+    name: "Repeater",
+    copies,
+    offset: prop(0),
+    composite: "above",
+    transform: {
+      anchorPoint: prop([0, 0]),
+      position: prop([10, 0]),
+      scale: prop([1, 1]),
+      rotation: prop(0),
+      startOpacity: prop(1),
+      endOpacity: prop(0.2),
+    },
+  });
+
+  it("accepts trim, round corners and repeater items, inside groups too", () => {
+    const doc = shapeWith([
+      trimItem(),
+      { type: "round-corners", id: "rc", name: "Round", radius: prop(4) },
+      {
+        type: "group",
+        id: "g",
+        name: "G",
+        transform: transform(),
+        items: [repeaterItem(prop(12.5))],
+      },
+    ]);
+    expect(issues(doc)).toEqual([]);
+  });
+
+  it("bounds trim ends to 0..1, repeater copies and corner radii", () => {
+    expect(issues(shapeWith([trimItem({ end: prop(1.5) })])).map((i) => i.path)).toEqual([
+      "compositions.0.layers.0.contents.0.end.value",
+    ]);
+    expect(issues(shapeWith([trimItem({ mode: "sequential" })])).map((i) => i.path)).toEqual([
+      "compositions.0.layers.0.contents.0.mode",
+    ]);
+    expect(issues(shapeWith([repeaterItem(prop(1001))])).map((i) => i.path)).toEqual([
+      "compositions.0.layers.0.contents.0.copies.value",
+    ]);
+    const negative = { type: "round-corners", id: "rc", name: "Round", radius: prop(-1) };
+    expect(issues(shapeWith([negative])).map((i) => i.path)).toEqual([
+      "compositions.0.layers.0.contents.0.radius.value",
+    ]);
+  });
+});
+
 describe("JSON Schema export", () => {
   it("produces a JSON Schema for MCP resources without throwing", () => {
     const schema = z.toJSONSchema(ProjectSchema, { io: "output" }) as Obj;

@@ -1,4 +1,5 @@
 import type { BlendMode, LayerType, MaskMode, Paint, ShapeItem, TrackMatte } from "@kynimo/scene";
+import { MAX_FRAME_SHAPE_WORK, MAX_SHAPE_LAYER_WORK } from "./binding.js";
 import { BLEND_MODE_IDS } from "./compositor/pipeline.js";
 import { BUNDLED_FONTS, FONT_FORMATS } from "./fonts.js";
 import { IMAGE_FORMATS } from "./images.js";
@@ -50,6 +51,18 @@ export const SHAPE_ITEM_SUPPORT: Readonly<Record<ShapeItem["type"], Support>> = 
   fill: RENDERS,
   stroke: { status: "renders", note: "dashes and dash offset included" },
   group: RENDERS,
+  trim: {
+    status: "renders",
+    note: "changes the paths listed above it, nested groups included; simultaneous or individual",
+  },
+  "round-corners": {
+    status: "renders",
+    note: "rounds vertices without tangent handles in the paths listed above it",
+  },
+  repeater: {
+    status: "renders",
+    note: `copies everything listed above it; path work (items times copies, plus path segments per paint and operator) is limited to ${MAX_SHAPE_LAYER_WORK} units per shape layer and ${MAX_FRAME_SHAPE_WORK} per frame`,
+  },
 };
 
 export const PAINT_SUPPORT: Readonly<Record<Paint["type"], Support>> = {

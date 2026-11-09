@@ -19,6 +19,7 @@ const SCENES = [
   "masked-matted-reveal",
   "nested-precomp-parenting",
   "product-card",
+  "path-operators",
 ] as const;
 
 interface Reference {

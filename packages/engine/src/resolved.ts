@@ -212,6 +212,29 @@ export type ResolvedShapeItem =
       dashOffset: number;
     })
   | (ItemBase & {
+      type: "trim";
+      /** 0..1 each, in stored order (the renderer takes the smaller as the start). */
+      start: number;
+      end: number;
+      /** Degrees. */
+      offset: number;
+      mode: "simultaneous" | "individual";
+    })
+  | (ItemBase & { type: "round-corners"; radius: number })
+  | (ItemBase & {
+      type: "repeater";
+      /** 0..MAX_REPEATER_COPIES, fractional while a count animates. */
+      copies: number;
+      offset: number;
+      composite: "above" | "below";
+      anchorPoint: Point;
+      position: Point;
+      scale: Point;
+      rotation: number;
+      startOpacity: number;
+      endOpacity: number;
+    })
+  | (ItemBase & {
       type: "group";
       transform: ResolvedTransform;
       /** Group space → layer space, including enclosing groups. */

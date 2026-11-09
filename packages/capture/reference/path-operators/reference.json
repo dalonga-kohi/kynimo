@@ -1,0 +1,4 @@
+{
+  "description": "Path operators: a rounded star drawn on by an eased trim with a drifting offset, a radial loader of rounded pills from one repeater spun by its offset, a dot grid from nested repeaters (an animated fractional count fading copies in, scale per row) with growing round corners, and a morphing wave trimmed individually with its baseline as one path.",
+  "frames": [10, 30, 52]
+}

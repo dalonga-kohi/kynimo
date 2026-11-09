@@ -70,6 +70,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 2, migrate: addCompositingFields },
   // 3 → 4 only adds the video asset and layer variants: every version 3 document is valid as is.
   { from: 3, migrate: (doc) => doc },
+  // 4 → 5 only adds the trim, round corners and repeater shape items (ADR-0034).
+  { from: 4, migrate: (doc) => doc },
 ];
 
 export interface MigrationError {
