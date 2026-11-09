@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FrameRateSchema } from "./composition.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema } from "./ids.js";
 import { NameSchema } from "./primitives.js";
@@ -19,13 +20,25 @@ const base = {
   sha256: z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256"),
 };
 
-/** Video assets (pre-decoded to frames, ADR-0013) arrive with the asset pipeline: adding that variant is additive. */
 export const AssetSchema = z.discriminatedUnion("type", [
   z.strictObject({
     ...base,
     type: z.literal("image"),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
+  }),
+  /**
+   * Footage, decoded at upload to constant-rate frames (ADR-0013, ADR-0032). `uri` and `sha256`
+   * name the frame manifest, which pins every frame's bytes by hash; frame `n` shows at source
+   * time n / fps.
+   */
+  z.strictObject({
+    ...base,
+    type: z.literal("video"),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    fps: FrameRateSchema,
+    frameCount: z.number().int().positive(),
   }),
   z.strictObject({
     ...base,

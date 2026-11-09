@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { BUNDLED_FONTS, type RenderWarning, type SkippedLayer } from "@kynimo/renderer";
+import {
+  BUNDLED_FONTS,
+  type RenderWarning,
+  type SkippedLayer,
+  videoFrameKey,
+} from "@kynimo/renderer";
 import { migrateProject } from "@kynimo/scene";
 import { type Browser, chromium, type Page, type Route } from "playwright";
 import { ORIGIN, type PageApi, type PageRequest, type PageResponse } from "./protocol.js";
@@ -60,6 +65,11 @@ export interface CaptureOptions {
    * document's pin. Loading them (the asset store, M3) is the caller's job: capture never fetches.
    */
   assets?: ReadonlyMap<string, Uint8Array>;
+  /**
+   * Bytes of video frames by `videoFrameKey(assetId, frame)`, JPEG or PNG. The caller checks them
+   * against the asset's frame manifest; capture checks each decodes to the asset's size.
+   */
+  videoFrames?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface SheetOptions extends CaptureOptions {
@@ -280,7 +290,7 @@ function session(
   const call = (
     document: unknown,
     frames: readonly number[],
-    { composition, assets = new Map(), maxSize }: CaptureOptions,
+    { composition, assets = new Map(), videoFrames = new Map(), maxSize }: CaptureOptions,
     sheet: PageRequest["sheet"],
   ) =>
     serialized(async () => {
@@ -310,16 +320,23 @@ function session(
         if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
           throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
       }
+      for (const key of videoFrames.keys()) {
+        const [id, n] = key.split("/");
+        const asset = project.assets.find((a) => a.id === id);
+        if (asset?.type !== "video" || key !== videoFrameKey(asset.id, Number(n)))
+          throw new CaptureError(`videoFrames: '${key}' does not name a frame of a video asset`);
+      }
       const response = await render(
         {
           project,
           compositionId: composition ?? project.mainCompositionId,
           frames: [...frames],
           assets: [...assets.keys()],
+          videoFrames: [...videoFrames.keys()],
           maxSize: maxSize ?? null,
           sheet,
         },
-        assets,
+        new Map([...assets, ...videoFrames]),
       );
       if (!response.ok) throw new CaptureError(response.message, response.name);
       return response;

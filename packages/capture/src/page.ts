@@ -16,6 +16,7 @@ import {
   type RenderWarning,
   rasterizeFrame,
   type SkippedLayer,
+  VideoFrameLibrary,
 } from "@kynimo/renderer";
 import type { Canvas } from "canvaskit-wasm";
 import {
@@ -87,6 +88,7 @@ async function renderFrames({
   compositionId,
   frames,
   assets,
+  videoFrames,
   maxSize,
 }: PageRequest): Promise<Pixels[]> {
   if (state === undefined) throw new Error("capture page: init() has not run");
@@ -94,6 +96,7 @@ async function renderFrames({
   const provided = new Set(assets);
   const images = new ImageLibrary(ck);
   const fonts = new FontLibrary(ck);
+  const videos = new VideoFrameLibrary(ck);
   try {
     for (const [i, font] of BUNDLED_FONTS.entries())
       await fonts.addBundled(font.family, bundled[i] as Uint8Array);
@@ -103,11 +106,22 @@ async function renderFrames({
       if (asset.type === "image") await images.add(asset, bytes);
       else if (asset.type === "font") await fonts.add(asset, bytes);
     }
+    for (const key of videoFrames) {
+      const slash = key.lastIndexOf("/");
+      const asset = project.assets.find((a) => a.id === key.slice(0, slash));
+      if (asset?.type !== "video") throw new Error(`capture page: '${key}' is not a video frame`);
+      videos.add(
+        asset,
+        Number(key.slice(slash + 1)),
+        await fetchBytes(`assets/${encodeURIComponent(key)}`),
+      );
+    }
     const out: Pixels[] = [];
     for (const frame of frames) {
       const plan = rasterizeFrame(ck, evaluateFrame(project, frame, compositionId), {
         images,
         fonts,
+        videos,
       });
       const full = compositor.composite(plan);
       const size = fitSize(full.width, full.height, maxSize);

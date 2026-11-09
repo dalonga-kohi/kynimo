@@ -348,6 +348,7 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
 
       switch (layer.type) {
         case "image":
+        case "video":
         case "audio": {
           const asset = assetsById.get(layer.assetId);
           if (asset === undefined)

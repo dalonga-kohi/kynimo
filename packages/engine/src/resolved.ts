@@ -100,6 +100,13 @@ export interface ResolvedImageLayer extends LayerBase {
   assetId: string;
 }
 
+/** Footage at one source frame; `sourceFrame` is null when the layer time is outside the clip. */
+export interface ResolvedVideoLayer extends LayerBase {
+  type: "video";
+  assetId: string;
+  sourceFrame: number | null;
+}
+
 export interface ResolvedSolidLayer extends LayerBase {
   type: "solid";
   width: number;
@@ -134,6 +141,7 @@ export type ResolvedLayer =
   | ResolvedShapeLayer
   | ResolvedTextLayer
   | ResolvedImageLayer
+  | ResolvedVideoLayer
   | ResolvedSolidLayer
   | ResolvedPrecompLayer
   | ResolvedAdjustmentLayer

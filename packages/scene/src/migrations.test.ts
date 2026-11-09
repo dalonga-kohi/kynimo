@@ -214,12 +214,19 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v2);
-    expect(r).toMatchObject({ ok: true, from: 2, to: 3 });
+    expect(r).toMatchObject({ ok: true, from: 2, to: SCENE_FORMAT_VERSION });
     if (!r.ok) return;
     const [drawn, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(drawn).toMatchObject({ blendMode: "normal", matte: null, masks: [] });
     expect(nul).not.toHaveProperty("blendMode");
     expect(audio).not.toHaveProperty("masks");
+  });
+
+  it("3 → 4 leaves a version 3 document unchanged apart from its version", () => {
+    const v3 = { ...project(), formatVersion: 3 };
+    const r = migrateProject(v3);
+    expect(r).toMatchObject({ ok: true, from: 3, to: 4 });
+    if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("rejects unknown and future versions", () => {

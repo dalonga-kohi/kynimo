@@ -48,7 +48,7 @@ Where projects live (ADR-0029):
 
 The store tests run on an in-process Postgres (PGlite). The multi-process tests in `src/store.postgres.test.ts` need a real server: set `KYNIMO_TEST_DATABASE_URL` to an empty, disposable database (CI runs a Postgres 16 service for them).
 
-Where uploaded assets live (ADR-0031). `upload_asset` takes PNG, JPEG, TTF or OTF files, base64-encoded, up to 8 MB. Bytes are stored under their SHA-256:
+Where uploaded assets live (ADR-0031). `upload_asset` takes PNG, JPEG, TTF or OTF files, video (MP4, MOV, WebM, MKV; up to 60 s) and audio (WAV, MP3, FLAC, Ogg, M4A), base64-encoded, up to 8 MB. Video and audio need FFmpeg: `ffmpeg` and `ffprobe` on PATH, or `KYNIMO_FFMPEG` / `KYNIMO_FFPROBE` (ADR-0032); without it those uploads are off. Bytes are stored under their SHA-256:
 
 - **In memory** without a store. They are lost on exit.
 - **`<dir>/blobs`** with `--dir`.

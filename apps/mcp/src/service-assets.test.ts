@@ -4,13 +4,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { base64, interTtf, solidPng } from "./assets.test-util.js";
 import { type BlobStore, MemoryBlobStore } from "./blobs.js";
 import { withLayerDefaults } from "./defaults.js";
-import type { FrameRenderer } from "./render.js";
+import type { FrameRenderer, RenderMedia } from "./render.js";
 import { KynimoService, MAX_UPLOAD_BYTES, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";
 
 /** Records the asset bytes each render was given. */
 class AssetRecorder implements FrameRenderer {
   given: ReadonlyMap<string, Uint8Array>[] = [];
+  givenFrames: ReadonlyMap<string, Uint8Array>[] = [];
   async build() {
     return "b";
   }
@@ -19,9 +20,10 @@ class AssetRecorder implements FrameRenderer {
     _c: string,
     frames: readonly number[],
     _s: number,
-    assets: ReadonlyMap<string, Uint8Array>,
+    media: RenderMedia,
   ) {
-    this.given.push(assets);
+    this.given.push(media.assets);
+    this.givenFrames.push(media.videoFrames);
     return frames.map(
       (frame): CapturedFrame => ({
         frame,
@@ -255,7 +257,7 @@ describe("assets", () => {
     );
     expect(await rejection(empty.renderFrames(id, { frames: [0], max_size: 64 }))).toMatchObject({
       kind: "render_failed",
-      message: expect.stringMatching(/'a'.*missing from/),
+      message: expect.stringMatching(/'a'.*missing or corrupt/),
     });
     // An entry written by hand (apply_ops) with a key upload_asset never makes.
     await empty.write(

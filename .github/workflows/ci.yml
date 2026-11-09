@@ -50,4 +50,7 @@ jobs:
       # The compositor tests run in the pinned Chromium on SwiftShader (ADR-0016, ADR-0021).
       - run: pnpm --filter @kynimo/renderer exec playwright install --with-deps chromium
 
+      # Video and audio uploads decode with the system FFmpeg (ADR-0032); the media tests need it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - run: pnpm check

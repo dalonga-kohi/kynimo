@@ -68,6 +68,8 @@ function addCompositingFields(doc: Json): Json {
 export const MIGRATIONS: readonly Migration[] = [
   { from: 1, migrate: canonicalBundledFamilies },
   { from: 2, migrate: addCompositingFields },
+  // 3 → 4 only adds the video asset and layer variants: every version 3 document is valid as is.
+  { from: 3, migrate: (doc) => doc },
 ];
 
 export interface MigrationError {

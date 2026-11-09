@@ -28,7 +28,15 @@ export const RENDER_LIMITS = {
   sheetGap: 4,
   /** Bytes of image and font assets one render may load (those its composition tree uses). */
   maxAssetBytes: 64 * 1024 * 1024,
+  /** Decoded RGBA bytes (width × height × 4) of the images and video frames one render loads. */
+  maxDecodedAssetBytes: 512 * 1024 * 1024,
 } as const;
+
+/** Asset bytes for one render: image and font assets by id, video frames by `videoFrameKey`. */
+export interface RenderMedia {
+  assets: ReadonlyMap<string, Uint8Array>;
+  videoFrames: ReadonlyMap<string, Uint8Array>;
+}
 
 /** Draws documents. `@kynimo/capture` in production; tests use fakes. */
 export interface FrameRenderer {
@@ -39,15 +47,14 @@ export interface FrameRenderer {
     composition: string,
     frames: readonly number[],
     maxSize: number,
-    /** Bytes of the document's image and font assets, by asset id. */
-    assets: ReadonlyMap<string, Uint8Array>,
+    media: RenderMedia,
   ): Promise<CapturedFrame[]>;
   sheet(
     doc: Project,
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
-    assets: ReadonlyMap<string, Uint8Array>,
+    media: RenderMedia,
   ): Promise<CapturedSheet>;
   close(): Promise<void>;
 }
@@ -102,9 +109,14 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     maxSize: number,
-    assets: ReadonlyMap<string, Uint8Array>,
+    { assets, videoFrames }: RenderMedia,
   ) {
-    return (await this.#current()).captureFrames(doc, frames, { composition, maxSize, assets });
+    return (await this.#current()).captureFrames(doc, frames, {
+      composition,
+      maxSize,
+      assets,
+      videoFrames,
+    });
   }
 
   async sheet(
@@ -112,9 +124,14 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
-    assets: ReadonlyMap<string, Uint8Array>,
+    { assets, videoFrames }: RenderMedia,
   ) {
-    return (await this.#current()).captureSheet(doc, frames, { composition, ...layout, assets });
+    return (await this.#current()).captureSheet(doc, frames, {
+      composition,
+      ...layout,
+      assets,
+      videoFrames,
+    });
   }
 
   async close(): Promise<void> {

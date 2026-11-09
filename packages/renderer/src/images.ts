@@ -66,28 +66,74 @@ export class ImageLibrary {
   }
 
   #decode(asset: ImageAsset, bytes: Uint8Array): RasterImage {
-    const ck = this.#ck;
-    const image = ck.MakeImageFromEncoded(bytes);
-    if (image === null) throw new ImageAssetError(`asset '${asset.id}': the image does not decode`);
-    try {
-      const width = image.width();
-      const height = image.height();
-      if (width !== asset.width || height !== asset.height)
-        throw new ImageAssetError(
-          `asset '${asset.id}': decodes to ${width}×${height}, but the document says ${asset.width}×${asset.height}`,
-        );
-      const pixels = image.readPixels(0, 0, {
-        width,
-        height,
-        colorType: ck.ColorType.RGBA_8888,
-        alphaType: ck.AlphaType.Premul,
-        colorSpace: ck.ColorSpace.SRGB,
-      });
-      if (!(pixels instanceof Uint8Array))
-        throw new ImageAssetError(`asset '${asset.id}': CanvasKit returned no RGBA8 pixels`);
-      return { width, height, pixels };
-    } finally {
-      image.delete();
-    }
+    return decodeRaster(this.#ck, bytes, asset.width, asset.height, `asset '${asset.id}'`);
   }
 }
+
+/** Decodes with CanvasKit's codecs to premultiplied sRGB RGBA8, checking the declared size. */
+function decodeRaster(
+  ck: CanvasKit,
+  bytes: Uint8Array,
+  expectWidth: number,
+  expectHeight: number,
+  what: string,
+): RasterImage {
+  const image = ck.MakeImageFromEncoded(bytes);
+  if (image === null) throw new ImageAssetError(`${what}: the image does not decode`);
+  try {
+    const width = image.width();
+    const height = image.height();
+    if (width !== expectWidth || height !== expectHeight)
+      throw new ImageAssetError(
+        `${what}: decodes to ${width}×${height}, but the document says ${expectWidth}×${expectHeight}`,
+      );
+    const pixels = image.readPixels(0, 0, {
+      width,
+      height,
+      colorType: ck.ColorType.RGBA_8888,
+      alphaType: ck.AlphaType.Premul,
+      colorSpace: ck.ColorSpace.SRGB,
+    });
+    if (!(pixels instanceof Uint8Array))
+      throw new ImageAssetError(`${what}: CanvasKit returned no RGBA8 pixels`);
+    return { width, height, pixels };
+  } finally {
+    image.delete();
+  }
+}
+
+export type VideoAsset = Extract<Asset, { type: "video" }>;
+
+/**
+ * Decoded frames of video assets, keyed by asset id and source frame. The host loads only the
+ * frames a render shows and has already checked each against the asset's frame manifest
+ * (ADR-0032); rendering then reads only from here.
+ */
+export class VideoFrameLibrary {
+  readonly #ck: CanvasKit;
+  readonly #frames = new Map<string, RasterImage>();
+
+  constructor(ck: CanvasKit) {
+    this.#ck = ck;
+  }
+
+  /** Decodes one frame (JPEG or PNG) and checks it has the asset's size. */
+  add(asset: VideoAsset, frame: number, bytes: Uint8Array): void {
+    const what = `video asset '${asset.id}' frame ${frame}`;
+    if (!Number.isInteger(frame) || frame < 0 || frame >= asset.frameCount)
+      throw new ImageAssetError(`${what}: the asset has frames 0 to ${asset.frameCount - 1}`);
+    if (sniffImageFormat(bytes) === null)
+      throw new ImageAssetError(`${what}: frames must be ${IMAGE_FORMATS.join(" or ")} files`);
+    this.#frames.set(
+      videoFrameKey(asset.id, frame),
+      decodeRaster(this.#ck, bytes, asset.width, asset.height, what),
+    );
+  }
+
+  get(assetId: string, frame: number): RasterImage | undefined {
+    return this.#frames.get(videoFrameKey(assetId, frame));
+  }
+}
+
+/** How hosts and the capture page name one decoded video frame. */
+export const videoFrameKey = (assetId: string, frame: number): string => `${assetId}/${frame}`;

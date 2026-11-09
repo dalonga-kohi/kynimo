@@ -31,7 +31,13 @@ import {
 } from "./fixtures.test-util.js";
 import type { FontLibrary } from "./fonts.js";
 import { MAX_FRAME_RASTER_PIXELS, rasterizeFrame } from "./frame.js";
-import { type ImageAsset, ImageAssetError, ImageLibrary } from "./images.js";
+import {
+  type ImageAsset,
+  ImageAssetError,
+  ImageLibrary,
+  type VideoAsset,
+  VideoFrameLibrary,
+} from "./images.js";
 import type { FramePlan, PlannedLayer, RasterImage } from "./raster.js";
 
 let ck: CanvasKit;
@@ -446,10 +452,24 @@ describe("raster budget", () => {
     }) as ImageAsset;
     const images = new ImageLibrary(ck);
     await images.add(asset, bytes);
+    const clip = AssetSchema.parse({
+      id: "clip",
+      name: "clip",
+      type: "video",
+      uri: `assets/${"0".repeat(64)}.json`,
+      sha256: "0".repeat(64),
+      width: 4,
+      height: 2,
+      fps: { num: 30, den: 1 },
+      frameCount: 90,
+    }) as VideoAsset;
+    const videos = new VideoFrameLibrary(ck);
+    videos.add(clip, 0, bytes);
     const one: Record<string, Obj> = {
       shape: shapeLayer("shape", [rect([10, 10], [10, 10]), fill()]),
       text: textLayer("text", "Hi", { transform: transform({ position: prop([20, 60]) }) }),
       image: layer("image", "image", { assetId: "img" }),
+      video: layer("video", "video", { assetId: "clip" }),
       solid: layer("solid", "solid", { width: 10, height: 10, color: "#ff0000" }),
       precomp: layer("precomp", "precomp", { compositionId: "inner" }),
       adjustment: layer("adjustment", "adjustment"),
@@ -469,8 +489,8 @@ describe("raster budget", () => {
       const inner = composition("inner", [
         layer("dot", "solid", { width: 10, height: 10, color: "#ff0000" }),
       ]);
-      const doc = project([composition("main", [fixture]), inner], { assets: [asset] });
-      const p = rasterizeFrame(ck, evaluateFrame(doc, 0), res(images));
+      const doc = project([composition("main", [fixture]), inner], { assets: [asset, clip] });
+      const p = rasterizeFrame(ck, evaluateFrame(doc, 0), { ...res(images), videos });
       const support = LAYER_SUPPORT[type as keyof typeof LAYER_SUPPORT];
       const skipped = p.skipped.find((s) => s.id === type);
       expect(skipped !== undefined, type).toBe(support.status === "accepted");
@@ -577,3 +597,61 @@ describe("determinism", () => {
     expect(sha256(again.pixels)).toBe(first);
   });
 });
+
+describe("video layers", () => {
+  const clipOf = (overrides: Obj = {}) =>
+    AssetSchema.parse({
+      id: "clip",
+      name: "clip",
+      type: "video",
+      uri: `assets/${"0".repeat(64)}.json`,
+      sha256: "0".repeat(64),
+      width: 4,
+      height: 2,
+      fps: { num: 15, den: 1 },
+      frameCount: 2,
+      ...overrides,
+    }) as VideoAsset;
+
+  it("draw the frame the layer time maps to, exactly like an image of it, and nothing after the clip", async () => {
+    const red = await encodeImage(4, 2, () => [255, 0, 0, 255], "png");
+    const blue = await encodeImage(4, 2, () => [0, 0, 255, 255], "png");
+    const clip = clipOf();
+    const videos = new VideoFrameLibrary(ck);
+    videos.add(clip, 0, red);
+    videos.add(clip, 1, blue);
+    const doc = project([composition("main", [layer("v", "video", { assetId: "clip" })])], {
+      assets: [clip],
+    });
+    // 15 fps footage in a 30 fps composition: frames 0–1 show source 0, 2–3 source 1, then none.
+    const raster = (frame: number) => {
+      const p = rasterizeFrame(ck, evaluateFrame(doc, frame), { ...res(), videos });
+      const l = p.layers[0] as (PlannedLayer & { raster?: RasterImage }) | undefined;
+      return l?.raster?.pixels.slice(0, 4);
+    };
+    expect([0, 1, 2, 3].map((f) => [...(raster(f) ?? [])])).toEqual([
+      [255, 0, 0, 255],
+      [255, 0, 0, 255],
+      [0, 0, 255, 255],
+      [0, 0, 255, 255],
+    ]);
+    expect(raster(4)).toBeUndefined();
+  });
+
+  it("refuse a frame that was not loaded, and frames of the wrong size, format or index", async () => {
+    const clip = clipOf();
+    const doc = project([composition("main", [layer("v", "video", { assetId: "clip" })])], {
+      assets: [clip],
+    });
+    expect(() =>
+      rasterizeFrame(ck, evaluateFrame(doc, 0), { ...res(), videos: new VideoFrameLibrary(ck) }),
+    ).toThrow(/frame 0 of video asset 'clip', which was not loaded/);
+    const videos = new VideoFrameLibrary(ck);
+    expect(() => videos.add(clip, 0, encodeImageSync())).toThrow(ImageAssetError);
+    const big = await encodeImage(5, 2, () => [0, 0, 0, 255], "jpeg");
+    expect(() => videos.add(clip, 0, big)).toThrow(/decodes to 5×2/);
+    expect(() => videos.add(clip, 2, big)).toThrow(/frames 0 to 1/);
+  });
+});
+
+const encodeImageSync = () => new TextEncoder().encode("GIF89a not a frame");

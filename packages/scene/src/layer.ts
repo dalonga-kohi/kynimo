@@ -113,6 +113,13 @@ export const ImageLayerSchema = z.strictObject({
   assetId: AssetIdSchema,
 });
 
+/** Footage: shows the video asset's frame at the layer's time (ADR-0032), nothing outside it. */
+export const VideoLayerSchema = z.strictObject({
+  ...drawn,
+  type: z.literal("video"),
+  assetId: AssetIdSchema,
+});
+
 export const SolidLayerSchema = z.strictObject({
   ...drawn,
   type: z.literal("solid"),
@@ -160,6 +167,7 @@ export const LayerSchema = z.discriminatedUnion("type", [
   ShapeLayerSchema,
   TextLayerSchema,
   ImageLayerSchema,
+  VideoLayerSchema,
   SolidLayerSchema,
   NullLayerSchema,
   PrecompLayerSchema,

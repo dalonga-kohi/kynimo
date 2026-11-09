@@ -171,7 +171,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Upload asset",
       description:
-        "Stores an image (PNG, JPEG) or font (TTF, OTF) and adds it to the project's assets in one undoable write. Image layers then name it by assetId; text layers use a font by its family. Returns the new asset.",
+        "Stores an image, font, video or audio file and adds it to the project's assets in one undoable write. Image, video and audio layers name it by assetId; text layers use a font by its family. Video is decoded to frames now; its sound becomes a separate audio asset (audio_asset).",
       inputSchema: UploadAssetInput,
       outputSchema: UploadAssetOutput,
       annotations: WRITE,

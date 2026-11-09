@@ -578,7 +578,7 @@ export const UploadAssetInput = z.object({
     .min(1)
     .max(MAX_ASSET_BASE64)
     .describe(
-      "The file, base64-encoded, at most 8 MB decoded: PNG or JPEG image, or TrueType/OpenType font. The type, size, font family and weights are read from the file.",
+      "The file, base64-encoded, at most 8 MB decoded: PNG/JPEG image, TTF/OTF font, video (MP4, MOV, WebM, MKV; up to 60 s, decoded to frames at most 1920 px and 60 fps) or audio (WAV, MP3, FLAC, Ogg, M4A). Type and metadata are read from the file.",
     ),
   id: z.string().min(1).max(64).optional().describe("Optional asset id; generated when omitted."),
   family: z
@@ -591,8 +591,12 @@ export const UploadAssetInput = z.object({
     ),
 });
 
+const AssetOutput = z.looseObject({ id: z.string(), type: z.string(), sha256: z.string() });
+
 export const UploadAssetOutput = WriteOutput.extend({
-  asset: z.looseObject({ id: z.string(), type: z.string(), sha256: z.string() }),
+  asset: AssetOutput,
+  /** A video's own sound, extracted into an audio asset; place it with an audio layer. */
+  audio_asset: AssetOutput.optional(),
 });
 
 export const ListAssetsOutput = z.looseObject({

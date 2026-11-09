@@ -395,7 +395,11 @@ function assetUsers(doc: Project, asset: Asset): string[] {
   const layers = doc.compositions.flatMap((c) => c.layers);
   if (asset.type !== "font")
     return layers
-      .filter((l) => (l.type === "image" || l.type === "audio") && l.assetId === asset.id)
+      .filter(
+        (l) =>
+          (l.type === "image" || l.type === "video" || l.type === "audio") &&
+          l.assetId === asset.id,
+      )
       .map((l) => l.id);
   const others = doc.assets.some(
     (a) => a.type === "font" && a.id !== asset.id && a.family === asset.family,

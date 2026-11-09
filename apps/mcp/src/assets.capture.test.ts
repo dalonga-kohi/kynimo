@@ -3,8 +3,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { base64, interTtf, solidPng } from "./assets.test-util.js";
+import { base64, hasFfmpeg, interTtf, makeClip, solidPng } from "./assets.test-util.js";
 import { MemoryBlobStore } from "./blobs.js";
+import { Ffmpeg } from "./media.js";
 import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -16,6 +17,7 @@ import { MemoryStore } from "./store.js";
  * asset, so it needs no approved image.
  */
 let renderer: CaptureRenderer;
+const blobs = new MemoryBlobStore();
 let client: Client;
 
 async function call(name: string, args: Record<string, unknown>) {
@@ -62,7 +64,11 @@ const text = (family: string) => ({
 beforeAll(async () => {
   renderer = new CaptureRenderer();
   const server = createServer(
-    new KynimoService(new MemoryStore(), "agent", { renderer, blobs: new MemoryBlobStore() }),
+    new KynimoService(new MemoryStore(), "agent", {
+      renderer,
+      blobs,
+      ...(hasFfmpeg ? { media: new Ffmpeg() } : {}),
+    }),
   );
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -159,4 +165,50 @@ describe("uploaded assets in rendered frames", () => {
     expect(brand).toMatchObject({ skipped: [], warnings: [] });
     expect(brand.pixels).toBe((await frame0(bundled)).pixels);
   }, 60_000);
+
+  it.runIf(hasFfmpeg || process.env.CI !== undefined)(
+    "draws an uploaded clip's frame exactly like an image of that decoded frame",
+    async () => {
+      const withVideo = await project("video");
+      const up = await call("upload_asset", {
+        project_id: withVideo,
+        base_version: 1,
+        idempotency_key: "u",
+        name: "clip.mp4",
+        data: base64(makeClip({ width: 64, height: 36, fps: "30", seconds: 1 })),
+      });
+      const asset = up.asset as { id: string; uri: string };
+      await call("add_layer", {
+        project_id: withVideo,
+        base_version: 2,
+        idempotency_key: "l",
+        composition: "main",
+        layer: { type: "video", name: "Clip", assetId: asset.id },
+      });
+      // Frame 0 of the manifest, uploaded again as a plain JPEG image.
+      const manifest = JSON.parse(
+        new TextDecoder().decode((await blobs.get(asset.uri)) as Uint8Array),
+      ) as { frames: string[] };
+      const jpeg = (await blobs.get(`assets/${manifest.frames[0]}.jpg`)) as Uint8Array;
+      const withImage = await project("still");
+      const still = await call("upload_asset", {
+        project_id: withImage,
+        base_version: 1,
+        idempotency_key: "u",
+        name: "frame0.jpg",
+        data: base64(jpeg),
+      });
+      await call("add_layer", {
+        project_id: withImage,
+        base_version: 2,
+        idempotency_key: "l",
+        composition: "main",
+        layer: { type: "image", name: "Clip", assetId: (still.asset as { id: string }).id },
+      });
+      const video = await frame0(withVideo);
+      expect(video).toMatchObject({ skipped: [], warnings: [] });
+      expect(video.pixels).toBe((await frame0(withImage)).pixels);
+    },
+    60_000,
+  );
 });
