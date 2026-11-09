@@ -48,6 +48,7 @@ describe("MCP server", () => {
       "create_project",
       "describe_motion",
       "find_layers",
+      "get_capabilities",
       "get_layer",
       "get_layer_schema",
       "get_project",
@@ -316,6 +317,48 @@ describe("MCP server", () => {
       expect(schema.properties.type, type).toBeDefined();
       expect(schema.properties.id, type).toBeUndefined();
     }
+  });
+
+  it("reports capabilities as a tool and as the same resource", async () => {
+    const tool = await call(client, "get_capabilities", {});
+    const layerTypes = tool.layer_types as Record<string, { status: string; reason?: string }>;
+    expect(layerTypes.adjustment).toMatchObject({ status: "accepted" });
+    expect(layerTypes.shape).toEqual({ status: "renders" });
+    const read = await client.readResource({ uri: "kynimo://capabilities" });
+    const first = read.contents[0];
+    if (first === undefined || !("text" in first)) throw new Error("expected text contents");
+    expect(JSON.parse(first.text)).toEqual(tool);
+  });
+
+  it("lists the schema resources, including one per layer type", async () => {
+    const { resources } = await client.listResources();
+    const uris = resources.map((r) => r.uri);
+    expect(uris).toEqual(
+      expect.arrayContaining([
+        "kynimo://capabilities",
+        "kynimo://schema/scene",
+        "kynimo://schema/ops",
+        ...LayerSchema.options.map((o) => `kynimo://schema/layer/${o.shape.type.value}`),
+      ]),
+    );
+    const { resourceTemplates } = await client.listResourceTemplates();
+    expect(resourceTemplates.map((t) => t.uriTemplate)).toEqual(["kynimo://schema/layer/{type}"]);
+  });
+
+  it("serves the scene, op and layer schemas as JSON Schema", async () => {
+    const text = async (uri: string) => {
+      const first = (await client.readResource({ uri })).contents[0];
+      if (first === undefined || !("text" in first)) throw new Error("expected text contents");
+      return JSON.parse(first.text) as Record<string, unknown>;
+    };
+    const scene = (await text("kynimo://schema/scene")) as { properties: Record<string, unknown> };
+    expect(scene.properties.formatVersion).toBeDefined();
+    expect(await text("kynimo://schema/ops")).toHaveProperty("oneOf");
+    const text_ = await call(client, "get_layer_schema", { type: "text" });
+    expect(await text("kynimo://schema/layer/text")).toEqual(text_.schema);
+    await expect(client.readResource({ uri: "kynimo://schema/layer/video" })).rejects.toThrow(
+      /unknown layer type 'video'/,
+    );
   });
 
   it("finds layers and lists projects", async () => {
