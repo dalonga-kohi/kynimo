@@ -67,6 +67,34 @@ export const stroke = (paint: Obj, width: number, overrides: Obj = {}) =>
     ...overrides,
   });
 
+export const trim = (start: number, end: number, overrides: Obj = {}) =>
+  item("trim", {
+    start: prop(start),
+    end: prop(end),
+    offset: prop(0),
+    mode: "simultaneous",
+    ...overrides,
+  });
+
+export const roundCorners = (radius: number) => item("round-corners", { radius: prop(radius) });
+
+export const repeater = (copies: number, step: Obj = {}, overrides: Obj = {}) =>
+  item("repeater", {
+    copies: prop(copies),
+    offset: prop(0),
+    composite: "above",
+    transform: {
+      anchorPoint: prop([0, 0]),
+      position: prop([0, 0]),
+      scale: prop([1, 1]),
+      rotation: prop(0),
+      startOpacity: prop(1),
+      endOpacity: prop(1),
+      ...step,
+    },
+    ...overrides,
+  });
+
 export const group = (items: Obj[], groupTransform: Obj = transform()) =>
   item("group", { transform: groupTransform, items });
 

@@ -23,11 +23,14 @@ import {
   project,
   prop,
   rect,
+  repeater,
+  roundCorners,
   shapeLayer,
   solidPaint,
   stroke,
   textLayer,
   transform,
+  trim,
 } from "./fixtures.test-util.js";
 import type { FontLibrary } from "./fonts.js";
 import { MAX_FRAME_RASTER_PIXELS, rasterizeFrame } from "./frame.js";
@@ -268,6 +271,62 @@ describe("shape layers", () => {
     expect(pixel(radial, 100, 50)[3]).toBeGreaterThan(240);
     expect(pixel(radial, 100, 50)[0]).toBeGreaterThan(240);
     expect(pixel(radial, 138, 50)[3]).toBeLessThan(20);
+  });
+});
+
+describe("path operators", () => {
+  const bar = () => ({
+    id: "bar",
+    name: "bar",
+    type: "path",
+    path: prop({
+      closed: false,
+      vertices: [
+        { point: [20, 50], inTangent: [0, 0], outTangent: [0, 0] },
+        { point: [180, 50], inTangent: [0, 0], outTangent: [0, 0] },
+      ],
+    }),
+  });
+
+  it("strokes only the trimmed part of a path", () => {
+    const out = render([shapeLayer("s", [bar(), stroke(solidPaint("#ffffff"), 10), trim(0, 0.5)])]);
+    expect(pixel(out, 60, 50)).toEqual([255, 255, 255, 255]);
+    expect(pixel(out, 140, 50)).toEqual(CLEAR);
+    // An offset of 180° moves the kept half to the other end.
+    const moved = render([
+      shapeLayer("s", [
+        bar(),
+        stroke(solidPaint("#ffffff"), 10),
+        trim(0, 0.5, { offset: prop(180) }),
+      ]),
+    ]);
+    expect(pixel(moved, 60, 50)).toEqual(CLEAR);
+    expect(pixel(moved, 140, 50)).toEqual([255, 255, 255, 255]);
+  });
+
+  it("rounds a rectangle's corners away", () => {
+    const corner = (contents: Obj[]) => pixel(render([shapeLayer("s", contents)]), 31, 31);
+    const square = () => rect([50, 50], [40, 40]);
+    expect(corner([square(), fill()])).toEqual(RED);
+    expect(corner([square(), roundCorners(10), fill()])).toEqual(CLEAR);
+  });
+
+  it("draws a repeater's copies, faded from start to end opacity", () => {
+    const out = render([
+      shapeLayer("s", [
+        rect([20, 50], [10, 10]),
+        fill(),
+        repeater(3, {
+          position: prop([30, 0]),
+          startOpacity: prop(1),
+          endOpacity: prop(0),
+        }),
+      ]),
+    ]);
+    expect(pixel(out, 20, 50)).toEqual(RED);
+    expect(pixel(out, 50, 50)).toEqual([128, 0, 0, 128]);
+    expect(pixel(out, 80, 50)).toEqual(CLEAR);
+    expect(pixel(out, 35, 50)).toEqual(CLEAR);
   });
 });
 
@@ -574,6 +633,34 @@ describe("determinism", () => {
           scale: prop([1.13, 0.91]),
           skew: prop(6),
         }),
+      },
+    ),
+    shapeLayer(
+      "ops",
+      [
+        ellipse([0, 0], [30, 20]),
+        {
+          id: "pg",
+          name: "pg",
+          type: "polygon",
+          position: prop([12, 6]),
+          points: 5,
+          radius: prop(14),
+          rotation: prop(7),
+        },
+        roundCorners(3.3),
+        stroke(solidPaint("#40e0d0"), 2.5, { cap: "round" }),
+        trim(0.07, 0.83, { offset: prop(41), mode: "individual" }),
+        repeater(3.6, {
+          position: prop([9, 4]),
+          rotation: prop(23),
+          scale: prop([0.87, 0.87]),
+          startOpacity: prop(1),
+          endOpacity: prop(0.3),
+        }),
+      ],
+      {
+        transform: transform({ position: prop([60, 40]) }),
       },
     ),
     layer("bg", "solid", {
