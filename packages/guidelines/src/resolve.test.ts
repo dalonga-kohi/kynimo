@@ -20,11 +20,15 @@ describe("millisecondsToFrames", () => {
     expect(millisecondsToFrames(49, fps30)).toBe(1);
     expect(millisecondsToFrames(1000, { num: 24, den: 1 })).toBe(24);
     expect(millisecondsToFrames(1001, ntsc)).toBe(30);
+    expect(millisecondsToFrames(100, ntsc)).toBe(3); // 2.997 frames
+    expect(millisecondsToFrames(150, ntsc)).toBe(4); // 4.496 frames
   });
 
   it("never rounds a real duration down to nothing, and keeps zero at zero", () => {
     expect(millisecondsToFrames(1, fps30)).toBe(1);
     expect(millisecondsToFrames(0, fps30)).toBe(0);
+    expect(() => millisecondsToFrames(0.5, fps30)).toThrow(RangeError);
+    expect(() => millisecondsToFrames(Number.NaN, fps30)).toThrow(RangeError);
   });
 });
 

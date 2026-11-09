@@ -2,7 +2,7 @@ import type { GuidelinePack } from "../pack.js";
 import { ALL_SOURCES, SOURCES as S } from "./sources.js";
 
 const type = (weight: number, size: number, tracking: number, leading: number) =>
-  ({ family: "Inter", weight, size, tracking, leading, case: "upper" }) as const;
+  ({ family: "Inter", weight, size, tracking, leading, textCase: "upper" }) as const;
 
 /** Hard cuts and heavy uppercase type: nothing eases, things appear, jump and stop. */
 export const brutalist: GuidelinePack = {
@@ -43,7 +43,7 @@ export const brutalist: GuidelinePack = {
     display: type(900, 220, -40, 0.9),
     headline: type(900, 128, -30, 0.95),
     title: type(900, 64, -10, 1.05),
-    body: { ...type(500, 36, 0, 1.3), case: "none" },
+    body: { ...type(500, 36, 0, 1.3), textCase: "none" },
     caption: type(500, 28, 40, 1.25),
     label: type(900, 26, 60, 1.1),
   },
@@ -102,7 +102,12 @@ export const brutalist: GuidelinePack = {
       maxMs: 400,
     },
     "flash-rate": { severity: "error", sources: [S.wcagFlash.id], maxPerSecond: 3 },
-    "font-variety": { severity: "warning", sources: [S.judgment.id], max: 1, maxWeights: 2 },
+    "font-variety": {
+      severity: "warning",
+      sources: [S.judgment.id],
+      maxFamilies: 1,
+      maxWeights: 2,
+    },
   },
   sources: [...ALL_SOURCES],
 };

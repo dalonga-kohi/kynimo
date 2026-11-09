@@ -2,7 +2,7 @@ import type { GuidelinePack } from "../pack.js";
 import { ALL_SOURCES, SOURCES as S } from "./sources.js";
 
 const type = (weight: number, size: number, tracking: number, leading: number) =>
-  ({ family: "Inter", weight, size, tracking, leading, case: "none" }) as const;
+  ({ family: "Inter", weight, size, tracking, leading, textCase: "none" }) as const;
 
 /** Energetic UI-promo look: light background, bright accents, quick staggers, springs that bounce. */
 export const playfulSaas: GuidelinePack = {
@@ -97,7 +97,12 @@ export const playfulSaas: GuidelinePack = {
       maxMs: 800,
     },
     "flash-rate": { severity: "error", sources: [S.wcagFlash.id], maxPerSecond: 3 },
-    "font-variety": { severity: "warning", sources: [S.judgment.id], max: 1, maxWeights: 3 },
+    "font-variety": {
+      severity: "warning",
+      sources: [S.judgment.id],
+      maxFamilies: 1,
+      maxWeights: 3,
+    },
   },
   sources: [...ALL_SOURCES],
 };

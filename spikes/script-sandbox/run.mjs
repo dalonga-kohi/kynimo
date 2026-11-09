@@ -55,6 +55,8 @@ const LIMITS = {
   stackBytes: 512 * 1024,
   interrupts: 2000,
   maxOps: 5000,
+  sourceBytes: 64 * 1024,
+  outputBytes: 2 * 1024 * 1024,
 };
 
 /**
@@ -63,6 +65,10 @@ const LIMITS = {
  * stops at the same point on a fast and a slow machine.
  */
 async function runScript(source, { seed = 1, typescript = true } = {}) {
+  // Checked on the host, before anything is evaluated.
+  if (Buffer.byteLength(source) > LIMITS.sourceBytes) {
+    return { ok: false, error: "RangeError: script is larger than the source limit", ticks: 0 };
+  }
   const js = typescript ? stripTypeScriptTypes(source, { mode: "strip" }) : source;
   // A fresh WebAssembly instance per run: a script that exhausts memory leaves QuickJS unable
   // to free its runtime (the module aborts), so no instance is ever shared between scripts.
@@ -81,24 +87,39 @@ async function runScript(source, { seed = 1, typescript = true } = {}) {
         r.error.dispose();
         throw Object.assign(new Error(err?.message ?? String(err)), { name: err?.name ?? "Error" });
       }
-      const v = vm.dump(r.value);
+      // Only the collect step's value is read; a script's completion value is ignored.
+      const v = file === "collect.js" ? vm.dump(r.value) : undefined;
       r.value.dispose();
       return v;
     };
     // Remove the two ambient sources of non-determinism before any user code runs.
     evalOrThrow(
       `delete globalThis.Date; Math.random = undefined; delete Math.random;
+       delete globalThis.WeakRef; delete globalThis.FinalizationRegistry;
+       const __stringify = JSON.stringify;
        const __SEED = ${seed};
        const __DOC = ${JSON.stringify({ compositions: { main: { fps: 30, width: 1920, height: 1080, frames: 300 } } })};`,
       "prelude.js",
     );
     evalOrThrow(SDK, "sdk.js");
     evalOrThrow(js, "script.ts");
-    const json = evalOrThrow(
-      `if (__ops.length > ${LIMITS.maxOps}) throw new RangeError("too many ops"); JSON.stringify(__ops)`,
-      "collect.js",
-    );
-    return { ok: true, ops: JSON.parse(json), json, ticks };
+    // Scripts are synchronous. Work left in a promise would be dropped silently, so it is an error.
+    if (runtime.hasPendingJob()) {
+      throw Object.assign(new Error("scripts must be synchronous: a promise or await is pending"), {
+        name: "SyntaxError",
+      });
+    }
+    const json = evalOrThrow("__stringify(__ops)", "collect.js");
+    // The limits on the result are enforced here, on the host: anything checked inside the
+    // sandbox is checked by code the script can replace.
+    if (typeof json !== "string" || json.length > LIMITS.outputBytes) {
+      throw new RangeError("script output is larger than the output limit");
+    }
+    const ops = JSON.parse(json);
+    if (!Array.isArray(ops) || ops.length > LIMITS.maxOps) {
+      throw new RangeError("script produced more operations than the limit");
+    }
+    return { ok: true, ops, json, ticks };
   } catch (e) {
     return { ok: false, error: `${e.name}: ${e.message}`, ticks };
   } finally {
@@ -148,6 +169,7 @@ const probe = await runScript(
      Date: typeof Date, random: typeof Math.random, fetch: typeof fetch, require: typeof require,
      process: typeof process, setTimeout: typeof setTimeout, performance: typeof performance,
      importFn: typeof globalThis.import, WebAssembly: typeof WebAssembly, console: typeof console,
+     WeakRef: typeof WeakRef, FinalizationRegistry: typeof FinalizationRegistry,
    }), {});`,
   { typescript: false },
 );
@@ -157,14 +179,12 @@ check(
   probe.ok && Object.values(seen).every((t) => t === "undefined"),
   JSON.stringify(seen),
 );
+// 3b. A dynamic import can never resolve (no module loader), so it is caught as pending work.
 const dyn = await runScript(
   `import("node:fs").then(() => {}); kynimo.composition("main").text("x", {});`,
   { typescript: false },
 );
-info(
-  "3b. dynamic import()",
-  dyn.ok ? "evaluates, but no module loader is installed, so it can never resolve" : dyn.error,
-);
+check("3b. import() is refused", !dyn.ok && /synchronous/.test(dyn.error), dyn.error);
 
 // 4. CPU: an endless loop is stopped by the budget, at the same tick count every time.
 const t0 = performance.now();
@@ -209,6 +229,31 @@ check(
   "6. SDK can't be replaced",
   tamper.ok && tamper.ops[0].layer.content !== "4",
   tamper.ok ? `random() = ${tamper.ops[0].layer.content}` : tamper.error,
+);
+
+// 6b. Limits on the result hold even when the script replaces what runs inside the sandbox.
+const flood = await runScript(
+  `const s = JSON.stringify; JSON.stringify = () => s(Array.from({ length: 20000 }, () => ({})));
+   __ops.length = 0; for (let i = 0; i < 20000; i++) __ops.push({});`,
+  { typescript: false },
+);
+check(
+  "6b. Op limit is enforced on the host",
+  !flood.ok && /more operations/.test(flood.error),
+  flood.error,
+);
+const big = await runScript(`// ${"x".repeat(LIMITS.sourceBytes)}`, { typescript: false });
+check("6c. Source limit is checked before evaluation", !big.ok && big.ticks === 0, big.error);
+
+// 6d. Asynchronous work is refused, not silently dropped.
+const pending = await runScript(
+  `Promise.resolve().then(() => kynimo.composition("main").text("late", {}));`,
+  { typescript: false },
+);
+check(
+  "6d. Pending promise work is an error",
+  !pending.ok && /synchronous/.test(pending.error),
+  pending.error,
 );
 
 // 7. Errors point into the script.

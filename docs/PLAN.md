@@ -40,15 +40,15 @@ The tools agents should reach for first. Each expands to one `apply_ops` batch a
 2. `apply_preset`: presets are data (name, parameters, op template) in a catalog that is also an MCP resource. Start with about twelve that cover the brief suite: fade-up, scale-in, slide, mask-reveal, typewriter, word-by-word, blur-in, pop, draw-on (trim), count-up, exit pairs.
 3. `stagger`: offset, order (index, reverse, center-out, seeded random) and rhythm; works over layers and, through animators, glyphs.
 4. `retime`: scale or shift a selection's keyframes; refuses results that break spring settle rules and suggests the fix.
-5. A built-in default token set (four durations, four easings, three springs) so results look deliberate before M5 packs exist.
+5. Token names come from `@kynimo/guidelines` (ADR-0037): the pinned pack's, or Keynote's when the document pins none.
 6. Listing budget: move per-tool detail into `get_layer_schema`-style lookups so `tools/list` stays under 60 KB. Rewrite the server instructions to lead with intent tools.
 
 ## `run_script` (M4, ADR-0036)
 
-1. `packages/script` (new): the sandbox runner from `spikes/script-sandbox` as a library. One WebAssembly instance per run, the prelude that removes `Date` and `Math.random`, counted limits, errors mapped back to source line and column.
+1. `packages/script` (new): the sandbox runner from `spikes/script-sandbox` as a library. One WebAssembly instance per run in a worker thread with a wall-clock deadline, the prelude that removes `Date`, `Math.random`, `WeakRef` and `FinalizationRegistry`, counted limits, errors mapped back to source line and column. The seed and the document snapshot are passed in as values, never pasted into source. A run with pending promise work is an error.
 2. The SDK, generated from the operation and layer schemas: `kynimo.composition(id)`, layer builders per layer type, `layer.set`, `layer.animate` (the intent tools' expansion, shared code), `stagger`, presets, `kynimo.tokens` of the pinned pack, `kynimo.random()`. A test fails if an operation has no SDK path.
 3. Reads: the script gets a frozen snapshot (compositions, layers by id, name or selector, their resolved static properties). It can't read assets' bytes.
-4. Host side: validate every recorded op, apply as one batch through the existing `apply_ops` path (so `base_version`, `idempotency_key`, undo and change records need nothing new). Keep the source on the change record.
+4. Host side: check source size before evaluating and result size and op count after parsing; validate every recorded op, apply as one batch through the existing `apply_ops` path (so `base_version`, `idempotency_key`, undo and change records need nothing new). Keep the source on the change record.
 5. `dry_run` returns the ops and what `describe_motion` would say, without writing.
 6. Type declarations as the resource `kynimo://sdk`; a short version in the tool description. Server instructions lead with: "for anything beyond a few edits, write a script".
 7. Tests: the spike's hostile cases as unit tests, a property test that script → ops is byte-identical across runs, an end-to-end test that rebuilds the title-card reference scene from one script and matches its approved frames.

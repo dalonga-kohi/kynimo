@@ -2,7 +2,7 @@ import type { GuidelinePack } from "../pack.js";
 import { ALL_SOURCES, SOURCES as S } from "./sources.js";
 
 const type = (weight: number, size: number, tracking: number, leading: number) =>
-  ({ family: "Inter", weight, size, tracking, leading, case: "none" }) as const;
+  ({ family: "Inter", weight, size, tracking, leading, textCase: "none" }) as const;
 
 /** Calm, confident product-launch look: one idea on screen, long holds, springs without bounce. */
 export const keynote: GuidelinePack = {
@@ -40,7 +40,7 @@ export const keynote: GuidelinePack = {
     title: type(600, 60, -15, 1.12),
     body: type(400, 38, -5, 1.35),
     caption: type(500, 28, 0, 1.3),
-    label: { ...type(600, 24, 80, 1.2), case: "upper" },
+    label: { ...type(600, 24, 80, 1.2), textCase: "upper" },
   },
   layout: {
     margin: 0.1,
@@ -60,7 +60,7 @@ export const keynote: GuidelinePack = {
     springs: {
       gentle: { damping: 1, response: 0.7 },
       snappy: { damping: 1, response: 0.4 },
-      bouncy: { damping: 0.85, response: 0.55 },
+      bouncy: { damping: 1, response: 0.55 },
     },
     stagger: { tight: 50, base: 100, loose: 180 },
     distance: { small: 16, base: 40, large: 96 },
@@ -97,7 +97,12 @@ export const keynote: GuidelinePack = {
       maxMs: 1400,
     },
     "flash-rate": { severity: "error", sources: [S.wcagFlash.id], maxPerSecond: 3 },
-    "font-variety": { severity: "warning", sources: [S.judgment.id], max: 1, maxWeights: 4 },
+    "font-variety": {
+      severity: "warning",
+      sources: [S.judgment.id],
+      maxFamilies: 1,
+      maxWeights: 4,
+    },
   },
   sources: [...ALL_SOURCES],
 };

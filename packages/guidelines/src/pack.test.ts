@@ -167,6 +167,115 @@ describe("GuidelinePackSchema", () => {
     expect(issuesOf({ ...keynote, extra: true })).toHaveLength(1);
   });
 
+  it("rejects colors with alpha, which would slip past the contrast check", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.color.text = "#f5f5f700";
+        }),
+      ),
+    ).toEqual(["color.text: must be an opaque lowercase hex color: #rrggbb"]);
+  });
+
+  it("rejects a margin inside the pack's own text-safe inset", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.layout.margin = 0.04;
+        }),
+      ),
+    ).toEqual([
+      "layout.margin: must be at least 0.050, the text-safe inset of this pack's safe-area rule",
+    ]);
+    for (const pack of BUILT_IN_PACKS) {
+      expect(pack.layout.margin).toBeGreaterThanOrEqual(
+        (1 - pack.rules["safe-area"].text) / 2 - 1e-9,
+      );
+    }
+  });
+
+  it("rejects inconsistent thresholds", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.rules["text-contrast"].minRatioLarge = 8;
+        }),
+      ),
+    ).toContain("rules.text-contrast.minRatioLarge: must not exceed minRatio");
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.rules["entrance-duration"].minMs = 1500;
+        }),
+      ),
+    ).toContain("rules.entrance-duration.minMs: must not exceed maxMs");
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.rules["safe-area"].text = 0.95;
+        }),
+      ),
+    ).toContain("rules.safe-area.text: must not exceed action");
+  });
+
+  it("rejects type that breaks the pack's own font-variety limits", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.rules["font-variety"].maxWeights = 2;
+        }),
+      ),
+    ).toEqual(["type: uses 1 families and 4 weights, over this pack's font-variety limits"]);
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.type.body.family = "Noto Sans";
+        }),
+      ),
+    ).toEqual(["type: uses 2 families and 4 weights, over this pack's font-variety limits"]);
+  });
+
+  it("rejects stagger, distance and spacing tokens that are not ascending", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.motion.stagger.loose = p.motion.stagger.base;
+        }),
+      ),
+    ).toEqual(["motion.stagger.loose: must be greater than base"]);
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.motion.distance.small = p.motion.distance.base;
+        }),
+      ),
+    ).toEqual(["motion.distance.base: must be greater than small"]);
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.layout.spacing.xl = 0;
+        }),
+      ),
+    ).toEqual(["layout.spacing.xl: must be greater than l"]);
+  });
+
+  it("rejects duplicate source ids and links that aren't https", () => {
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.sources.push({ id: "wcag-contrast", title: "again" });
+        }),
+      ),
+    ).toEqual([`sources.${keynote.sources.length}.id: duplicate source id`]);
+    expect(
+      issuesOf(
+        edit((p) => {
+          p.sources.push({ id: "bad-link", title: "x", url: "javascript:alert(1)" });
+        }),
+      ),
+    ).toHaveLength(1);
+  });
+
   it("requires every token name", () => {
     for (const token of DURATION_TOKENS) {
       const copy = JSON.parse(JSON.stringify(keynote)) as {

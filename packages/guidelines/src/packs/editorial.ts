@@ -2,7 +2,7 @@ import type { GuidelinePack } from "../pack.js";
 import { ALL_SOURCES, SOURCES as S } from "./sources.js";
 
 const type = (weight: number, size: number, tracking: number, leading: number) =>
-  ({ family: "Inter", weight, size, tracking, leading, case: "none" }) as const;
+  ({ family: "Inter", weight, size, tracking, leading, textCase: "none" }) as const;
 
 /** Magazine look: paper background, strong weight contrast, strict grid, slow reveals. */
 export const editorial: GuidelinePack = {
@@ -40,7 +40,7 @@ export const editorial: GuidelinePack = {
     title: type(500, 56, -10, 1.2),
     body: type(400, 36, 0, 1.5),
     caption: type(400, 28, 5, 1.4),
-    label: { ...type(700, 24, 140, 1.2), case: "upper" },
+    label: { ...type(700, 24, 140, 1.2), textCase: "upper" },
   },
   layout: {
     margin: 0.09,
@@ -97,7 +97,12 @@ export const editorial: GuidelinePack = {
       maxMs: 1800,
     },
     "flash-rate": { severity: "error", sources: [S.wcagFlash.id], maxPerSecond: 3 },
-    "font-variety": { severity: "warning", sources: [S.judgment.id], max: 1, maxWeights: 4 },
+    "font-variety": {
+      severity: "warning",
+      sources: [S.judgment.id],
+      maxFamilies: 1,
+      maxWeights: 4,
+    },
   },
   sources: [...ALL_SOURCES],
 };

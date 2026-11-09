@@ -1,5 +1,4 @@
 import {
-  ColorSchema,
   FontWeightSchema,
   ID_PATTERN,
   isBundledFontFamily,
@@ -50,6 +49,14 @@ const tokens = <K extends string, V extends z.ZodType>(names: readonly K[], valu
 
 const Milliseconds = z.number().int().min(0).max(10_000);
 
+/**
+ * Pack colors are opaque. The contrast rule compares colors as given, so a color with alpha
+ * would pass the check and still be unreadable.
+ */
+export const PackColorSchema = z
+  .string()
+  .regex(/^#[0-9a-f]{6}$/, "must be an opaque lowercase hex color: #rrggbb");
+
 /** An easing token: any keyframe interpolation except a spring (springs have their own tokens). */
 export const EasingSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("linear") }),
@@ -79,7 +86,8 @@ export const TypeStyleSchema = z.strictObject({
   tracking: z.number().min(-200).max(1000),
   /** Multiple of the font size, as on text layers. */
   leading: z.number().min(0.5).max(3),
-  case: z.enum(["none", "upper"]),
+  /** As `textCase` on text layers. */
+  textCase: z.enum(["none", "upper", "lower"]),
 });
 export type TypeStyle = z.infer<typeof TypeStyleSchema>;
 
@@ -112,15 +120,19 @@ export const RulesSchema = z.strictObject({
   "text-contrast": rule({
     minRatio: z.number().min(1).max(21),
     minRatioLarge: z.number().min(1).max(21),
-    largeSize: z.number().positive(),
+    largeSize: z.number().positive().max(1000),
   }),
-  /** Text stays inside the central `text` fraction of the frame, everything important inside `action`. */
+  /**
+   * Text stays inside the central `text` fraction of the frame and everything important inside
+   * `action`. Both are per axis: 0.9 leaves 5 % of the width at each side and 5 % of the height
+   * at top and bottom.
+   */
   "safe-area": rule({
     text: z.number().min(0.5).max(1),
     action: z.number().min(0.5).max(1),
   }),
   /** No text smaller than `minSize` pixels at {@link REFERENCE_HEIGHT}. */
-  "min-text-size": rule({ minSize: z.number().positive() }),
+  "min-text-size": rule({ minSize: z.number().positive().max(1000) }),
   /** Easings and springs come from the pack's tokens, not ad-hoc values. */
   "token-easing": rule({}),
   /** Colors come from the pack's roles, plus colors sampled from the user's own media. */
@@ -129,9 +141,9 @@ export const RulesSchema = z.strictObject({
   "entrance-duration": rule({ minMs: Milliseconds, maxMs: Milliseconds }),
   /** No more than `maxPerSecond` large luminance flashes. */
   "flash-rate": rule({ maxPerSecond: z.number().positive().max(60) }),
-  /** At most `max` font families and `maxWeights` weights in one video. */
+  /** At most `maxFamilies` font families and `maxWeights` weights in one video. */
   "font-variety": rule({
-    max: z.number().int().min(1).max(10),
+    maxFamilies: z.number().int().min(1).max(10),
     maxWeights: z.number().int().min(1).max(9),
   }),
 });
@@ -150,10 +162,13 @@ const PackShape = z.strictObject({
     do: z.array(z.string().min(1).max(200)).min(1).max(10),
     avoid: z.array(z.string().min(1).max(200)).min(1).max(10),
   }),
-  color: tokens(COLOR_ROLES, ColorSchema),
+  color: tokens(COLOR_ROLES, PackColorSchema),
   type: tokens(TYPE_ROLES, TypeStyleSchema),
   layout: z.strictObject({
-    /** Outer margin as a fraction of the composition's shorter side. */
+    /**
+     * Outer margin per axis: this fraction of the width at each side and of the height at top
+     * and bottom. Never smaller than the text-safe inset of the pack's `safe-area` rule.
+     */
     margin: z.number().min(0).max(0.25),
     columns: z.number().int().min(1).max(24),
     /** Pixels at {@link REFERENCE_HEIGHT}. */
@@ -178,7 +193,7 @@ const PackShape = z.strictObject({
       z.strictObject({
         id: SourceId,
         title: z.string().min(1).max(200),
-        url: z.url().optional(),
+        url: z.url({ protocol: /^https$/ }).optional(),
       }),
     )
     .min(1)
@@ -206,7 +221,8 @@ const ascending = (
 
 /**
  * A guideline pack. Beyond its shape, a pack must pass its own rules: its text colors meet its
- * contrast thresholds, its type sizes its minimum size, its base duration its entrance range.
+ * contrast thresholds, its type sizes its minimum size, its base duration its entrance range,
+ * its margin its text-safe area.
  * A pack that fails its own checks would make every video built with it fail them too.
  */
 export const GuidelinePackSchema = PackShape.superRefine((pack, ctx) => {
@@ -276,7 +292,7 @@ export const GuidelinePackSchema = PackShape.superRefine((pack, ctx) => {
   const weights = new Set(TYPE_ROLES.map((r) => pack.type[r].weight));
   const families = new Set(TYPE_ROLES.map((r) => pack.type[r].family));
   const variety = pack.rules["font-variety"];
-  if (weights.size > variety.maxWeights || families.size > variety.max) {
+  if (weights.size > variety.maxWeights || families.size > variety.maxFamilies) {
     ctx.addIssue({
       code: "custom",
       path: ["type"],
@@ -301,6 +317,15 @@ export const GuidelinePackSchema = PackShape.superRefine((pack, ctx) => {
     });
   }
   const safe = pack.rules["safe-area"];
+  // Text laid out at the pack's margin must be inside its own text-safe area.
+  const textInset = (1 - safe.text) / 2;
+  if (pack.layout.margin < textInset - 1e-9) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["layout", "margin"],
+      message: `must be at least ${textInset.toFixed(3)}, the text-safe inset of this pack's safe-area rule`,
+    });
+  }
   if (safe.text > safe.action) {
     ctx.addIssue({
       code: "custom",

@@ -17,10 +17,12 @@ import {
 } from "./pack.js";
 
 /**
- * Milliseconds as whole frames at a frame rate: rounded to the nearest frame, half up, in
- * integer arithmetic so every platform agrees. A non-zero time is at least one frame.
+ * Whole milliseconds as whole frames at a frame rate: rounded to the nearest frame, half up.
+ * The rounding is one floor of a ratio of integers, exact for every time a pack can hold, so
+ * every platform agrees. A non-zero time is at least one frame.
  */
 export function millisecondsToFrames(ms: number, fps: FrameRate): number {
+  if (!Number.isInteger(ms)) throw new RangeError("milliseconds must be a whole number");
   if (ms <= 0) return 0;
   const denominator = fps.den * 1000;
   return Math.max(1, Math.floor((2 * ms * fps.num + denominator) / (2 * denominator)));
@@ -32,15 +34,17 @@ export const durationFrames = (pack: GuidelinePack, token: DurationToken, fps: F
 export const staggerFrames = (pack: GuidelinePack, token: StaggerToken, fps: FrameRate): number =>
   millisecondsToFrames(pack.motion.stagger[token], fps);
 
+const isSpringToken = (token: string): token is SpringToken =>
+  (SPRING_TOKENS as readonly string[]).includes(token);
+
 /** The keyframe interpolation an easing or spring token stands for. */
 export function interpolationFor(
   pack: GuidelinePack,
   token: EasingToken | SpringToken,
 ): Interpolation {
-  if ((SPRING_TOKENS as readonly string[]).includes(token)) {
-    return { type: "spring", ...pack.motion.springs[token as SpringToken] };
-  }
-  return pack.motion.easings[token as EasingToken];
+  return isSpringToken(token)
+    ? { type: "spring", ...pack.motion.springs[token] }
+    : pack.motion.easings[token];
 }
 
 /**
