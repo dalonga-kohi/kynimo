@@ -49,9 +49,10 @@ function pgliteDatabase(pg: PGlite): Database {
 
 // One in-process Postgres for the file (starting one takes seconds); `freshDatabase` empties it.
 let shared: PGlite;
+// Starting the WASM Postgres can take well over the default hook timeout on a busy CI runner.
 beforeAll(async () => {
   shared = await PGlite.create();
-});
+}, 60_000);
 afterAll(async () => {
   await shared.close();
 });

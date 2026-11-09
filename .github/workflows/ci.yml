@@ -22,18 +22,18 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: kynimo
-          POSTGRES_PASSWORD: kynimo
           POSTGRES_DB: kynimo_test
+          # A disposable service container: no password, so no credential lives in the repo.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U kynimo"
+          --health-cmd "pg_isready -U kynimo -d kynimo_test"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 20
     env:
-      # A throwaway CI database, not a secret.
-      KYNIMO_TEST_DATABASE_URL: postgresql://kynimo:kynimo@localhost:5432/kynimo_test
+      KYNIMO_TEST_DATABASE_URL: postgresql://kynimo@localhost:5432/kynimo_test
     steps:
       - uses: actions/checkout@v5
 
