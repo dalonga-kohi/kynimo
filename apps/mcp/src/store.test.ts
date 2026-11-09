@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SCENE_FORMAT_VERSION } from "@kynimo/scene";
@@ -53,7 +53,12 @@ describe("FileStore", () => {
       { kind: "undo" },
     );
     expect(undone).toMatchObject({ version: 3, markers_removed: ["marker-1"] });
-    expect((await readdir(dir)).sort()).toEqual([".lock", "create-keys.json", "projects"]);
+    expect((await readdir(dir)).sort()).toEqual([
+      ".lock",
+      "create-keys.json",
+      "projects",
+      "versions",
+    ]);
     expect((await readdir(join(dir, "projects"))).every((f) => f.endsWith(".json"))).toBe(true);
   });
 
@@ -82,14 +87,18 @@ describe("FileStore", () => {
   it("fails loudly on a corrupt document instead of serving it", async () => {
     const store = await FileStore.open(dir);
     const id = newProjectId();
-    await store.put({
-      id,
-      version: 1,
-      doc: { formatVersion: SCENE_FORMAT_VERSION } as never,
-      idCounter: 0,
-      history: {},
-      writes: [],
-    });
+    await mkdir(join(dir, "projects"));
+    await writeFile(
+      join(dir, "projects", `${id}.json`),
+      JSON.stringify({
+        id,
+        version: 1,
+        doc: { formatVersion: SCENE_FORMAT_VERSION },
+        idCounter: 0,
+        history: {},
+        writes: [],
+      }),
+    );
     await expect(store.get(id)).rejects.toThrow(/not a valid document/);
   });
 

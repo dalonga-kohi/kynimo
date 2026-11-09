@@ -28,12 +28,13 @@ import {
   type WarningReport,
 } from "./render.js";
 import {
-  MAX_WRITE_KEYS,
+  type KeyLookup,
   newProjectId,
   type ProjectMeta,
+  type ProjectState,
   type ProjectStore,
   type Stacks,
-  type StoredProject,
+  type Step,
   type WriteOutcome,
   type WriteRecord,
   type WriteResult,
@@ -52,6 +53,7 @@ export class ToolError extends Error {
       | "empty"
       | "not_found"
       | "key_reused"
+      | "key_expired"
       | "render_failed"
       | "unavailable",
     message: string,
@@ -96,7 +98,7 @@ export type OutcomeReply =
     }
   | { status: "expired" | "unknown" };
 
-const toState = (p: StoredProject): SceneState => ({
+const toState = (p: ProjectState): SceneState => ({
   doc: p.doc,
   idCounter: p.idCounter,
   history: new Map(Object.entries(p.history)),
@@ -148,6 +150,12 @@ function summarizeChanges(projectId: string, version: number, changes: Change[])
   };
 }
 
+const notFound = (projectId: string) =>
+  new ToolError(
+    "not_found",
+    `project '${projectId}' does not exist; list_projects shows the available ids`,
+  );
+
 const rejectionError = (o: Extract<WriteOutcome, { status: "rejected" }>) =>
   new ToolError(o.kind, o.message, o.errors, o.currentVersion);
 
@@ -161,7 +169,39 @@ function inputPath(path: readonly PropertyKey[]): (string | number)[] {
   return path.map(seg);
 }
 
-const keep = (records: WriteRecord[]) => records.slice(-MAX_WRITE_KEYS);
+/**
+ * What an earlier use of this key means for a new request: its stored result to replay, an error,
+ * or undefined when the key is new.
+ */
+async function previousUse<T>(
+  seen: KeyLookup,
+  key: string,
+  print: string,
+  tool: string,
+  replay: (o: Extract<WriteOutcome, { status: "applied" }>) => T,
+): Promise<T | ToolError | undefined> {
+  if (seen.status === "unknown") return undefined;
+  if (seen.status === "expired")
+    return new ToolError(
+      "key_expired",
+      `idempotency_key '${key}' was used too long ago for its outcome to be kept, so this ${tool} might already have been applied; check the current state and send it again with a new key`,
+    );
+  if (seen.record.fingerprint !== print)
+    return new ToolError(
+      "key_reused",
+      tool === "create_project"
+        ? `idempotency_key '${key}' was already used for a different create_project request; use a new key`
+        : `idempotency_key '${key}' was already used for a different request on this project; use a new key`,
+    );
+  const o = seen.record.outcome;
+  return o.status === "rejected" ? rejectionError(o) : replay(o);
+}
+
+/** Throws a ToolError value; returns anything else. */
+function unwrap<T>(value: T | ToolError): T {
+  if (value instanceof ToolError) throw value;
+  return value;
+}
 
 export interface ServiceOptions {
   makeId?: () => string;
@@ -235,11 +275,11 @@ type CacheValue = { kind: "frame"; frame: CapturedFrame } | { kind: "sheet"; she
 
 /**
  * The MCP tools' logic, independent of the transport. Every write goes through `write`, which
- * holds a per-project lock, checks `base_version` (optimistic concurrency), applies one atomic
- * batch through `@kynimo/scene` and records the idempotency key with its outcome (ADR-0018).
+ * runs in a store transaction that holds the project's lock, checks `base_version` (optimistic
+ * concurrency), applies one atomic batch through `@kynimo/scene` and saves the idempotency key
+ * with its outcome (ADR-0018, ADR-0029).
  */
 export class KynimoService {
-  private readonly locks = new Map<string, Promise<unknown>>();
   private readonly makeId: () => string;
   private readonly renderer: FrameRenderer | undefined;
   private readonly renders: RenderCache<CacheValue>;
@@ -255,44 +295,38 @@ export class KynimoService {
     this.renders = new RenderCache(options.renderCacheBytes ?? 256 * 1024 * 1024);
   }
 
-  private async exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(key) ?? Promise.resolve();
-    const run = previous.then(fn, fn);
-    const tail = run.catch(() => undefined);
-    this.locks.set(key, tail);
-    try {
-      return await run;
-    } finally {
-      if (this.locks.get(key) === tail) this.locks.delete(key);
-    }
-  }
-
-  private async load(projectId: string): Promise<StoredProject> {
+  private async load(projectId: string): Promise<ProjectState> {
     const p = await this.store.get(projectId);
-    if (!p)
-      throw new ToolError(
-        "not_found",
-        `project '${projectId}' does not exist; list_projects shows the available ids`,
-      );
+    if (!p) throw notFound(projectId);
     return p;
   }
 
   async createProject(input: CreateProjectInput): Promise<ProjectMeta & { replayed: boolean }> {
     const { idempotency_key: key, ...request } = input;
     const print = fingerprint({ tool: "create_project", ...request });
-    return this.exclusive("#create", async () => {
-      const records = await this.store.getCreateRecords();
-      const seen = records.find((r) => r.actor === this.actor && r.key === key);
-      if (seen) {
-        if (seen.fingerprint !== print)
-          throw new ToolError(
-            "key_reused",
-            `idempotency_key '${key}' was already used for a different create_project request; use a new key`,
-          );
-        if (seen.outcome.status === "rejected") throw rejectionError(seen.outcome);
-        const p = await this.load(seen.outcome.result.project_id);
-        return { id: p.id, name: p.doc.name, version: seen.outcome.version, replayed: true };
-      }
+    type Reply = ProjectMeta & { replayed: boolean };
+    const value = await this.store.create(async (tx): Promise<Step<Reply | ToolError>> => {
+      const earlier = await previousUse(
+        await tx.lookup(this.actor, key),
+        key,
+        print,
+        "create_project",
+        // The fingerprint covers the name, so this is what the first call returned. No store read
+        // here: it would wait on the transaction it runs in.
+        (o) => ({
+          id: o.result.project_id,
+          name: request.name,
+          version: o.version,
+          replayed: true,
+        }),
+      );
+      if (earlier !== undefined) return { value: earlier };
+      const record = (outcome: WriteOutcome): WriteRecord => ({
+        actor: this.actor,
+        key,
+        fingerprint: print,
+        outcome,
+      });
       const doc: Project = {
         formatVersion: SCENE_FORMAT_VERSION,
         name: request.name,
@@ -321,36 +355,19 @@ export class KynimoService {
           message: "the project settings are invalid; nothing was created",
           errors: parsed.error.issues.map((i) => ({ path: inputPath(i.path), message: i.message })),
         };
-        await this.store.putCreateRecords(
-          keep([...records, { actor: this.actor, key, fingerprint: print, outcome }]),
-        );
-        throw rejectionError(outcome);
+        return { commit: { record: record(outcome) }, value: rejectionError(outcome) };
       }
-      // Two writes: a crash between them leaves a project without its key, so a retry creates a
-      // second project. The database store writes both in one transaction.
       const id = this.makeId();
-      await this.store.put({
-        id,
-        version: 1,
-        doc: parsed.data,
-        idCounter: 0,
-        history: {},
-        writes: [],
-      });
       const result = summarizeChanges(id, 1, []);
-      await this.store.putCreateRecords(
-        keep([
-          ...records,
-          {
-            actor: this.actor,
-            key,
-            fingerprint: print,
-            outcome: { status: "applied", version: 1, result },
-          },
-        ]),
-      );
-      return { id, name: parsed.data.name, version: 1, replayed: false };
+      return {
+        commit: {
+          record: record({ status: "applied", version: 1, result }),
+          project: { id, version: 1, doc: parsed.data, idCounter: 0, history: {} },
+        },
+        value: { id, name: parsed.data.name, version: 1, replayed: false },
+      };
     });
+    return unwrap(value);
   }
 
   listProjects(): Promise<ProjectMeta[]> {
@@ -533,76 +550,82 @@ export class KynimoService {
   async write(meta: WriteMeta, write: Write): Promise<WriteReply> {
     const { project_id: projectId, base_version: base, idempotency_key: key } = meta;
     const print = fingerprint({ base_version: base, ...write });
-    return this.exclusive(projectId, async () => {
-      const p = await this.load(projectId);
-      const seen = p.writes.find((r) => r.actor === this.actor && r.key === key);
-      if (seen) {
-        if (seen.fingerprint !== print)
-          throw new ToolError(
-            "key_reused",
-            `idempotency_key '${key}' was already used for a different request on this project; use a new key`,
-          );
-        if (seen.outcome.status === "rejected") throw rejectionError(seen.outcome);
-        return { ...seen.outcome.result, replayed: true };
-      }
-
-      const record = async (outcome: WriteOutcome, next: StoredProject) => {
-        next.writes = keep([...p.writes, { actor: this.actor, key, fingerprint: print, outcome }]);
-        await this.store.put(next);
-      };
-      const reject = async (
-        kind: "invalid" | "conflict" | "empty",
-        message: string,
-        errors: OpError[],
-      ): Promise<never> => {
-        const outcome: WriteOutcome = {
-          status: "rejected",
-          kind,
-          message,
-          errors,
-          currentVersion: p.version,
-        };
-        await record(outcome, { ...p });
-        throw rejectionError(outcome);
-      };
-
-      if (base !== p.version)
-        return reject(
-          "conflict",
-          `base_version ${base} is stale: the project is at version ${p.version}. Read it again (get_scene) and rebuild the request with base_version ${p.version} and a new idempotency_key`,
-          [{ path: ["base_version"], message: `expected ${p.version}` }],
+    const done = await this.store.transact(
+      projectId,
+      async (tx): Promise<Step<WriteReply | ToolError>> => {
+        const p = tx.project;
+        const earlier = await previousUse(
+          await tx.lookup(this.actor, key),
+          key,
+          print,
+          "write",
+          (o) => ({ ...o.result, replayed: true }),
         );
+        if (earlier !== undefined) return { value: earlier };
 
-      const state = toState(p);
-      const step: StepResult =
-        write.kind === "ops"
-          ? applyBatch(state, this.actor, write.ops)
-          : write.kind === "undo"
-            ? undo(state, this.actor)
-            : redo(state, this.actor);
-      if (!step.ok) {
-        const message =
-          step.kind === "invalid"
-            ? "the batch was rejected; nothing was applied. Fix the listed paths and retry with a new idempotency_key"
-            : step.kind === "conflict"
-              ? `cannot ${write.kind}: a later edit changed what it would revert`
-              : `nothing to ${write.kind}`;
-        return reject(step.kind, message, step.errors);
-      }
-      const version = step.changes.length > 0 ? p.version + 1 : p.version;
-      const result = summarizeChanges(p.id, version, step.changes);
-      await record(
-        { status: "applied", version, result },
-        {
-          ...p,
-          version,
-          doc: step.state.doc,
-          idCounter: step.state.idCounter,
-          history: fromHistory(step.state.history),
-        },
-      );
-      return { ...result, replayed: false };
-    });
+        const record = (outcome: WriteOutcome): WriteRecord => ({
+          actor: this.actor,
+          key,
+          fingerprint: print,
+          outcome,
+        });
+        const reject = (
+          kind: "invalid" | "conflict" | "empty",
+          message: string,
+          errors: OpError[],
+        ): Step<ToolError> => {
+          const outcome: WriteOutcome = {
+            status: "rejected",
+            kind,
+            message,
+            errors,
+            currentVersion: p.version,
+          };
+          return { commit: { record: record(outcome) }, value: rejectionError(outcome) };
+        };
+
+        if (base !== p.version)
+          return reject(
+            "conflict",
+            `base_version ${base} is stale: the project is at version ${p.version}. Read it again (get_scene) and rebuild the request with base_version ${p.version} and a new idempotency_key`,
+            [{ path: ["base_version"], message: `expected ${p.version}` }],
+          );
+
+        const state = toState(p);
+        const step: StepResult =
+          write.kind === "ops"
+            ? applyBatch(state, this.actor, write.ops)
+            : write.kind === "undo"
+              ? undo(state, this.actor)
+              : redo(state, this.actor);
+        if (!step.ok) {
+          const message =
+            step.kind === "invalid"
+              ? "the batch was rejected; nothing was applied. Fix the listed paths and retry with a new idempotency_key"
+              : step.kind === "conflict"
+                ? `cannot ${write.kind}: a later edit changed what it would revert`
+                : `nothing to ${write.kind}`;
+          return reject(step.kind, message, step.errors);
+        }
+        const version = step.changes.length > 0 ? p.version + 1 : p.version;
+        const result = summarizeChanges(p.id, version, step.changes);
+        return {
+          commit: {
+            record: record({ status: "applied", version, result }),
+            project: {
+              id: p.id,
+              version,
+              doc: step.state.doc,
+              idCounter: step.state.idCounter,
+              history: fromHistory(step.state.history),
+            },
+          },
+          value: { ...result, replayed: false },
+        };
+      },
+    );
+    if (done === undefined) throw notFound(projectId);
+    return unwrap(done.value);
   }
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */
@@ -789,13 +812,10 @@ export class KynimoService {
 
   /** Whether a write with this key landed (ADR-0018). Without `projectId`, looks up `create_project` keys. */
   async getWriteOutcome(key: string, projectId?: string): Promise<OutcomeReply> {
-    const records =
-      projectId === undefined
-        ? await this.store.getCreateRecords()
-        : (await this.load(projectId)).writes;
-    const seen = records.find((r) => r.actor === this.actor && r.key === key);
-    if (!seen) return { status: "unknown" };
-    const o = seen.outcome;
+    if (projectId !== undefined) await this.load(projectId);
+    const seen = await this.store.lookupWrite(projectId, this.actor, key);
+    if (seen.status !== "found") return { status: seen.status };
+    const o = seen.record.outcome;
     return o.status === "applied"
       ? o
       : {
