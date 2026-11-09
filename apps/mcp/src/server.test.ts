@@ -1,7 +1,7 @@
 import { LayerSchema } from "@kynimo/scene";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { type CallToolResult, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -356,8 +356,11 @@ describe("MCP server", () => {
     expect(await text("kynimo://schema/ops")).toHaveProperty("oneOf");
     const text_ = await call(client, "get_layer_schema", { type: "text" });
     expect(await text("kynimo://schema/layer/text")).toEqual(text_.schema);
-    await expect(client.readResource({ uri: "kynimo://schema/layer/video" })).rejects.toThrow(
-      /unknown layer type 'video'/,
+    await expect(client.readResource({ uri: "kynimo://schema/layer/video" })).rejects.toMatchObject(
+      {
+        code: ErrorCode.InvalidParams,
+        message: expect.stringMatching(/unknown layer type 'video'/),
+      },
     );
   });
 

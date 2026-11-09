@@ -26,7 +26,10 @@ export const RESOURCES = {
 } as const;
 
 const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
-  image: { status: "renders", note: `formats: ${RENDERER_FORMATS.image.join(", ")}` },
+  image: {
+    status: "renders",
+    note: `formats: ${RENDERER_FORMATS.image.join(", ")}; no tool adds one yet (see unavailable.asset_upload)`,
+  },
   font: {
     status: "renders",
     note: `formats: ${RENDERER_FORMATS.font.join(", ")}; bundled without an asset: ${RENDERER_FORMATS.bundledFonts.join(", ")}`,
@@ -68,14 +71,15 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
 };
 
 const STATUSES = {
-  renders: "drawn in rendered frames",
-  accepted: "valid in a document, but left out of frames; render results list it under skipped",
+  renders:
+    "handled in rendered frames (a note says when that means drawing nothing, as for null layers)",
+  accepted:
+    "valid in a document, but not in rendered frames; the reason says why. Drawn layers left out are also listed under skipped in render results",
   unavailable: "not in the format or the server yet; the reason says when",
 } as const;
 
-export type CapabilityManifest = ReturnType<typeof buildManifest>;
-
-function buildManifest(server: { name: string; version: string }) {
+/** The capability manifest (ADR-0018), built from the renderer's tables, so it cannot drift from them. */
+export function capabilityManifest(server: { name: string; version: string }) {
   return {
     server,
     scene_format_version: SCENE_FORMAT_VERSION,
@@ -98,6 +102,3 @@ function buildManifest(server: { name: string; version: string }) {
     resources: RESOURCES,
   };
 }
-
-/** The capability manifest (ADR-0018), built from the renderer's tables, so it cannot drift from them. */
-export const capabilityManifest = buildManifest;

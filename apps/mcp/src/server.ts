@@ -1,6 +1,6 @@
 import { LayerSelectorSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
 import { withLayerDefaults } from "./defaults.js";
@@ -524,7 +524,10 @@ function registerResources(server: McpServer): void {
       const name = Array.isArray(type) ? type[0] : type;
       const known = LAYER_TYPES.find((t) => t === name);
       if (known === undefined)
-        throw new Error(`unknown layer type '${name}'; one of ${LAYER_TYPES.join(", ")}`);
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `unknown layer type '${name}'; one of ${LAYER_TYPES.join(", ")}`,
+        );
       return json(uri, layerJsonSchema(known));
     },
   );

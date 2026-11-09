@@ -27,7 +27,9 @@ export { RenderError };
 /** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
 function notYet(type: "adjustment" | "component"): string {
   const support = LAYER_SUPPORT[type];
-  return support.status === "accepted" ? support.reason : `${type} layers cannot be drawn yet`;
+  if (support.status !== "accepted")
+    throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
+  return support.reason;
 }
 
 /**
