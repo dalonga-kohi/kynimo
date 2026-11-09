@@ -103,12 +103,16 @@ export async function authenticate(
   } catch (e) {
     // Our side failed (the issuer's keys are unreachable): not the token's fault, so no 401,
     // which would make the client throw a good token away.
+    // jose throws the plain JOSEError class only from its JWKS fetch (non-200 or non-JSON).
     if (
       e instanceof errors.JWKSTimeout ||
       e instanceof errors.JWKSInvalid ||
-      !(e instanceof errors.JOSEError)
+      !(e instanceof errors.JOSEError) ||
+      e.constructor === errors.JOSEError
     )
-      throw new AuthUnavailable("the authorization server's signing keys could not be fetched");
+      throw new AuthUnavailable("the authorization server's signing keys could not be fetched", {
+        cause: e,
+      });
     return { ok: false, status: 401, error: "invalid_token", description: tokenProblem(e) };
   }
   const subject = payload.sub;

@@ -184,6 +184,11 @@ if (values.help) {
     }
     const path = remote?.resource.pathname ?? "/mcp";
     const scoped = accounts;
+    const accountView = (account: string) => {
+      // Never fall back to one shared store when users are signed in.
+      if (!scoped) throw new Error("a server with OAuth needs a store with accounts");
+      return scoped.forAccount(account);
+    };
     const handler = createHttpHandler({
       path,
       auth,
@@ -192,15 +197,16 @@ if (values.help) {
         createServer(
           new KynimoService(
             // Without auth every caller is the local account: the plain store serves it.
-            auth && scoped ? scoped.forAccount(caller.account) : store,
+            auth ? accountView(caller.account) : store,
             caller.actor,
             runtime,
           ),
         ),
-      onError: (e) =>
-        process.stderr.write(
-          `kynimo-mcp: request failed: ${e instanceof Error ? e.message : String(e)}\n`,
-        ),
+      onError: (e) => {
+        const text = (x: unknown) => (x instanceof Error ? x.message : String(x));
+        const cause = e instanceof Error && e.cause !== undefined ? ` (${text(e.cause)})` : "";
+        process.stderr.write(`kynimo-mcp: request failed: ${text(e)}${cause}\n`);
+      },
     });
     const http = createHttpServer(handler);
     stopHttp = () => new Promise((r) => http.close(() => r()));

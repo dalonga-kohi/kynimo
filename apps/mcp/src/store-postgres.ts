@@ -112,8 +112,9 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
   // Accounts (ADR-0033): every project has an owner. Projects and create keys made before
   // accounts belong to the local account, which no signed-in user can be.
   [
+    // The default stays: a build from before accounts, still running during a rolling deploy,
+    // keeps creating (local) projects instead of failing.
     `alter table kynimo_projects add column account text not null default '${LOCAL_ACCOUNT}'`,
-    "alter table kynimo_projects alter column account drop default",
     "create index kynimo_projects_account on kynimo_projects (account, created_at, id)",
     `update kynimo_write_keys set scope = '#create:${LOCAL_ACCOUNT}' where scope = '#create'`,
   ],

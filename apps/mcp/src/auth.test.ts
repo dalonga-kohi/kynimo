@@ -1,4 +1,4 @@
-import { createLocalJWKSet } from "jose";
+import { createLocalJWKSet, errors, SignJWT } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type AuthConfig,
@@ -82,6 +82,15 @@ describe("authenticate", () => {
     expect(await check(none)).toMatchObject({ status: 401, error: "invalid_token" });
   });
 
+  it("refuses a token signed with a shared secret (HS256)", async () => {
+    const hs = await new SignJWT({ sub: "user_1", aud: RESOURCE.href })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuer(ISSUER)
+      .setExpirationTime("10m")
+      .sign(new TextEncoder().encode("a-secret-at-least-32-bytes-long!!"));
+    expect(await check(hs)).toMatchObject({ status: 401, error: "invalid_token" });
+  });
+
   it("answers 403 insufficient_scope when a required scope is missing", async () => {
     const strict = { ...config, requiredScopes: ["kynimo"] };
     const token = await issuer.token({ sub: "user_1", aud: RESOURCE.href, scope: "openid" });
@@ -103,6 +112,14 @@ describe("authenticate", () => {
     };
     const token = await issuer.token({ sub: "user_1", aud: RESOURCE.href });
     await expect(check(token, down)).rejects.toBeInstanceOf(AuthUnavailable);
+    // jose's own error for a JWKS endpoint answering non-200 or non-JSON.
+    const broken = {
+      ...config,
+      keys: async () => {
+        throw new errors.JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response");
+      },
+    };
+    await expect(check(token, broken)).rejects.toBeInstanceOf(AuthUnavailable);
   });
 });
 

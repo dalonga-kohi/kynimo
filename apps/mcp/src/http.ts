@@ -45,18 +45,27 @@ export const MAX_BODY_BYTES = 12 * 1024 * 1024;
 
 class TooLarge extends Error {}
 
-/** The request body, refusing more than `max` bytes before reading them all. */
-async function readBody(req: IncomingMessage, max: number): Promise<Buffer> {
+/**
+ * The request body, refusing more than `max` bytes before reading them all. On overflow it stops
+ * reading but leaves the socket open, so the caller can still answer 413 (and close it).
+ */
+function readBody(req: IncomingMessage, max: number): Promise<Buffer> {
   const declared = Number(req.headers["content-length"]);
-  if (Number.isFinite(declared) && declared > max) throw new TooLarge();
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > max) throw new TooLarge();
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks);
+  if (Number.isFinite(declared) && declared > max) return Promise.reject(new TooLarge());
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const onData = (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= max) return void chunks.push(chunk);
+      req.off("data", onData);
+      req.pause();
+      reject(new TooLarge());
+    };
+    req.on("data", onData);
+    req.once("end", () => resolve(Buffer.concat(chunks)));
+    req.once("error", reject);
+  });
 }
 
 const send = (
@@ -67,6 +76,20 @@ const send = (
 ) => {
   res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(body));
+};
+
+/**
+ * A refusal sent before the body is read in full. The connection closes after it, so Node does
+ * not read and discard an unread body of any size to keep the connection alive.
+ */
+const refuse = (
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+) => {
+  send(res, status, body, { ...headers, connection: "close" });
+  res.once("finish", () => res.req.socket.destroySoon());
 };
 
 /** A JSON-RPC error with no request id, for failures before the request is read. */
@@ -111,9 +134,9 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
 
     const origin = req.headers.origin;
     if (origin !== undefined && !options.allowedOrigins.includes(origin))
-      return send(res, 403, rpcError(-32000, `origin ${origin} is not allowed`));
+      return refuse(res, 403, rpcError(-32000, "this origin is not allowed"));
     if (req.method !== "POST")
-      return send(res, 405, rpcError(-32000, "this server is stateless: POST only"), {
+      return refuse(res, 405, rpcError(-32000, "this server is stateless: POST only"), {
         allow: "POST",
       });
 
@@ -121,7 +144,7 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
     if (auth) {
       const result = await authenticate(auth, req.headers.authorization);
       if (!result.ok)
-        return send(res, result.status, rpcError(-32001, result.description), {
+        return refuse(res, result.status, rpcError(-32001, result.description), {
           "www-authenticate": challenge(auth, result),
         });
       const account = accountForSubject(result.principal.subject);
@@ -134,11 +157,9 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
     try {
       body = JSON.parse((await readBody(req, maxBody)).toString("utf8"));
     } catch (e) {
-      if (e instanceof TooLarge) {
+      if (e instanceof TooLarge)
         // Stop reading; the client gets its answer without uploading the rest.
-        res.setHeader("connection", "close");
-        return send(res, 413, rpcError(-32000, `the request is larger than ${maxBody} bytes`));
-      }
+        return refuse(res, 413, rpcError(-32000, `the request is larger than ${maxBody} bytes`));
       return send(res, 400, rpcError(-32700, "the request body is not valid JSON"));
     }
 
@@ -156,7 +177,9 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
   return (req, res) => {
     handle(req, res).catch((e: unknown) => {
       if (e instanceof AuthUnavailable) {
-        if (!res.headersSent) send(res, 503, rpcError(-32000, e.message), { "retry-after": "5" });
+        // Logged: an issuer outage or a wrong JWKS URL must not fail silently. No tokens in it.
+        onError(e);
+        if (!res.headersSent) refuse(res, 503, rpcError(-32000, e.message), { "retry-after": "5" });
         return;
       }
       onError(e);

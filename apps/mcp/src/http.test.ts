@@ -166,18 +166,40 @@ describe("remote MCP over Streamable HTTP", () => {
       authorization,
     });
     expect(big.status).toBe(413);
+    // Streamed without Content-Length: still a 413, not a reset connection.
+    const chunk = new TextEncoder().encode("x".repeat(512));
+    const streamed = await fetch(resource.href, {
+      method: "POST",
+      headers: {
+        authorization,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: new ReadableStream({
+        start(c) {
+          for (let i = 0; i < 8; i++) c.enqueue(chunk);
+          c.close();
+        },
+      }),
+      duplex: "half",
+    } as RequestInit);
+    expect(streamed.status).toBe(413);
     const junk = await post(resource.href, "{", { authorization });
     expect(junk.status).toBe(400);
   });
 
-  it("answers 503, not 401, when the issuer's keys are unreachable", async () => {
+  it("answers 503, not 401, when the issuer's keys are unreachable, and reports it", async () => {
+    const reported: unknown[] = [];
     const { resource, token } = await start({
       keys: async () => {
         throw new TypeError("fetch failed");
       },
+      onError: (e) => reported.push(e),
     });
     const res = await post(resource.href, rpc(), { authorization: `Bearer ${await token("a")}` });
     expect(res.status).toBe(503);
+    expect(reported).toHaveLength(1);
+    expect((reported[0] as Error).cause).toBeInstanceOf(TypeError);
   });
 
   it("acts for the local account without auth", async () => {
