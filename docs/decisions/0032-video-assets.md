@@ -40,6 +40,6 @@ ADR-0013 puts video layers in the beta: decoding with `<video>` in Chromium isn'
 
 - Agents can bring screen recordings and footage, place a clip's sound, and check frames like any other layer. An uploaded clip renders bit-identically to an image of its decoded frame, tested in Chromium.
 - JPEG frames are about ten times smaller than PNG but slightly lossy on fine UI text. A lossless option can be added per asset later.
-- Storage grows with every frame (a 60 s 1080p clip is a few hundred MB). Garbage collection (ADR-0031) matters more now.
+- Storage grows with every frame (a 60 s 1080p clip is a few hundred MB). Frames are stored while decoding, so an upload that fails partway (a limit, a stale `base_version`) leaves unreferenced frames behind. Garbage collection (ADR-0031) matters more now and is the follow-up.
 - The tool listing is at 58.1 KB of 60 KB, and `apply_ops` is at its 13 KB cap. The next tool or op has to free room first (ADR-0030).
 - Frames decoded by a different FFmpeg build can differ, but a stored asset never changes. Re-uploading the same file on a newer build gives a new asset, not changed pixels in old documents.

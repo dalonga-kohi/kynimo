@@ -589,7 +589,7 @@ export class KynimoService {
           { path: ["id"], message: "at most 58 characters: a clip's sound gets '<id>-audio'" },
         ]);
       const prepared = isMediaFile(bytes)
-        ? await this.decodeSlots.run(() => this.prepareMedia(input, bytes))
+        ? await this.decodeSlots.run(() => this.prepareMedia(blobs, input, bytes))
         : prepareFile(input, bytes);
       await putAll(blobs, prepared.blobs);
       const ops = prepared.entries.map((asset, i) => {
@@ -629,7 +629,11 @@ export class KynimoService {
    * FFmpeg on a temp copy of the upload. Frames stream from FFmpeg and are stored one by one;
    * at most {@link MEDIA_CONCURRENCY} uploads decode at once. The source file is not stored.
    */
-  private async prepareMedia(input: UploadAssetInput, bytes: Uint8Array): Promise<Prepared> {
+  private async prepareMedia(
+    blobs: BlobStore,
+    input: UploadAssetInput,
+    bytes: Uint8Array,
+  ): Promise<Prepared> {
     const media = this.media;
     if (media === undefined)
       throw new ToolError(
@@ -655,7 +659,7 @@ export class KynimoService {
         );
       const out: Prepared = { blobs: [], entries: [] };
       if (probe.video !== undefined)
-        out.entries.push(await this.decodeVideo(media, input, source, probe.video, out));
+        out.entries.push(await this.decodeVideo(blobs, media, input, source, probe.video, out));
       if (probe.hasAudio) {
         const flac = join(dir, "audio.flac");
         const { durationMs } = await media.extractAudio(source, flac, VIDEO_LIMITS.maxSeconds);
@@ -682,6 +686,7 @@ export class KynimoService {
   }
 
   private async decodeVideo(
+    blobs: BlobStore,
     media: MediaTools,
     input: UploadAssetInput,
     source: string,
@@ -690,7 +695,6 @@ export class KynimoService {
   ): Promise<Record<string, unknown>> {
     const invalid = (message: string) =>
       new ToolError("invalid", message, [{ path: ["data"], message }]);
-    const blobs = this.blobs as BlobStore;
     const rate = video.fps.num / video.fps.den;
     if (rate < 1) throw invalid("the video's frame rate is below 1 fps");
     const fps = rate > VIDEO_LIMITS.maxFps ? { num: VIDEO_LIMITS.maxFps, den: 1 } : video.fps;

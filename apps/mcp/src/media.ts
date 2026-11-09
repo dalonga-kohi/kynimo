@@ -289,6 +289,8 @@ export class Ffmpeg implements MediaTools {
       );
       child.on("close", (code) => resolve(code));
     });
+    // Awaited only on success; a late spawn error after a failed read must not go unhandled.
+    exited.catch(() => undefined);
     const split = new JpegSplitter();
     let frames = 0;
     let bytes = 0;

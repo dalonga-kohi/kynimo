@@ -370,15 +370,15 @@ describe.runIf(runMedia)("video and audio uploads with FFmpeg", () => {
     const dir = mkdtempSync(join(tmpdir(), "kynimo-media-test-"));
     try {
       const ffmpeg = new Ffmpeg();
+      // Both point at a real clip next to them, which FFmpeg would open without the format
+      // whitelist (its own HLS extension and concat "safe" checks would let these through).
+      writeFileSync(join(dir, "c.mp4"), makeClip({ width: 16, height: 16, fps: "10", seconds: 1 }));
       const hls = join(dir, "x.m3u8");
-      writeFileSync(
-        hls,
-        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\nfile:///etc/hostname\n#EXT-X-ENDLIST\n",
-      );
-      await expect(ffmpeg.probe(hls)).rejects.toThrow(MediaError);
+      writeFileSync(hls, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nc.mp4\n#EXT-X-ENDLIST\n");
+      await expect(ffmpeg.probe(hls)).rejects.toThrow(/not on whitelist/);
       const concat = join(dir, "x.mp4");
-      writeFileSync(concat, "ffconcat version 1.0\nfile /etc/hostname\n");
-      await expect(ffmpeg.probe(concat)).rejects.toThrow(MediaError);
+      writeFileSync(concat, "ffconcat version 1.0\nfile c.mp4\n");
+      await expect(ffmpeg.probe(concat)).rejects.toThrow(/not on whitelist/);
       // Error text never shows the server's temp path.
       const e = await ffmpeg.probe(concat).catch((err: Error) => err);
       expect(String(e)).not.toContain(dir);
