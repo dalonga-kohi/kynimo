@@ -1,4 +1,11 @@
-import type { Animatable, BezierPath, FrameRate, Paint, ShapeItem } from "@kynimo/scene";
+import {
+  type Animatable,
+  type BezierPath,
+  type FrameRate,
+  MAX_REPEATER_COPIES,
+  type Paint,
+  type ShapeItem,
+} from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { mixColor, parseColor } from "./color.js";
 import { lerp, lerpVector } from "./mix.js";
@@ -166,6 +173,41 @@ function resolveItem(
         dashes: item.dashes,
         dashOffset: sampleNumber(item.dashOffset, frame, fps),
       };
+    case "trim":
+      return {
+        id,
+        name,
+        type: "trim",
+        start: sampleUnit(item.start, frame, fps),
+        end: sampleUnit(item.end, frame, fps),
+        offset: sampleNumber(item.offset, frame, fps),
+        mode: item.mode,
+      };
+    case "round-corners":
+      return {
+        id,
+        name,
+        type: "round-corners",
+        radius: sampleNonNegative(item.radius, frame, fps),
+      };
+    case "repeater": {
+      const t = item.transform;
+      return {
+        id,
+        name,
+        type: "repeater",
+        // Overshooting easing may leave the stored range; the count clamps like any domain.
+        copies: Math.min(MAX_REPEATER_COPIES, sampleNonNegative(item.copies, frame, fps)),
+        offset: sampleNumber(item.offset, frame, fps),
+        composite: item.composite,
+        anchorPoint: samplePoint(t.anchorPoint, frame, fps),
+        position: samplePoint(t.position, frame, fps),
+        scale: samplePoint(t.scale, frame, fps),
+        rotation: sampleNumber(t.rotation, frame, fps),
+        startOpacity: sampleUnit(t.startOpacity, frame, fps),
+        endOpacity: sampleUnit(t.endOpacity, frame, fps),
+      };
+    }
     case "group": {
       const local = resolveTransform(item.transform, frame, fps);
       const matrix = parent === null ? local.matrix : multiply(parent, local.matrix);

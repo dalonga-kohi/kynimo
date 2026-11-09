@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type Affine, applyToPoint, IDENTITY, multiply, transformMatrix } from "./affine.js";
+import {
+  type Affine,
+  applyToPoint,
+  IDENTITY,
+  invert,
+  multiply,
+  transformMatrix,
+} from "./affine.js";
 
 const base = {
   anchorPoint: [0, 0],
@@ -63,5 +70,24 @@ describe("multiply", () => {
     const scale: Affine = [2, 0, 0, 2, 0, 0];
     expect(applyToPoint(multiply(translate, scale), [1, 1])).toEqual([12, 2]);
     expect(applyToPoint(multiply(scale, translate), [1, 1])).toEqual([22, 2]);
+  });
+});
+
+describe("invert", () => {
+  it("undoes a transform, and has no answer for a collapsed one", () => {
+    const m = transformMatrix({
+      anchorPoint: [3, -2],
+      position: [40, 10],
+      scale: [2, -0.5],
+      rotation: 33,
+      skew: 12,
+    });
+    const inverse = invert(m);
+    if (inverse === null) throw new Error("expected an inverse");
+    const [x, y] = applyToPoint(inverse, applyToPoint(m, [7, 11]));
+    expect(x).toBeCloseTo(7, 12);
+    expect(y).toBeCloseTo(11, 12);
+    expect(invert(IDENTITY)).toEqual(IDENTITY);
+    expect(invert([0, 0, 0, 1, 5, 5])).toBeNull();
   });
 });

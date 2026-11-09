@@ -21,6 +21,14 @@ export function multiply(m: Affine, n: Affine): Affine {
   ];
 }
 
+/** The inverse of `m`, or `null` when it has none (it collapses the plane onto a line or point). */
+export function invert(m: Affine): Affine | null {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (det === 0 || !Number.isFinite(det)) return null;
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}
+
 export function applyToPoint(m: Affine, [x, y]: readonly [number, number]): [number, number] {
   return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 }
