@@ -125,7 +125,8 @@ export interface ProjectStore {
   ): Promise<{ value: T } | undefined>;
   /**
    * Runs `fn` for `create_project`, whose keys are scoped to the account, and saves its commit:
-   * the new project (at version 1) and its key.
+   * the new project (at version 1) and its key. `fn` must call `tx.lookup` for its key before
+   * committing: `PostgresStore` serializes creates with one key in that call.
    */
   create<T>(fn: (tx: KeyReader) => Promise<Step<T>>): Promise<T>;
 }

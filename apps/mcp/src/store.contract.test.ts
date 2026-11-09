@@ -154,7 +154,9 @@ for (const [name, make] of Object.entries(backends)) {
       const { id, write } = await setup();
       await write(1, "w1", [addSolid("a")]);
       if (!backend) throw new Error("no backend");
-      const svc = new KynimoService(await backend.open(), "agent");
+      const reopened = await backend.open();
+      expect((await reopened.getVersion(id, 1))?.compositions[0]?.layers).toEqual([]);
+      const svc = new KynimoService(reopened, "agent");
       expect(await svc.getWriteOutcome("w1", id)).toMatchObject({ status: "applied", version: 2 });
       expect(await svc.getWriteOutcome("c")).toMatchObject({ status: "applied", version: 1 });
       const undone = await svc.write(

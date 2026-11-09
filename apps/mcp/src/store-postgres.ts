@@ -60,7 +60,12 @@ export function pgDatabase(pool: pg.Pool): Database {
  * errors are reported without it.
  */
 export function connectPostgres(url: string, onError: (e: Error) => void): Database {
-  const pool = new pg.Pool({ connectionString: url, max: 10 });
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 10,
+    // A process that stalls mid-write must not hold a project's row lock indefinitely.
+    idle_in_transaction_session_timeout: 60_000,
+  });
   // An idle client losing its connection must not crash the process; the next query reconnects.
   pool.on("error", onError);
   return pgDatabase(pool);
@@ -100,6 +105,8 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
       primary key (scope, actor, key)
     )`,
     "create index kynimo_write_keys_age on kynimo_write_keys (scope, created_at)",
+    // Keys whose outcome is still kept: the outcome purge scans only rows it will change.
+    "create index kynimo_write_keys_live on kynimo_write_keys (scope, created_at) where outcome is not null",
   ],
 ];
 
