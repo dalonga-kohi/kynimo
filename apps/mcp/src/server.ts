@@ -49,7 +49,8 @@ const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compos
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
-Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).`;
+Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
+Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(structured) }],

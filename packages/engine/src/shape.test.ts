@@ -123,6 +123,58 @@ describe("shape contents", () => {
     });
   });
 
+  it("resolves path operators, clamping counts, opacities and radii", () => {
+    const [trim, round, repeater] = contentsAt(
+      [
+        item("t", "trim", {
+          start: { keyframes: [kf(0, 0.2, under), kf(10, 1)] },
+          end: prop(0.4),
+          offset: prop(-90),
+          mode: "individual",
+        }),
+        item("rc", "round-corners", { radius: { keyframes: [kf(0, 0, under), kf(10, 8)] } }),
+        item("rp", "repeater", {
+          copies: { keyframes: [kf(0, 900, over), kf(10, 1000)] },
+          offset: prop(-0.5),
+          composite: "below",
+          transform: {
+            anchorPoint: prop([1, 2]),
+            position: prop([10, 0]),
+            scale: prop([0.9, 0.9]),
+            rotation: prop(15),
+            startOpacity: { keyframes: [kf(0, 1, under), kf(10, 0.5)] },
+            endOpacity: prop(0.25),
+          },
+        }),
+      ],
+      5,
+    );
+    expect(trim).toEqual({
+      id: "t",
+      name: "t",
+      type: "trim",
+      start: 0,
+      end: 0.4,
+      offset: -90,
+      mode: "individual",
+    });
+    expect(round).toEqual({ id: "rc", name: "rc", type: "round-corners", radius: 0 });
+    expect(repeater).toEqual({
+      id: "rp",
+      name: "rp",
+      type: "repeater",
+      copies: 1000,
+      offset: -0.5,
+      composite: "below",
+      anchorPoint: [1, 2],
+      position: [10, 0],
+      scale: [0.9, 0.9],
+      rotation: 15,
+      startOpacity: 1,
+      endOpacity: 0.25,
+    });
+  });
+
   it("keeps gradient stop offsets in 0..1 and in order under overshoot", () => {
     const stops = (a: number, b: number) => [
       { offset: a, color: "#000000" },

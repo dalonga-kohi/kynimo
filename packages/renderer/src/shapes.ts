@@ -1,6 +1,6 @@
 import { type Affine, multiply, type ResolvedPaint, type ResolvedShapeLayer } from "@kynimo/engine";
 import type { CanvasKit, Paint, Path } from "canvaskit-wasm";
-import { bindPaints, type PaintItem, type PaintOp } from "./binding.js";
+import { bindPaints, FrameShapeWork, type PaintItem, type PaintOp } from "./binding.js";
 import type { RasterImage } from "./raster.js";
 import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
 import { buildPath, type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
@@ -16,11 +16,13 @@ export function rasterizeShapeLayer(
   height: number,
   /** Called with the raster size before it is allocated; may throw to refuse it. */
   reserve: (width: number, height: number) => void = () => {},
+  /** The frame's shared path work budget (ADR-0034). */
+  work: FrameShapeWork = new FrameShapeWork(),
 ): { x: number; y: number; raster: RasterImage } | null {
   return scoped((own) => {
     const draws: { path: Path; paint: Paint; matrix: Affine }[] = [];
     let bounds: Rect | null = null;
-    for (const op of bindPaints(layer.contents)) {
+    for (const op of bindPaints(layer.contents, work)) {
       const matrix = multiply(layer.matrix, op.matrix);
       const path = own(
         buildPath(ck, op.contours, op.paint.type === "fill" && op.paint.rule === "evenodd"),

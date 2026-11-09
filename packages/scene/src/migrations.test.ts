@@ -222,11 +222,18 @@ describe("migrateProject", () => {
     expect(audio).not.toHaveProperty("masks");
   });
 
-  it("3 → 4 leaves a version 3 document unchanged apart from its version", () => {
+  it("3 → 5 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 4 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 5 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
+  });
+
+  it("4 → 5 leaves a version 4 document unchanged apart from its version", () => {
+    const v4 = { ...project(), formatVersion: 4 };
+    const r = migrateProject(v4);
+    expect(r).toMatchObject({ ok: true, from: 4, to: 5 });
+    if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
   it("rejects unknown and future versions", () => {

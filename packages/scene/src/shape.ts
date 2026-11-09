@@ -140,6 +140,57 @@ const StrokeSchema = z.strictObject({
   dashOffset: animatable(NumberSchema),
 });
 
+/**
+ * Path operators (ADR-0034) change the paths listed above them in their group, including the
+ * paths inside groups above them. Fills and strokes anywhere in that group, and in the groups
+ * they reach into, draw the changed paths, as in After Effects.
+ */
+
+/** Keeps the part of each path between `start` and `end` (0..1 of its length), shifted by `offset`. */
+const TrimSchema = z.strictObject({
+  ...item("trim"),
+  start: animatable(UnitIntervalSchema),
+  end: animatable(UnitIntervalSchema),
+  /** Degrees: 360 shifts the trimmed part once around the path. */
+  offset: animatable(NumberSchema),
+  /** `simultaneous` trims every path alike; `individual` trims them as one path, top first. */
+  mode: z.enum(["simultaneous", "individual"]),
+});
+
+/** Rounds every sharp corner (a vertex with no tangents) with an arc of this radius. */
+const RoundCornersSchema = z.strictObject({
+  ...item("round-corners"),
+  radius: animatable(NonNegativeSchema),
+});
+
+/** Copies per repeater. A higher count in a keyframe clamps to it. */
+export const MAX_REPEATER_COPIES = 1000;
+
+/**
+ * Draws copies of everything listed above it (paths, fills, strokes, groups), each one transformed
+ * once more than the one before. Opacity runs from `startOpacity` on the first copy to
+ * `endOpacity` on the last.
+ */
+const RepeaterSchema = z.strictObject({
+  ...item("repeater"),
+  /** Fractional counts fade the last copy in, so animated counts don't pop. */
+  copies: animatable(z.number().min(0).max(MAX_REPEATER_COPIES)),
+  /** Shifts every copy by this many steps; may be fractional or negative. */
+  offset: animatable(NumberSchema),
+  /** `above`: each copy draws over the one before; `below`: under it. */
+  composite: z.enum(["above", "below"]),
+  /** One step, applied once per copy: scale and rotation act about `anchorPoint`. */
+  transform: z.strictObject({
+    anchorPoint: animatable(Vec2Schema),
+    position: animatable(Vec2Schema),
+    /** A ratio (1 = 100%); copy `n` is scaled by `scale^n`. */
+    scale: animatable(Vec2Schema),
+    rotation: animatable(NumberSchema),
+    startOpacity: animatable(UnitIntervalSchema),
+    endOpacity: animatable(UnitIntervalSchema),
+  }),
+});
+
 const GroupBaseSchema = z.strictObject({ ...item("group"), transform: TransformSchema });
 
 type LeafShapeItem =
@@ -149,7 +200,10 @@ type LeafShapeItem =
   | z.infer<typeof StarSchema>
   | z.infer<typeof PathSchema>
   | z.infer<typeof FillSchema>
-  | z.infer<typeof StrokeSchema>;
+  | z.infer<typeof StrokeSchema>
+  | z.infer<typeof TrimSchema>
+  | z.infer<typeof RoundCornersSchema>
+  | z.infer<typeof RepeaterSchema>;
 
 export type GroupShapeItem = z.infer<typeof GroupBaseSchema> & { items: ShapeItem[] };
 export type ShapeItem = LeafShapeItem | GroupShapeItem;
@@ -166,6 +220,9 @@ const leafItems = [
   PathSchema,
   FillSchema,
   StrokeSchema,
+  TrimSchema,
+  RoundCornersSchema,
+  RepeaterSchema,
 ] as const;
 
 /** Recursive through `z.lazy`; the type is written out by hand because Zod cannot infer a self-reference. */
@@ -211,7 +268,8 @@ const checkGroupDepth = (value: unknown, ctx: z.RefinementCtx): void => {
 };
 
 /**
- * Items are listed top-first, like layers. Fills and strokes paint the geometry listed above them, with After Effects semantics (ADR-0017).
+ * Items are listed top-first, like layers. Fills and strokes paint the geometry listed above them, with After Effects semantics (ADR-0017);
+ * operators change the geometry listed above them (ADR-0034).
  * The input side is `unknown` because the depth check runs first, so use `io: "output"` when exporting JSON Schema.
  */
 export const ShapeItemSchema: z.ZodType<ShapeItem> = z
