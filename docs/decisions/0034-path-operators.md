@@ -30,7 +30,8 @@ ADR-0017 kept geometry in our own JavaScript so that start points and directions
   - one per item visited, every copy counted;
   - one per segment plus one per contour, each time a path is built, read or written by an operator, or handed to a paint.
 
-  Each charge is made before the work it pays for, so a refused layer fails fast with a `RenderError` that says what to lower, without allocating. The worst accepted layers take well under a second per frame. Ordinary heavy layers fit easily, e.g. 1000 copies of a rounded, filled and stroked rectangle. The capability manifest states the limit.
+  An operator is charged three times what it reads, because its output is at most twice its input. Every charge is made before the work it pays for, so a refused layer fails fast with a `RenderError` that says what to lower, before building anything large. The worst accepted layers take about half a second per frame. Ordinary heavy layers fit easily, e.g. 1000 copies of a rounded, filled and stroked rectangle.
+- **And a work budget per frame.** The evaluation budget (ADR-0015) counts a repeater as one item, so many layers, or one precomp placed many times, could each fit the layer budget and still add up to minutes. Every shape layer of a frame, precomps included, also charges one shared `MAX_FRAME_SHAPE_WORK` (2 000 000 units), the same way the frame's raster pixels are budgeted (ADR-0017). The capability manifest states both limits.
 
 ## Consequences
 

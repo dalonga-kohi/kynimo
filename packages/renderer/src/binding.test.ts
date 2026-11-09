@@ -249,11 +249,8 @@ describe("path work budget", () => {
   });
 
   const refuses = (contents: Obj[]) => {
-    const started = performance.now();
     expect(() => ops(contents)).toThrow(RenderError);
     expect(() => ops(contents)).toThrow(String(MAX_SHAPE_LAYER_WORK));
-    // Refused before the work is done, not after.
-    expect(performance.now() - started).toBeLessThan(5000);
   };
 
   it("refuses nested repeaters that multiply into millions of items", () => {

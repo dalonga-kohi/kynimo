@@ -150,11 +150,12 @@ function extract(list: readonly Piece[], a: number, b: number): Contour | null {
     if (hi > lo && piece.length > 0) {
       const part = subPiece(piece, lo - offset, hi - offset);
       if (start === null) start = part.from;
-      segments.push(part.segment);
+      // A cut that collapses to a point adds nothing to the path.
+      if (!same(part.from, part.segment.to)) segments.push(part.segment);
     }
     offset = end;
   }
-  return start === null ? null : { start, segments, closed: false };
+  return start === null || segments.length === 0 ? null : { start, segments, closed: false };
 }
 
 /** Arc-length ranges `[lo, hi]` within one contour, ascending and non-overlapping. */

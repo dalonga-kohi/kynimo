@@ -12,6 +12,7 @@ import {
 } from "./canvaskit.test-util.js";
 import { LAYER_SUPPORT } from "./capabilities.js";
 import { compositeReference } from "./compositor/reference.js";
+import { RenderError } from "./errors.js";
 import {
   composition,
   ellipse,
@@ -309,6 +310,17 @@ describe("path operators", () => {
     const square = () => rect([50, 50], [40, 40]);
     expect(corner([square(), fill()])).toEqual(RED);
     expect(corner([square(), roundCorners(10), fill()])).toEqual(CLEAR);
+  });
+
+  it("shares one path work budget across the frame's shape layers", () => {
+    // Each layer costs about 1200 units: 100 copies of a rectangle, filled.
+    const repeated = (id: string) =>
+      shapeLayer(id, [rect([20, 20], [4, 4]), fill(), repeater(100, { position: prop([1, 0]) })]);
+    const budgeted = (layers: Obj[]) =>
+      rasterizeFrame(ck, frameOf(layers), res(), { maxShapeWork: 3000 });
+    expect(budgeted([repeated("a"), repeated("b")]).layers).toHaveLength(2);
+    expect(() => budgeted([repeated("a"), repeated("b"), repeated("c")])).toThrow(RenderError);
+    expect(() => budgeted([repeated("a"), repeated("b"), repeated("c")])).toThrow("3000");
   });
 
   it("draws a repeater's copies, faded from start to end opacity", () => {

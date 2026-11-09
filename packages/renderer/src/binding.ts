@@ -39,6 +39,28 @@ export interface PaintOp {
 export const MAX_SHAPE_LAYER_WORK = 500_000;
 
 /**
+ * Path work one frame may take across all its shape layers, precomps included. The evaluation
+ * budget (ADR-0015) counts a repeater as one item, so without this a frame of many layers that
+ * each fit {@link MAX_SHAPE_LAYER_WORK} could still take minutes.
+ */
+export const MAX_FRAME_SHAPE_WORK = 2_000_000;
+
+/** Path work left in one frame; one instance is shared by every shape layer the frame draws. */
+export class FrameShapeWork {
+  private left: number;
+  constructor(readonly limit = MAX_FRAME_SHAPE_WORK) {
+    this.left = limit;
+  }
+  charge(units: number): void {
+    this.left -= units;
+    if (this.left < 0)
+      throw new RenderError(
+        `the frame needs more than ${this.limit} units of shape path work across its shape layers (repeater copies, and path segments for every paint and operator); use fewer repeated layers, fewer copies or simpler paths`,
+      );
+  }
+}
+
+/**
  * The shape tree as the binder walks it: repeaters are already expanded into one group per copy,
  * and groups carry only their local matrix, so a copy can share the items it repeats.
  */
@@ -62,9 +84,13 @@ type Node =
  * as all operators leave them, wherever it sits relative to them. A repeater copies everything
  * above it, as one group per copy.
  */
-export function bindPaints(items: readonly ResolvedShapeItem[]): PaintOp[] {
+export function bindPaints(
+  items: readonly ResolvedShapeItem[],
+  /** The frame's shared budget; a fresh one when binding a single layer on its own. */
+  frame: FrameShapeWork = new FrameShapeWork(),
+): PaintOp[] {
   const pending: Pending[] = [];
-  const budget = new Budget();
+  const budget = new Budget(frame);
   walk(toNodes(items), null, 1, pending, budget);
   return pending.reverse().map(({ refs, ...op }) => {
     budget.charge(refs.reduce((sum, ref) => sum + cost(ref.slot.contours), 0));
@@ -72,10 +98,12 @@ export function bindPaints(items: readonly ResolvedShapeItem[]): PaintOp[] {
   });
 }
 
-/** Counts path work against {@link MAX_SHAPE_LAYER_WORK}. */
+/** Counts one layer's path work against {@link MAX_SHAPE_LAYER_WORK} and the frame's budget. */
 class Budget {
   private left = MAX_SHAPE_LAYER_WORK;
+  constructor(private readonly frame: FrameShapeWork) {}
   charge(units: number): void {
+    this.frame.charge(units);
     this.left -= units;
     if (this.left < 0)
       throw new RenderError(
@@ -241,9 +269,10 @@ function walk(
 
 /** Applies one operator, in its own group's space, to every path above it. */
 function operate(item: OperatorItem, refs: readonly Ref[], budget: Budget): void {
-  // Reading the paths and writing the result both scale with their size; charge both up front
-  // for the input, and again for the output before it is mapped back and kept.
-  budget.charge(refs.reduce((sum, ref) => sum + cost(ref.slot.contours), 0));
+  // Reading the paths costs their size, and neither operator makes more than twice what it reads
+  // (a trim splits a contour at most in two; rounding adds one arc per vertex). Charge both before
+  // doing anything, so a refused operator does no work.
+  budget.charge(3 * refs.reduce((sum, ref) => sum + cost(ref.slot.contours), 0));
   const views = refs.map(resolve);
   // Per ref, per input contour: what the operator made of it.
   let results: Contour[][][];
@@ -259,7 +288,6 @@ function operate(item: OperatorItem, refs: readonly Ref[], budget: Budget): void
       return mine;
     });
   }
-  budget.charge(results.reduce((sum, r) => sum + cost(r.flat()), 0));
   refs.forEach((ref, i) => {
     const view = views[i] as Contour[];
     const own = ref.slot.contours;

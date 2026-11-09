@@ -6,6 +6,7 @@ import {
   type ResolvedSolidLayer,
 } from "@kynimo/engine";
 import type { CanvasKit } from "canvaskit-wasm";
+import { FrameShapeWork, MAX_FRAME_SHAPE_WORK } from "./binding.js";
 import { LAYER_SUPPORT } from "./capabilities.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
@@ -48,6 +49,8 @@ interface Context {
   nested: Map<ResolvedComposition, FramePlan>;
   limit: number;
   remaining: number;
+  /** Shape path work, shared by every shape layer of the frame, precomps included (ADR-0034). */
+  shapeWork: FrameShapeWork;
 }
 
 /**
@@ -55,7 +58,8 @@ interface Context {
  * the compositor. Deterministic: same resolved frame, image bytes and font bytes → same plan.
  * Throws {@link RenderError} when an image layer's asset is not in `images`, when a text layer's
  * font family (or the bundled fallback font) is not in `fonts`, or when the frame would allocate
- * more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}).
+ * more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}) or its shape layers need
+ * more than `maxShapeWork` units of path work (default {@link MAX_FRAME_SHAPE_WORK}, ADR-0034).
  */
 export function rasterizeFrame(
   ck: CanvasKit,
@@ -65,7 +69,10 @@ export function rasterizeFrame(
     fonts,
     videos,
   }: { images: ImageLibrary; fonts: FontLibrary; videos?: VideoFrameLibrary },
-  { maxRasterPixels = MAX_FRAME_RASTER_PIXELS }: { maxRasterPixels?: number } = {},
+  {
+    maxRasterPixels = MAX_FRAME_RASTER_PIXELS,
+    maxShapeWork = MAX_FRAME_SHAPE_WORK,
+  }: { maxRasterPixels?: number; maxShapeWork?: number } = {},
 ): FramePlan {
   return planComposition(
     {
@@ -76,6 +83,7 @@ export function rasterizeFrame(
       nested: new Map(),
       limit: maxRasterPixels,
       remaining: maxRasterPixels,
+      shapeWork: new FrameShapeWork(maxShapeWork),
     },
     comp,
   );
@@ -99,7 +107,14 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     const base = { id, opacity: layer.transform.opacity, blendMode, mask: null, matte: null };
     switch (layer.type) {
       case "shape": {
-        const drawn = rasterizeShapeLayer(ck, layer, comp.width, comp.height, reserve);
+        const drawn = rasterizeShapeLayer(
+          ck,
+          layer,
+          comp.width,
+          comp.height,
+          reserve,
+          ctx.shapeWork,
+        );
         return drawn === null ? null : { ...base, type: "shape", space: "composition", ...drawn };
       }
       case "text": {
