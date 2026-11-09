@@ -99,14 +99,14 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 
 ## Open questions (settled in the feature that needs them)
 
-| Question                                                                                             | Decide in |
-| ---------------------------------------------------------------------------------------------------- | --------- |
-| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                        | done      |
-| ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                         | done      |
-| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012) | M6        |
-| Hosting for API/MCP and workers                                                                      | M3 / M7   |
-| ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                          | done      |
-| Auth / OAuth provider                                                                                | M3        |
-| Job queue                                                                                            | M7        |
-| Object storage (M3, assets) + CDN for previews (M7)                                                  | M3 / M7   |
-| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                     | done      |
+| Question                                                                                                           | Decide in |
+| ------------------------------------------------------------------------------------------------------------------ | --------- |
+| ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                                      | done      |
+| ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                                       | done      |
+| Sandbox technology and resource limits for custom component code; shader validation rules (ADR-0012)               | M6        |
+| Hosting for API/MCP and workers                                                                                    | M3 / M7   |
+| ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
+| Auth / OAuth provider                                                                                              | M3        |
+| Job queue                                                                                                          | M7        |
+| ~~Object storage for assets~~ → S3-compatible, Cloudflare R2 first, content-addressed (ADR-0031); CDN for previews | M7        |
+| ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                                   | done      |
