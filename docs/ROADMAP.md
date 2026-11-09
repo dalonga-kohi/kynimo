@@ -60,6 +60,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Token references in documents: easing/spring and color tokens referenced by name (format bump), resolved against the pack version pinned in the document (ADR-0037, open question)
 - [x] First packs as drafts (0.1.0), authored by us (ADR-0035, ADR-0037): Keynote, Playful SaaS, Editorial, Brutalist; each rule cites its source
 - [ ] Packs to 1.0.0: measure reference videos frame by frame, a reference scene per pack that a person looks at, tuning on the brief suite; bundle a serif and a mono family so the packs differ in type. An outside motion designer's critique is a gate before public launch
+- [ ] Published pack versions immutable once `apply_style` pins them (ADR-0037): deep-freeze `BUILT_IN_PACKS`, and a test pinning a sha256 of each `id@version`'s canonical JSON
 - [ ] Quality rules engine + report format (location, frame range, suggested fix op)
 - [ ] `list_styles`, `apply_style`, `get_tokens` and `check_quality` tools; token list of the pinned style as an MCP resource
 

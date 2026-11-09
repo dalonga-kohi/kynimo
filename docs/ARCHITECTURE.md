@@ -96,7 +96,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/renderer`   | `@kynimo/renderer` — frame drawing, built-in shaders                                                                                            | M2         |
 | `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2         |
 | `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3         |
-| `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M5         |
+| `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M4         |
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036)                                                                           | M4         |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |

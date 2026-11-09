@@ -86,7 +86,8 @@ export const brutalist: GuidelinePack = {
     },
     "text-contrast": {
       severity: "error",
-      sources: [S.wcagContrast.id],
+      // 7 is WCAG AAA for body text, 3 is AA for large text: the mix is our choice.
+      sources: [S.wcagContrast.id, S.judgment.id],
       minRatio: 7,
       minRatioLarge: 3,
       largeSize: 48,

@@ -112,7 +112,7 @@ async function runScript(source, { seed = 1, typescript = true } = {}) {
     const json = evalOrThrow("__stringify(__ops)", "collect.js");
     // The limits on the result are enforced here, on the host: anything checked inside the
     // sandbox is checked by code the script can replace.
-    if (typeof json !== "string" || json.length > LIMITS.outputBytes) {
+    if (typeof json !== "string" || Buffer.byteLength(json, "utf8") > LIMITS.outputBytes) {
       throw new RangeError("script output is larger than the output limit");
     }
     const ops = JSON.parse(json);

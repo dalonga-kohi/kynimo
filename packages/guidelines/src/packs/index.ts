@@ -6,8 +6,9 @@ import { keynote } from "./keynote.js";
 import { playfulSaas } from "./playful-saas.js";
 
 /**
- * Every built-in pack version ever published. A document pins `packId` + `version`, so a
- * published version is never edited or removed: a change is a new entry with a higher version.
+ * Every built-in pack version ever published. A document pins `packId` + `version`. The 0.x
+ * drafts are edited in place until M5; from then on a published version is never edited or
+ * removed, a change is a new entry with a higher version, and that is enforced (ADR-0037).
  */
 export const BUILT_IN_PACKS: readonly GuidelinePack[] = [
   keynote,

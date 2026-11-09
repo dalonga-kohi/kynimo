@@ -12,7 +12,10 @@ import { contrastRatio } from "./color.js";
 /** Bumped when the pack format changes shape; packs are data and migrate like documents. */
 export const PACK_FORMAT_VERSION = 1;
 
-/** Sizes, distances and spacing are in pixels at this composition height and scale with it. */
+/**
+ * Sizes, distances and spacing are in pixels at this reference size and scale with the
+ * composition's shorter side (see `scaleFor` in resolve.ts).
+ */
 export const REFERENCE_HEIGHT = 1080;
 
 /**
@@ -259,14 +262,16 @@ export const GuidelinePackSchema = PackShape.superRefine((pack, ctx) => {
     });
   }
   // Body text colors must clear the normal threshold on both backgrounds; accents are for large
-  // text and graphics, so they must clear the large-text threshold on the background.
+  // text and graphics, so they must clear the large-text threshold on both backgrounds.
   const pairs: [ColorRole, ColorRole, number][] = [
     ["text", "background", contrast.minRatio],
     ["text", "surface", contrast.minRatio],
     ["textMuted", "background", contrast.minRatio],
     ["textMuted", "surface", contrast.minRatio],
     ["accent", "background", contrast.minRatioLarge],
+    ["accent", "surface", contrast.minRatioLarge],
     ["accentAlt", "background", contrast.minRatioLarge],
+    ["accentAlt", "surface", contrast.minRatioLarge],
   ];
   for (const [fg, bg, min] of pairs) {
     const ratio = contrastRatio(pack.color[fg], pack.color[bg]);
