@@ -257,7 +257,7 @@ describe("assets", () => {
     );
     expect(await rejection(empty.renderFrames(id, { frames: [0], max_size: 64 }))).toMatchObject({
       kind: "render_failed",
-      message: expect.stringMatching(/'a'.*missing from/),
+      message: expect.stringMatching(/'a'.*missing or corrupt/),
     });
     // An entry written by hand (apply_ops) with a key upload_asset never makes.
     await empty.write(

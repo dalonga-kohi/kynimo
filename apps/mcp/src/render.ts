@@ -28,6 +28,8 @@ export const RENDER_LIMITS = {
   sheetGap: 4,
   /** Bytes of image and font assets one render may load (those its composition tree uses). */
   maxAssetBytes: 64 * 1024 * 1024,
+  /** Decoded RGBA bytes (width × height × 4) of the images and video frames one render loads. */
+  maxDecodedAssetBytes: 512 * 1024 * 1024,
 } as const;
 
 /** Asset bytes for one render: image and font assets by id, video frames by `videoFrameKey`. */

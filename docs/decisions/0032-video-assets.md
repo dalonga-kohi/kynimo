@@ -17,18 +17,23 @@ ADR-0013 puts video layers in the beta: decoding with `<video>` in Chromium isn'
   - **Engine:** resolves a video layer to `{ assetId, sourceFrame | null }`.
   - **Renderer:** decodes supplied frames into a `VideoFrameLibrary`, checking each against the asset's size, and draws them exactly like image layers.
   - **Capture:** serves frames from memory under `<assetId>/<frame>`, which can't collide with asset ids.
-  - **MCP service:** evaluates the requested frames, collects exactly the source frames they show (precomps and matte sources included), and checks each against the manifest. Frames count toward `RENDER_LIMITS.maxAssetBytes`.
+  - **MCP service:** evaluates the requested frames, collects exactly the source frames they show (precomps and matte sources included), and checks each against the manifest. Frames count toward `RENDER_LIMITS.maxAssetBytes` (stored bytes). The decoded RGBA of images and frames also counts toward `RENDER_LIMITS.maxDecodedAssetBytes` (512 MB), because the capture page holds every loaded raster at once.
   - Nothing in the render path decodes video or touches the network.
 - **FFmpeg is the system binary.** It is `ffmpeg`/`ffprobe` on PATH, or `KYNIMO_FFMPEG` / `KYNIMO_FFPROBE`, and its version is recorded in each manifest. Without it, video and audio uploads answer `unavailable` with the reason. Determinism doesn't depend on the version, because frames are decoded once and stored. Deploy images pin it. CI installs it.
 - **Running FFmpeg on untrusted files.**
   - The service only hands FFmpeg files whose signature is a media container: ISO BMFF, Matroska/WebM, WAV, MP3, FLAC or Ogg.
   - FFmpeg reads a temp copy with `-protocol_whitelist file` and a container whitelist. HLS playlists, concat lists and network protocols are therefore refused; both tricks are checked against FFmpeg 6.1.
-  - It runs through `execFile` (no shell), with `-nostdin`, a 120 s timeout and SIGKILL. The temp directory is removed afterwards. The source file itself isn't stored.
+  - It runs without a shell, with `-nostdin`, a 120 s timeout and SIGKILL. The temp directory is removed afterwards. The source file itself isn't stored.
+  - **Sources are size-checked before decoding:** at most 8192 px on an edge and 2^26 pixels, from the probe. FFmpeg enforces the same limit with `-max_pixels`.
+  - **Frames stream:** FFmpeg writes JPEGs to a pipe (`image2pipe`), never to disk. The server splits them by parsing JPEG segments, then hashes and stores each frame as it arrives, with a few in flight, so memory holds a handful of frames.
+  - **Limits apply mid-decode:** once the frames pass 1 GB, FFmpeg is killed.
+  - **Concurrency:** at most two uploads decode at once; the rest wait.
+  - **Errors:** FFmpeg's error text reaches clients with the temp path replaced.
 - **Decoding.**
-  - **Video:** the first non-cover-art video stream becomes constant-rate JPEG frames (`-q:v 2`) at the source rate, capped at 60 fps, scaled to fit 1920 px on the longest edge (even sizes). Rotation metadata is applied, and the stored size is the displayed size. Clips may be at most 60 s, and decoded frames at most 1 GB per upload.
-  - **Audio:** the first audio stream becomes 48 kHz stereo FLAC, and audio-only files take the same path. A video's sound is returned as `audio_asset`, for an audio layer.
+  - **Video:** the first non-cover-art video stream becomes constant-rate JPEG frames (`-q:v 2`) at the source rate, capped at 60 fps, scaled to fit 1920 px on the longest edge (even sizes). Rotation metadata and non-square pixels (sample aspect ratio) are applied, so the stored size is the displayed size. Clips may be at most 60 s (half a second of slack; `-t 60` trims), and decoded frames at most 1 GB per upload.
+  - **Audio:** the first audio stream becomes 48 kHz stereo FLAC, and audio-only files take the same path. A video's sound is returned as `audio_asset`, for an audio layer, with id `<id>-audio` (so a media upload's `id` may be at most 58 characters) and name `<name> (audio)`.
   - Encoding is single-threaded and bit-exact, so the same file decodes to the same frames on one build.
-- **Retries fingerprint the source.** `upload_asset` fingerprints the uploaded bytes' hash and its own fields, not the derived entries, because scaling may differ in the last bit across CPUs. A request whose key was already used replays the stored outcome without decoding, and the asset entries come from that version's document. This applies to every upload type.
+- **Retries fingerprint the source.** `upload_asset` fingerprints the uploaded bytes' hash and its own fields, not the derived entries, because scaling may differ in the last bit across CPUs. A request whose key was already used replays the stored outcome without decoding, and the asset entries come from that version's document. If the key's record is gone by the time the write runs, the call fails with `key_expired` instead of applying. This applies to every upload type, and changes the fingerprint shape of image and font uploads: a retry that spans the deploy gets `key_reused`.
 - **Limits stay as ADR-0031 set them:** 8 MB of base64 per call. Longer or larger clips wait for presigned uploads with the remote transport.
 
 ## Consequences

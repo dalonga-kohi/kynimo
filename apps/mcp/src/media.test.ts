@@ -1,11 +1,22 @@
-import type { Project } from "@kynimo/scene";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Project, ProjectSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
 import { base64, hasFfmpeg, makeClip, makeTone, solidPng } from "./assets.test-util.js";
-import { MemoryBlobStore } from "./blobs.js";
+import { type BlobStore, MemoryBlobStore } from "./blobs.js";
 import { withLayerDefaults } from "./defaults.js";
-import { Ffmpeg, type MediaTools, parseRate, readProbe } from "./media.js";
+import {
+  Ffmpeg,
+  JpegSplitter,
+  MediaError,
+  type MediaTools,
+  parseRate,
+  readProbe,
+} from "./media.js";
 import type { FrameRenderer, RenderMedia } from "./render.js";
-import { isMediaFile, KynimoService, ToolError } from "./service.js";
+import { isMediaFile, KynimoService, shownVideoFrames, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";
 
 describe("readProbe", () => {
@@ -56,6 +67,114 @@ describe("readProbe", () => {
     });
     expect(parseRate("0/0")).toBeUndefined();
     expect(parseRate("25/1")).toEqual({ num: 25, den: 1 });
+  });
+});
+
+describe("readProbe limits and pixel aspect", () => {
+  it("refuses sources over 8192 px or 2^26 pixels, before anything decodes", () => {
+    const v = (width: number, height: number) => ({
+      streams: [{ codec_type: "video", width, height, avg_frame_rate: "30/1" }],
+    });
+    expect(() => readProbe(v(9000, 100))).toThrow(MediaError);
+    expect(() => readProbe(v(8000, 8500))).toThrow(/67108864 pixels/);
+    expect(readProbe(v(8192, 4096)).video).toMatchObject({ width: 8192, height: 4096 });
+  });
+
+  it("widens anamorphic footage to its display aspect", () => {
+    const probe = readProbe({
+      streams: [
+        {
+          codec_type: "video",
+          width: 720,
+          height: 480,
+          sample_aspect_ratio: "4:3",
+          avg_frame_rate: "30/1",
+        },
+      ],
+    });
+    expect(probe.video).toMatchObject({ width: 960, height: 480 });
+  });
+});
+
+describe("shownVideoFrames", () => {
+  it("maps through a precomp at its own frame rate", () => {
+    const size = { width: 64, height: 36, durationFrames: 30 } as never;
+    const video = (startFrame: number) =>
+      withLayerDefaults({ type: "video", name: "V", assetId: "clip", startFrame }, size);
+    const doc = ProjectSchema.parse({
+      formatVersion: SCENE_FORMAT_VERSION,
+      name: "P",
+      mainCompositionId: "main",
+      style: null,
+      assets: [
+        {
+          id: "clip",
+          name: "clip",
+          type: "video",
+          uri: `assets/${"0".repeat(64)}.json`,
+          sha256: "0".repeat(64),
+          width: 64,
+          height: 36,
+          fps: { num: 10, den: 1 },
+          frameCount: 20,
+        },
+      ],
+      compositions: [
+        {
+          id: "main",
+          name: "main",
+          width: 64,
+          height: 36,
+          fps: { num: 30, den: 1 },
+          durationFrames: 30,
+          background: null,
+          markers: [],
+          layers: [
+            withLayerDefaults({ type: "precomp", name: "P", compositionId: "inner" }, size),
+          ].map((l, i) => ({ ...(l as object), id: `p${i}` })),
+        },
+        {
+          id: "inner",
+          name: "inner",
+          width: 64,
+          height: 36,
+          fps: { num: 15, den: 1 },
+          durationFrames: 15,
+          background: null,
+          markers: [],
+          layers: [{ ...(video(1) as object), id: "iv" }],
+        },
+      ],
+    });
+    // Main frame 20 (30 fps) → inner frame 10 (15 fps) → layer frame 9 → source floor(9·10/15) = 6.
+    expect(shownVideoFrames(doc, "main", [0, 20])).toEqual(new Map([["clip", new Set([6])]]));
+  });
+});
+
+describe("JpegSplitter", () => {
+  const jpeg = new Uint8Array(
+    readFileSync(new URL("./fixtures/rotated-40x20-orientation-6.jpg", import.meta.url)),
+  );
+
+  it("splits concatenated JPEG files exactly, however the stream is chunked", () => {
+    const stream = new Uint8Array([...jpeg, ...jpeg, ...jpeg]);
+    for (const size of [1, 7, 4096]) {
+      const split = new JpegSplitter();
+      const out: Uint8Array[] = [];
+      for (let i = 0; i < stream.length; i += size)
+        out.push(...split.push(stream.subarray(i, i + size)));
+      expect(out, String(size)).toEqual([jpeg, jpeg, jpeg]);
+      expect(split.pending).toBe(false);
+    }
+  });
+
+  it("keeps a partial file pending and refuses a stream that is not JPEG", () => {
+    const split = new JpegSplitter();
+    expect(split.push(jpeg.subarray(0, 100))).toEqual([]);
+    expect(split.pending).toBe(true);
+    expect(() => new JpegSplitter().push(new TextEncoder().encode("not a jpeg"))).toThrow(
+      MediaError,
+    );
   });
 });
 
@@ -247,6 +366,79 @@ describe.runIf(runMedia)("video and audio uploads with FFmpeg", () => {
     expect((await service.getProject(project_id)).version).toBe(1);
   }, 120_000);
 
+  it("FFmpeg itself refuses playlists and concat lists that point at other files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kynimo-media-test-"));
+    try {
+      const ffmpeg = new Ffmpeg();
+      const hls = join(dir, "x.m3u8");
+      writeFileSync(
+        hls,
+        "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\nfile:///etc/hostname\n#EXT-X-ENDLIST\n",
+      );
+      await expect(ffmpeg.probe(hls)).rejects.toThrow(MediaError);
+      const concat = join(dir, "x.mp4");
+      writeFileSync(concat, "ffconcat version 1.0\nfile /etc/hostname\n");
+      await expect(ffmpeg.probe(concat)).rejects.toThrow(MediaError);
+      // Error text never shows the server's temp path.
+      const e = await ffmpeg.probe(concat).catch((err: Error) => err);
+      expect(String(e)).not.toContain(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stops FFmpeg once the decoded frames pass the byte limit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kynimo-media-test-"));
+    try {
+      const file = join(dir, "c.mp4");
+      writeFileSync(file, makeClip({ width: 64, height: 36, fps: "10", seconds: 2 }));
+      let frames = 0;
+      await expect(
+        new Ffmpeg().decodeFrames(
+          file,
+          {
+            fps: { num: 10, den: 1 },
+            width: 64,
+            height: 36,
+            maxFrames: 20,
+            maxSeconds: 60,
+            maxBytes: 3000,
+          },
+          async () => {
+            frames++;
+          },
+        ),
+      ).rejects.toThrow(/would pass 3000 bytes/);
+      expect(frames).toBeLessThan(20);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("checks the derived audio id and name: a long id is refused up front, a long name is cut", async () => {
+    const clip = base64(makeClip({ width: 64, height: 36, fps: "10", seconds: 0.5, audio: true }));
+    const longId = await rejection(
+      service.uploadAsset(meta(1, "i"), { name: "c", data: clip, id: "a".repeat(59) }),
+    );
+    expect(longId.errors).toEqual([{ path: ["id"], message: expect.stringContaining("58") }]);
+    const r = await service.uploadAsset(meta(1, "n"), {
+      name: "n".repeat(200),
+      data: clip,
+      id: "x",
+    });
+    expect((r.audio_asset as { name: string }).name).toBe(`${"n".repeat(192)} (audio)`);
+    // `<id>-audio` already taken (here by the audio of upload "x"): reported on `id`.
+    const audioOfX = await service.uploadAsset(meta(2, "t"), {
+      name: "c",
+      data: base64(makeTone(0.5)),
+      id: "y-audio",
+    });
+    const taken = await rejection(
+      service.uploadAsset(meta(audioOfX.version, "t2"), { name: "c", data: clip, id: "y" }),
+    );
+    expect(taken.errors[0]?.path).toEqual(["id"]);
+  }, 60_000);
+
   it("gives renders exactly the source frames shown, mapped through the layer's time", async () => {
     const up = await service.uploadAsset(meta(1, "u"), {
       name: "c",
@@ -270,6 +462,141 @@ describe.runIf(runMedia)("video and audio uploads with FFmpeg", () => {
       "clip/9",
     ]);
   }, 60_000);
+
+  it("collects frames shown through precomps and through hidden matte sources", async () => {
+    const up = await service.uploadAsset(meta(1, "u"), {
+      name: "c",
+      data: base64(makeClip({ width: 64, height: 36, fps: "10", seconds: 2 })),
+      id: "clip",
+    });
+    const size = { width: 320, height: 180, durationFrames: 60 } as never;
+    const video = (fields: Record<string, unknown>) =>
+      withLayerDefaults({ type: "video", name: "V", assetId: "clip", ...fields }, size);
+    const solid = withLayerDefaults(
+      { type: "solid", name: "S", width: 10, height: 10, color: "#ffffff" },
+      size,
+    );
+    await service.write(meta(up.version, "l"), {
+      kind: "ops",
+      ops: [
+        { op: "addLayer", composition: "main", id: "s", layer: solid },
+        { op: "addLayer", composition: "main", id: "mv", layer: video({ hidden: true }), index: 1 },
+        { op: "setMatte", layer: "s", matte: { layer: "mv", mode: "alpha" } },
+        { op: "addLayer", composition: "main", id: "iv", layer: video({ startFrame: 1 }) },
+        { op: "precompose", layers: ["iv"], id: "inner" },
+      ],
+    });
+    // Main frame 6 (30 fps): the hidden matte source shows source floor(6·10/30) = 2; the
+    // precomped layer (startFrame 1) shows floor(5·10/30) = 1.
+    await service.renderFrames(project_id, { frames: [6], max_size: 64 });
+    expect([...(renderer.given[0]?.videoFrames.keys() ?? [])].sort()).toEqual(["clip/1", "clip/2"]);
+  }, 60_000);
+
+  it("fails renders clearly when a manifest or frame is missing, corrupt or mismatched, or over the limit", async () => {
+    const store = new Map<string, Uint8Array>();
+    const tamper: BlobStore = {
+      put: async (k, b) => void store.set(k, b),
+      get: async (k) => store.get(k),
+    };
+    const s2 = new KynimoService(new MemoryStore(), "agent", { blobs: tamper, media, renderer });
+    const { id } = await s2.createProject({
+      name: "P",
+      idempotency_key: "c",
+      width: 64,
+      height: 36,
+      fps: { num: 10, den: 1 },
+      duration_frames: 10,
+      background: null,
+    });
+    const up = await s2.uploadAsset(
+      { project_id: id, base_version: 1, idempotency_key: "u" },
+      {
+        name: "c",
+        data: base64(makeClip({ width: 64, height: 36, fps: "10", seconds: 1 })),
+        id: "clip",
+      },
+    );
+    const layer = withLayerDefaults({ type: "video", name: "V", assetId: "clip" }, {
+      width: 64,
+      height: 36,
+      durationFrames: 10,
+    } as never);
+    await s2.write(
+      { project_id: id, base_version: 2, idempotency_key: "l" },
+      { kind: "ops", ops: [{ op: "addLayer", composition: "main", layer }] },
+    );
+    const manifest = store.get(up.asset.uri) as Uint8Array;
+    const frames = (JSON.parse(new TextDecoder().decode(manifest)) as { frames: string[] }).frames;
+    const render = (frame: number, svc = s2) =>
+      svc.renderFrames(id, { frames: [frame], max_size: 32 });
+
+    // Before any render caches it: the manifest gone.
+    store.delete(up.asset.uri);
+    expect((await rejection(render(4))).message).toMatch(/missing or corrupt frame manifest/);
+    store.set(up.asset.uri, manifest);
+    // A frame gone.
+    store.delete(`assets/${frames[3]}.jpg`);
+    expect(await rejection(render(3))).toMatchObject({
+      kind: "render_failed",
+      message: expect.stringMatching(/frame 3 is missing or corrupt/),
+    });
+
+    // A manifest that hashes right but lists the wrong number of frames.
+    const wrong = new TextEncoder().encode(JSON.stringify({ frames: frames.slice(1) }));
+    const sha = createHash("sha256").update(wrong).digest("hex");
+    store.set(`assets/${sha}.json`, wrong);
+    const { id: _, ...entry } = up.asset;
+    await s2.write(
+      { project_id: id, base_version: 3, idempotency_key: "m" },
+      {
+        kind: "ops",
+        ops: [
+          {
+            op: "addAsset",
+            id: "bad",
+            asset: { ...entry, uri: `assets/${sha}.json`, sha256: sha },
+          },
+          { op: "updateLayer", layer: { type: "video" }, set: { hidden: true } },
+          { op: "addLayer", composition: "main", layer: { ...(layer as object), assetId: "bad" } },
+        ],
+      },
+    );
+    expect((await rejection(render(5))).message).toMatch(
+      /'bad' has a frame manifest that does not match/,
+    );
+
+    const tight = new KynimoService(new MemoryStore(), "agent", {
+      blobs: new MemoryBlobStore(),
+      media,
+      renderer,
+      maxRenderAssetBytes: 100,
+    });
+    const { id: id4 } = await tight.createProject({
+      name: "P",
+      idempotency_key: "c",
+      width: 64,
+      height: 36,
+      fps: { num: 10, den: 1 },
+      duration_frames: 10,
+      background: null,
+    });
+    await tight.uploadAsset(
+      { project_id: id4, base_version: 1, idempotency_key: "u" },
+      {
+        name: "c",
+        data: base64(makeClip({ width: 64, height: 36, fps: "10", seconds: 1 })),
+        id: "clip",
+      },
+    );
+    await tight.write(
+      { project_id: id4, base_version: 2, idempotency_key: "l" },
+      { kind: "ops", ops: [{ op: "addLayer", composition: "main", layer }] },
+    );
+    expect(await rejection(tight.renderFrames(id4, { frames: [0], max_size: 32 }))).toMatchObject({
+      kind: "invalid",
+      message: expect.stringMatching(/more than 100 bytes of stored/),
+    });
+  }, 120_000);
 });
 
 it("video uploads are unavailable without FFmpeg, saying why", async () => {
