@@ -1,6 +1,6 @@
 # @kynimo/mcp
 
-Kynimo's MCP server. For now it runs locally over stdio; the remote transport comes later in M3. Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md), [ADR-0029](../../docs/decisions/0029-postgres-project-store.md), [ADR-0031](../../docs/decisions/0031-asset-storage.md).
+Kynimo's MCP server: locally over stdio, or remotely over Streamable HTTP with OAuth (`--http`). Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md), [ADR-0029](../../docs/decisions/0029-postgres-project-store.md), [ADR-0031](../../docs/decisions/0031-asset-storage.md), [ADR-0033](../../docs/decisions/0033-remote-transport-oauth.md).
 
 ```bash
 pnpm --filter @kynimo/mcp build
@@ -53,3 +53,23 @@ Where uploaded assets live (ADR-0031). `upload_asset` takes PNG, JPEG, TTF or OT
 - **In memory** without a store. They are lost on exit.
 - **`<dir>/blobs`** with `--dir`.
 - **An S3-compatible bucket** (Cloudflare R2, AWS S3, MinIO). Set `KYNIMO_S3_ENDPOINT` (e.g. `https://<account>.r2.cloudflarestorage.com`), `KYNIMO_S3_BUCKET`, `KYNIMO_S3_ACCESS_KEY_ID` and `KYNIMO_S3_SECRET_ACCESS_KEY`, plus `KYNIMO_S3_REGION` if it isn't `auto`. This setting takes precedence over the other two. With Postgres projects, uploads are off until a bucket is set.
+
+## Remote server (Streamable HTTP + OAuth)
+
+`--http` serves the same tools over stateless Streamable HTTP (ADR-0033). Kynimo is an OAuth resource server: an external authorization server (WorkOS AuthKit first; any issuer of JWT access tokens with a JWKS works) signs users in and registers clients, and Kynimo checks each token. Every signed-in user is their own account: they see only their own projects.
+
+```bash
+KYNIMO_PUBLIC_URL=https://mcp.example.com/mcp \
+KYNIMO_OAUTH_ISSUER=https://your-tenant.authkit.app \
+KYNIMO_DATABASE_URL=postgres://… \
+node apps/mcp/dist/main.js --http --host 0.0.0.0 --port 8787
+```
+
+- `KYNIMO_PUBLIC_URL`: the endpoint as clients reach it. Its path is the endpoint path, and it is the audience tokens must carry (override with `KYNIMO_OAUTH_AUDIENCE`).
+- `KYNIMO_OAUTH_ISSUER`: the tokens' `iss`. The signing keys are discovered from its metadata, or set `KYNIMO_OAUTH_JWKS_URL`.
+- Optional: `KYNIMO_OAUTH_SCOPES` (scopes every token must carry), `KYNIMO_ALLOWED_ORIGINS` (browser origins that may call the endpoint; requests without an `Origin` header are unaffected).
+- Clients find the authorization server from `/.well-known/oauth-protected-resource/<path>` (RFC 9728), which the `401` challenge points at.
+- Projects are kept in Postgres or in memory; `--dir` holds one local account and works only with `--no-auth`.
+- `--no-auth` serves every request as the local account, on a loopback `--host` only, for trying the HTTP transport (e.g. with the MCP Inspector) without an authorization server.
+
+TLS is the hosting environment's job: run behind a proxy that terminates HTTPS.
