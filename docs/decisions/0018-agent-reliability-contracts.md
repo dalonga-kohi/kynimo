@@ -1,6 +1,6 @@
 # 0018 — Agent reliability contracts
 
-- Status: accepted (amends ADR-0010: undo history is persisted with the project; amends ADR-0008: the simple editor gains a timing-finish view)
+- Status: accepted (amends ADR-0010: undo history is persisted with the project; amends ADR-0008: the simple editor gains a timing-finish view; amended by ADR-0035: the timing-finish view moves to M9)
 - Date: 2026-11-07
 
 ## Context
@@ -28,7 +28,7 @@ These are contracts that every feature in the affected area follows. Details (ex
   - `get_write_outcome` (same authorization as the project) answers `applied` (version N), `rejected` (errors), `expired` (past retention) or `unknown` (never arrived). Writes also carry their base version, so even a replay after expiry fails with a conflict instead of applying twice.
   - Per-actor undo history (ADR-0010) is stored with the project, so it survives a server restart.
 
-- **Timing finish in the editor (M8).** Humans finish agent output mostly by adjusting timing. The editor gets an easing-curve and spring editor and motion-path handles in the viewer, on the same operations. It is not a full graph editor; ADR-0008's simple-editor scope otherwise stands.
+- **Timing finish in the editor (M8; M9 since ADR-0035).** Humans finish agent output mostly by adjusting timing. The editor gets an easing-curve and spring editor and motion-path handles in the viewer, on the same operations. It is not a full graph editor; ADR-0008's simple-editor scope otherwise stands.
 
 Not adopted: matching another tool's effect count or panel layout, earlier 3D (stays `v1.x`, ADR-0013), or import of proprietary After Effects project files. Reusing outside code still needs its own license and dependency check.
 

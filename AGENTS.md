@@ -4,7 +4,7 @@ Kynimo is an **agent-first, cloud-hosted motion graphics engine**. Any MCP clien
 
 This file is the single source of truth for every coding agent (Claude Code, Codex, ChatGPT, Cursor, Copilot, …). Tool-specific notes live in separate files that import this one (`CLAUDE.md`).
 
-Read as needed: [PRODUCT.md](PRODUCT.md) (what and for whom) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how) · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (engine + MCP surface) · [docs/ROADMAP.md](docs/ROADMAP.md) (order) · [docs/decisions/](docs/decisions/) (why) · [docs/REVIEW.md](docs/REVIEW.md) (review checklist).
+Read as needed: [PRODUCT.md](PRODUCT.md) (what and for whom) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how) · [docs/CAPABILITIES.md](docs/CAPABILITIES.md) (engine + MCP surface) · [docs/ROADMAP.md](docs/ROADMAP.md) (order) · [docs/PLAN.md](docs/PLAN.md) (how the next items are built) · [docs/decisions/](docs/decisions/) (why) · [docs/REVIEW.md](docs/REVIEW.md) (review checklist).
 
 ## Quick start
 
@@ -59,8 +59,8 @@ Several agents may work in this repo at the same time.
 - **Deterministic rendering.** Same document + same frame → same pixels. No `Date.now()`, `Math.random()`, `performance.now()`, locale/timezone formatting, or network in evaluation/render paths. Randomness is seeded from the document.
 - **Versioned schema.** Any scene format change bumps `SCENE_FORMAT_VERSION` and ships a migration + test.
 - **Typed MCP contracts.** Every tool has schema-validated input and output and is backward compatible. Breaking change → new tool name/version.
-- **Code enters only as scene-graph nodes.** Agents and users can author components (TypeScript) and shaders (GLSL), but code enters a document only as component instances, shader effects or shader generator layers with declared, typed props; nothing draws outside those nodes (ADR-0012).
-- **Sandboxed custom code.** User- or agent-authored component and shader code never gets host, filesystem, network, secret or wall-clock access, and runs under resource limits.
+- **Code enters only as scene-graph nodes.** Agents and users can author components (TypeScript) and shaders (GLSL), but code enters a document only as component instances, shader effects or shader generator layers with declared, typed props; nothing draws outside those nodes (ADR-0012). A script (ADR-0036) runs once at authoring time and yields only typed operations.
+- **Sandboxed custom code.** User- or agent-authored script, component and shader code never gets host, filesystem, network, secret or wall-clock access, and runs under resource limits.
 - **Quality is enforced, not hoped for.** Guideline rules live in code and produce a machine-readable report agents can act on.
 
 ## Code conventions

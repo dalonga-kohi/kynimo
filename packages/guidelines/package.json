@@ -1,0 +1,25 @@
+{
+  "name": "@kynimo/guidelines",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo guidelines: the guideline pack format, built-in style packs and token resolution.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/scene": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
