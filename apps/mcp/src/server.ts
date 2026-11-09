@@ -22,6 +22,7 @@ import {
   GetSceneOutput,
   IdempotencyKeySchema,
   LAYER_TYPES,
+  ListAssetsOutput,
   ListProjectsOutput,
   PrecomposeInput,
   ProjectIdSchema,
@@ -33,6 +34,8 @@ import {
   SetMatteInput,
   UndoRedoInput,
   UpdateLayerInput,
+  UploadAssetInput,
+  UploadAssetOutput,
   WriteOutcomeOutput,
   WriteOutput,
 } from "./schemas.js";
@@ -164,6 +167,39 @@ export function createServer(service: KynimoService): McpServer {
   );
 
   // Read
+  server.registerTool(
+    "upload_asset",
+    {
+      title: "Upload asset",
+      description:
+        "Stores an image (PNG, JPEG) or font (TTF, OTF) and adds it to the project's assets in one undoable write. Image layers then name it by assetId; text layers use a font by its family. Returns the new asset.",
+      inputSchema: UploadAssetInput,
+      outputSchema: UploadAssetOutput,
+      annotations: WRITE,
+    },
+    guard(async (a) => ({
+      ...(await service.uploadAsset(meta(a), {
+        name: a.name,
+        data: a.data,
+        id: a.id,
+        family: a.family,
+      })),
+    })),
+  );
+
+  server.registerTool(
+    "list_assets",
+    {
+      title: "List assets",
+      description:
+        "The project's assets: id, type, hash, size (images) or family and weights (fonts), and the layers that use each.",
+      inputSchema: z.object({ project_id: ProjectIdSchema }),
+      outputSchema: ListAssetsOutput,
+      annotations: READ,
+    },
+    guard(async ({ project_id }) => ({ ...(await service.listAssets(project_id)) })),
+  );
+
   server.registerTool(
     "get_scene",
     {
@@ -300,7 +336,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Apply operations",
       description:
-        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, setMatte, precompose. Errors name the failing op and field as a path (['ops', i, field]).",
+        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
       annotations: DESTRUCTIVE,

@@ -57,6 +57,7 @@ describe("MCP server", () => {
       "get_project",
       "get_scene",
       "get_write_outcome",
+      "list_assets",
       "list_projects",
       "precompose",
       "redo",
@@ -66,9 +67,11 @@ describe("MCP server", () => {
       "set_matte",
       "undo",
       "update_layer",
+      "upload_asset",
     ]);
     for (const t of tools) expect(t.outputSchema, t.name).toBeDefined();
     const writes = [
+      "upload_asset",
       "add_layer",
       "add_mask",
       "apply_ops",

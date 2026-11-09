@@ -568,3 +568,41 @@ export const DescribeMotionOutput = z.looseObject({
   ),
   truncated_segments: z.number().int(),
 });
+
+export const UploadAssetInput = z.object({
+  ...writeMeta,
+  name: z.string().min(1).max(200).describe("Display name, e.g. the file name."),
+  data: z
+    .string()
+    .min(1)
+    .describe(
+      "The file, base64-encoded, at most 8 MB decoded: PNG or JPEG image, or TrueType/OpenType font. The type, size, font family and weights are read from the file.",
+    ),
+  id: z.string().min(1).max(64).optional().describe("Optional asset id; generated when omitted."),
+  family: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      "Fonts only: the family text layers name it by. Default: the family the file declares.",
+    ),
+});
+
+export const UploadAssetOutput = WriteOutput.extend({
+  asset: z.looseObject({ id: z.string(), type: z.string(), sha256: z.string() }),
+});
+
+export const ListAssetsOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  assets: z.array(
+    z.looseObject({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+      sha256: z.string(),
+      used_by: z.array(z.string()),
+    }),
+  ),
+});

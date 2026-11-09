@@ -2,6 +2,13 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  type BlobStore,
+  DirBlobStore,
+  MemoryBlobStore,
+  S3BlobStore,
+  s3ConfigFromEnv,
+} from "./blobs.js";
 import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -16,7 +23,12 @@ const USAGE = `kynimo-mcp — Kynimo MCP server over stdio
 
 Environment:
   KYNIMO_DATABASE_URL   Keep projects in Postgres (postgres://…), shared by any number of
-                        server processes. Not combinable with --dir.`;
+                        server processes. Not combinable with --dir.
+  KYNIMO_S3_ENDPOINT, KYNIMO_S3_BUCKET, KYNIMO_S3_ACCESS_KEY_ID, KYNIMO_S3_SECRET_ACCESS_KEY
+  [KYNIMO_S3_REGION]    Keep uploaded assets in an S3-compatible bucket (Cloudflare R2, S3,
+                        MinIO); region defaults to "auto". Without them, assets live in
+                        <dir>/blobs with --dir, in memory without a store, and uploads are off
+                        with Postgres.`;
 
 const { values } = parseArgs({
   options: {
@@ -59,6 +71,27 @@ if (values.help) {
     store = new MemoryStore();
     where = "in-memory projects";
   }
+  let blobs: BlobStore | undefined;
+  let assetsWhere: string;
+  const s3 = (() => {
+    try {
+      return s3ConfigFromEnv(process.env);
+    } catch (e) {
+      return fail(e);
+    }
+  })();
+  if (s3) {
+    blobs = new S3BlobStore(s3);
+    assetsWhere = `assets in bucket ${s3.bucket}`;
+  } else if (values.dir) {
+    blobs = new DirBlobStore(resolve(values.dir, "blobs"));
+    assetsWhere = `assets in ${resolve(values.dir, "blobs")}`;
+  } else if (databaseUrl) {
+    assetsWhere = "asset upload off: set KYNIMO_S3_* to keep assets with Postgres projects";
+  } else {
+    blobs = new MemoryBlobStore();
+    assetsWhere = "in-memory assets";
+  }
   // Chromium starts on the first render, not here.
   const renderer = new CaptureRenderer();
   const release = () => {
@@ -67,8 +100,18 @@ if (values.help) {
   process.once("SIGINT", release);
   process.once("SIGTERM", release);
   process.stdin.once("end", release);
-  const server = createServer(new KynimoService(store, values.actor, { renderer }));
+  const server = createServer(
+    new KynimoService(store, values.actor, {
+      renderer,
+      ...(blobs === undefined
+        ? {
+            blobsUnavailable:
+              "this server keeps projects in Postgres but has no asset bucket (KYNIMO_S3_*)",
+          }
+        : { blobs }),
+    }),
+  );
   await server.connect(new StdioServerTransport());
   // Logs go to stderr: stdout carries the protocol.
-  process.stderr.write(`kynimo-mcp ready (${where})\n`);
+  process.stderr.write(`kynimo-mcp ready (${where}; ${assetsWhere})\n`);
 }

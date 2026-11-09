@@ -37,12 +37,15 @@ export interface FrameRenderer {
     composition: string,
     frames: readonly number[],
     maxSize: number,
+    /** Bytes of the document's image and font assets, by asset id. */
+    assets: ReadonlyMap<string, Uint8Array>,
   ): Promise<CapturedFrame[]>;
   sheet(
     doc: Project,
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
+    assets: ReadonlyMap<string, Uint8Array>,
   ): Promise<CapturedSheet>;
   close(): Promise<void>;
 }
@@ -92,8 +95,14 @@ export class CaptureRenderer implements FrameRenderer {
     return (await this.#current()).buildId;
   }
 
-  async frames(doc: Project, composition: string, frames: readonly number[], maxSize: number) {
-    return (await this.#current()).captureFrames(doc, frames, { composition, maxSize });
+  async frames(
+    doc: Project,
+    composition: string,
+    frames: readonly number[],
+    maxSize: number,
+    assets: ReadonlyMap<string, Uint8Array>,
+  ) {
+    return (await this.#current()).captureFrames(doc, frames, { composition, maxSize, assets });
   }
 
   async sheet(
@@ -101,8 +110,9 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
+    assets: ReadonlyMap<string, Uint8Array>,
   ) {
-    return (await this.#current()).captureSheet(doc, frames, { composition, ...layout });
+    return (await this.#current()).captureSheet(doc, frames, { composition, ...layout, assets });
   }
 
   async close(): Promise<void> {
