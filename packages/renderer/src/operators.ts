@@ -33,6 +33,10 @@ const distance = (p: Point, q: Point): number => {
 
 const same = (p: Point, q: Point): boolean => p[0] === q[0] && p[1] === q[1];
 
+/** Draws nothing: every point equal. A cubic whose ends meet can still loop, so ends alone don't tell. */
+const isPoint = (from: Point, s: Segment): boolean =>
+  same(from, s.to) && (s.kind === "line" || (same(from, s.c1) && same(from, s.c2)));
+
 const lerpPoint = (p: Point, q: Point, t: number): Point => [
   p[0] + (q[0] - p[0]) * t,
   p[1] + (q[1] - p[1]) * t,
@@ -151,7 +155,7 @@ function extract(list: readonly Piece[], a: number, b: number): Contour | null {
       const part = subPiece(piece, lo - offset, hi - offset);
       if (start === null) start = part.from;
       // A cut that collapses to a point adds nothing to the path.
-      if (!same(part.from, part.segment.to)) segments.push(part.segment);
+      if (!isPoint(part.from, part.segment)) segments.push(part.segment);
     }
     offset = end;
   }
@@ -300,7 +304,7 @@ export function roundCorners(contour: Contour, radius: number): Contour {
       });
     }
     // A side eaten whole by its two arcs leaves nothing between them.
-    if (!same(part.from, part.segment.to)) segments.push(part.segment);
+    if (!isPoint(part.from, part.segment)) segments.push(part.segment);
   }
   // A rounded first vertex moves the start back to where its arc begins, on the closing side.
   const start = contour.closed && rounded[0] ? endOf(n - 1) : contour.start;

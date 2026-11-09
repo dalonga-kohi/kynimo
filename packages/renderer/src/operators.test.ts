@@ -112,6 +112,33 @@ describe("trimContours", () => {
   });
 });
 
+/** line → a loop that returns to its own start → line: the loop's ends meet but it has length. */
+const looped = (closed: boolean): Contour => ({
+  start: [0, 0],
+  segments: [
+    { kind: "line", to: [10, 0] },
+    { kind: "cubic", c1: [30, -20], c2: [30, 20], to: [10, 0] },
+    { kind: "line", to: [10, 10] },
+  ],
+  closed,
+});
+
+describe("loops", () => {
+  it("keeps a loop whose ends meet when a trim keeps it", () => {
+    const path = looped(false);
+    const kept = trimContours([path], trim(0, 0.9))[0] ?? [];
+    expect(kept[0]?.segments.map((s) => s.kind)).toEqual(["line", "cubic", "line"]);
+    expect(contourLength(kept[0] as Contour)).toBeCloseTo(contourLength(path) * 0.9, 6);
+  });
+
+  it("keeps a loop when round corners rounds the corners around it", () => {
+    const path = looped(true);
+    const rounded = roundCorners(path, 1);
+    expect(rounded.segments.some((s) => s.kind === "cubic" && s.c1[0] === 30)).toBe(true);
+    expect(contourLength(rounded)).toBeGreaterThan(contourLength(path) - 4);
+  });
+});
+
 describe("roundCorners", () => {
   it("rounds a sharp rectangle into the rectangle's own rounded corners", () => {
     const rounded = roundCorners(rectContour([0, 0], [20, 10], 0), 2);
