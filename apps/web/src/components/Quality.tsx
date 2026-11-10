@@ -28,9 +28,9 @@ const RULES: readonly Rule[] = [
   {
     id: "readable-hold",
     layer: "title",
-    open: "5 words on screen for 0.9 s. Reading them takes 2.0 s.",
+    open: "4 words on screen for 0.9 s. Reading them takes 1.6 s.",
     fix: "Move the title's out-point to frame 132.",
-    done: "5 words held for 2.5 s.",
+    done: "4 words held for 2.5 s.",
   },
   {
     id: "safe-area",
@@ -101,7 +101,7 @@ export function QualityReport() {
             label="The scene with its safe area drawn. The caption starts outside the margin and moves inside once fixed."
           />
         </div>
-        <p className="fineprint">Dashed line: the pack's 5% safe area.</p>
+        <p className="fineprint">Dashed line: the 5% safe area.</p>
       </div>
 
       <div className="report-list">

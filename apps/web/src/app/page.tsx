@@ -35,7 +35,7 @@ const jsonLd = {
       featureList: [
         "Remote MCP server for any MCP client",
         "Editable scene document: layers, keyframes, components",
-        "Guideline packs with automatic quality checks",
+        "Guideline packs, with automatic quality checks planned",
         "Deterministic rendering",
       ],
     },
@@ -150,8 +150,8 @@ export default function Home() {
               <h2 id="quality-title">Taste, written down.</h2>
               <p className="lede">
                 A guideline pack is a motion design system your assistant has to follow: type,
-                colour, springs, timing. Every render is then graded against it, and every finding
-                names its fix.
+                colour, springs, timing. Kynimo is being built to grade every render against it and
+                name the fix for every finding.
               </p>
             </header>
             <QualityReport />

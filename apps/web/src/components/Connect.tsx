@@ -121,7 +121,7 @@ export function Connect() {
   );
 }
 
-/** Every tool the server registers today, scrolling past. Real names, in their real order. */
+/** Every tool the server registers today, scrolling past. Real names. */
 export function ToolTicker() {
   const row = (hidden: boolean) => (
     <ul aria-hidden={hidden || undefined}>

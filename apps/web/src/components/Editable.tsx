@@ -119,6 +119,7 @@ export function Editable() {
             max={9}
             step={1}
             value={stagger}
+            aria-valuetext={`${Math.round(stagger * MS_PER_FRAME)} milliseconds`}
             onChange={(e) => {
               setStagger(Number(e.target.value));
               replay(0);
@@ -126,10 +127,10 @@ export function Editable() {
           />
         </label>
 
-        <div className="ops" aria-live="polite">
+        <div className="ops">
           <div className="ops-head">
             <code>apply_ops</code>
-            <span>
+            <span aria-live="polite">
               {changed.length === 0
                 ? "No changes yet"
                 : `${changed.length} ${changed.length === 1 ? "operation" : "operations"} · 0 frames regenerated`}

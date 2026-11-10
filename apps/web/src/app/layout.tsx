@@ -5,7 +5,7 @@ import "@fontsource-variable/geist-mono";
 import "./globals.css";
 import { SITE, SITE_URL } from "@/lib/site";
 
-const title = "Kynimo: motion graphics your AI assistant builds and you can still edit";
+const title = "Kynimo: editable motion graphics, built by your AI assistant";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

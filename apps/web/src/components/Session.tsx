@@ -126,8 +126,8 @@ const LOOP_MS = 21000;
 const CHECKS = [
   {
     id: "readable-hold",
-    open: "5 words held 0.9 s. Needs 2.0 s.",
-    done: "5 words held 2.5 s",
+    open: "4 words held 0.9 s. Needs 1.6 s.",
+    done: "4 words held 2.5 s",
     fails: true,
   },
   {
@@ -158,6 +158,9 @@ export function Session() {
   const readout = useRef<HTMLOutputElement>(null);
 
   const [step, setStep] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const shownFrame = useRef(100);
   const clock = useRef(0);
   const frameClock = useRef(0);
   const scrubbing = useRef(false);
@@ -178,6 +181,9 @@ export function Session() {
   );
 
   const show = useCallback((frame: number) => {
+    shownFrame.current = frame;
+    track.current?.setAttribute("aria-valuenow", String(Math.round(frame)));
+    track.current?.setAttribute("aria-valuetext", `Frame ${Math.round(frame)}, ${timecode(frame)}`);
     canvas.current?.draw(frame);
     if (playhead.current)
       playhead.current.style.transform = `translateX(${track.current ? (frame / SCENE.frames) * track.current.clientWidth : 0}px)`;
@@ -196,7 +202,7 @@ export function Session() {
   }, []);
 
   const moving = usePlayback(root, (delta) => {
-    if (scrubbing.current) return;
+    if (scrubbing.current || pausedRef.current) return;
     clock.current += delta;
     if (clock.current >= LOOP_MS) {
       clock.current = 0;
@@ -231,6 +237,7 @@ export function Session() {
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     scrubbing.current = true;
     // Scrubbing shows the finished scene: jump the session to its end.
@@ -247,6 +254,19 @@ export function Session() {
       <div className="session-bar">
         <span className="session-name">launch-teaser</span>
         <span className="session-note">Illustrative session, drawn live in your browser</span>
+        {moving && (
+          <button
+            type="button"
+            className="session-toggle"
+            aria-pressed={paused}
+            onClick={() => {
+              pausedRef.current = !paused;
+              setPaused(!paused);
+            }}
+          >
+            {paused ? "Play" : "Pause"}
+          </button>
+        )}
       </div>
 
       <div className="session-body">
@@ -287,7 +307,9 @@ export function Session() {
           <div className="timeline" data-ready={view.animated}>
             <div className="timeline-head">
               <span>Timeline</span>
-              <output ref={readout}>00:03:10 f100</output>
+              <output ref={readout} aria-live="off">
+                00:03:10 f100
+              </output>
             </div>
             <div
               className="timeline-track"
@@ -305,12 +327,15 @@ export function Session() {
               aria-label="Scrub the scene"
               aria-valuemin={0}
               aria-valuemax={SCENE.frames - 1}
-              aria-valuenow={Math.round((frameClock.current / 1000) * SCENE.fps) % SCENE.frames}
+              aria-valuenow={100}
               onKeyDown={(e) => {
                 const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
                 if (!dir) return;
                 e.preventDefault();
-                const frame = Math.round((frameClock.current / 1000) * SCENE.fps) % SCENE.frames;
+                const frame = Math.round(shownFrame.current);
+                // Stepping by hand holds the frame until the visitor presses Play.
+                pausedRef.current = true;
+                setPaused(true);
                 const next = Math.min(
                   SCENE.frames - 1,
                   Math.max(0, frame + dir * (e.shiftKey ? 10 : 1)),

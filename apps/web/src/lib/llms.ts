@@ -48,7 +48,7 @@ Status: in development, not yet usable by the public. ${endpoint}
 
 ## What it is
 
-Kynimo is an agent-first, cloud-hosted motion graphics engine. An AI assistant connects over the Model Context Protocol (MCP), builds a motion video from layers, keyframes and components, looks at rendered frames, and fixes what the quality report flags. The result is a scene document a person can keep editing, not a flat video file.
+Kynimo is an agent-first, cloud-hosted motion graphics engine. An AI assistant connects over the Model Context Protocol (MCP), builds a motion video from layers, keyframes and components, and looks at rendered frames. A quality report that tells it what to fix is planned. The result is a scene document a person can keep editing, not a flat video file.
 
 It is for developers, founders and marketers who need short motion pieces (5 to 60 seconds): product launch videos, UI promos, social clips and explainers.
 
@@ -56,8 +56,8 @@ It is for developers, founders and marketers who need short motion pieces (5 to 
 
 - AI video generators return pixels. Changing one word means generating again. Kynimo returns an editable scene: a word, a colour or a timing is one small operation, and every other frame stays the same.
 - Rendering is deterministic. The same document and the same frame always give the same pixels.
-- Quality is enforced by rules, not left to the model. Guideline packs encode type, colour, springs, durations, safe areas and reading time.
-- It is hosted. The assistant connects with one URL and OAuth. Nothing to install.
+- Quality is meant to be enforced by rules, not left to the model. Guideline packs encode type, colour, springs, durations, safe areas and reading time.
+- It is designed to be hosted: the assistant connects with one URL and OAuth, with nothing to install. The hosted endpoint is not public yet.
 
 ## How an assistant connects
 
