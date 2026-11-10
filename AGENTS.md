@@ -40,7 +40,7 @@ Node 24+, pnpm only (never npm/yarn for project deps). Run a single package with
 3. **Build in small steps.** Commit after each working step. Conventional Commits: `feat(scope): …`, `fix(scope): …`, `refactor`, `test`, `docs`, `chore`. Scope = package name (`scene`, `engine`, `mcp`, …). Tests land with the code they cover.
 4. **Check.** `pnpm check` must pass.
 5. **Review — automatic.** Review the branch diff against [docs/REVIEW.md](docs/REVIEW.md) using a fresh context — a dedicated reviewer subagent/session if your tool has one, otherwise a separate pass after re-reading the full diff. Fix every Blocking and Should-fix item; if you disagree with one, ask the user instead of silently skipping it. Re-review when fixes were substantial. Nits are optional.
-6. **Ship the branch.** Commit, `git push -u origin <branch>`, open a PR (`gh pr create`) with: summary, reviewer verdict + what was fixed, how it was tested. **Ask before merging** — the user merges or says "merge".
+6. **Ship the branch.** Commit, `git push -u origin <branch>`, open a PR (`gh pr create`). Write the body with the **pr** skill (`.claude/skills/pr/SKILL.md`): Summary, Evidence, Merge Danger, plus a **Review** section with the reviewer verdict and what was fixed. **Ask before merging** — the user merges or says "merge".
 7. **Record decisions.** If an architectural decision was made or changed, add an ADR in `docs/decisions/` (copy `0000-template.md`) in the same PR. Update `docs/ROADMAP.md` when a milestone item completes.
 
 ## Working alongside other agents
