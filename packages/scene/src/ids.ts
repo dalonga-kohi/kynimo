@@ -32,3 +32,7 @@ export type ShapeItemId = z.infer<typeof ShapeItemIdSchema>;
 /** Id of a mask. Unique within its layer. */
 export const MaskIdSchema = id("MaskId");
 export type MaskId = z.infer<typeof MaskIdSchema>;
+
+/** Id of a behavior. Unique within its layer. */
+export const BehaviorIdSchema = id("BehaviorId");
+export type BehaviorId = z.infer<typeof BehaviorIdSchema>;

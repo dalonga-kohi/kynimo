@@ -222,17 +222,17 @@ describe("migrateProject", () => {
     expect(audio).not.toHaveProperty("masks");
   });
 
-  it("3 → 6 leaves a version 3 document unchanged apart from its version", () => {
+  it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 6 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 7 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
-  it("4 → 6 leaves a version 4 document unchanged apart from its version", () => {
+  it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 6 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 7 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +255,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 6 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 7 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -286,6 +286,94 @@ describe("migrateProject", () => {
     const again = migrateProject(withOne);
     expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({
       animators: [{ name: "a" }],
+    });
+  });
+
+  const withoutBehaviors = ({ behaviors: _behaviors, ...rest }: Record<string, unknown>) => rest;
+
+  it("6 → 7 gives every layer with a transform an empty behavior list and leaves audio alone", () => {
+    const base = {
+      inFrame: 0,
+      outFrame: 90,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+    };
+    const transform = {
+      anchorPoint: { value: [0, 0] },
+      position: { value: [0, 0] },
+      scale: { value: [1, 1] },
+      rotation: { value: 0 },
+      skew: { value: 0 },
+      opacity: { value: 1 },
+    };
+    const v6 = {
+      ...(project() as Record<string, unknown>),
+      formatVersion: 6,
+      assets: [
+        {
+          id: "music",
+          type: "audio",
+          name: "Music",
+          uri: "assets/music.mp3",
+          sha256: "b".repeat(64),
+          durationMs: 1000,
+        },
+      ],
+      compositions: [
+        {
+          id: "main",
+          name: "main",
+          width: 1920,
+          height: 1080,
+          fps: { num: 30, den: 1 },
+          durationFrames: 90,
+          background: "#000000",
+          markers: [],
+          layers: [
+            {
+              ...withoutBehaviors(visual("s")),
+              type: "solid",
+              width: 10,
+              height: 10,
+              color: "#ff0000",
+            },
+            { ...base, id: "n", name: "n", parent: null, transform, type: "null" },
+            { ...base, id: "a", name: "a", type: "audio", assetId: "music", volume: { value: 1 } },
+          ],
+        },
+      ],
+    };
+    const r = migrateProject(v6);
+    expect(r).toMatchObject({ ok: true, from: 6, to: 7 });
+    if (!r.ok) return;
+    const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
+    expect(solid).toMatchObject({ behaviors: [] });
+    expect(nul).toMatchObject({ behaviors: [] });
+    expect(audio).not.toHaveProperty("behaviors");
+
+    // A layer that already lists behaviors keeps them.
+    const wiggle = {
+      id: "w",
+      name: "w",
+      enabled: true,
+      property: "rotation",
+      type: "wiggle",
+      frequency: { value: 2 },
+      amplitude: { value: 5 },
+      octaves: 1,
+      seed: 0,
+      linked: false,
+    };
+    const again = migrateProject({
+      ...r.doc,
+      formatVersion: 6,
+      compositions: [{ ...r.doc.compositions[0], layers: [{ ...solid, behaviors: [wiggle] }] }],
+    });
+    expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({
+      behaviors: [{ id: "w" }],
     });
   });
 

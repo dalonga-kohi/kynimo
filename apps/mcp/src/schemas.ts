@@ -50,6 +50,13 @@ export const MaskBodySchema = z
     `A mask without its id: { name, mode: ${MASK_MODES.join(" | ")}, inverted, path, feather, opacity, expansion }. ${MASK_TRACKS}`,
   );
 
+/** Behavior bodies are loose in `apply_ops` too; the server validates them in full (ADR-0039). */
+export const BehaviorBodySchema = z
+  .looseObject({})
+  .describe(
+    "A behavior without its id: { name, enabled, property, type: wiggle | oscillate | loop | inertia | link, ...parameters of that type }.",
+  );
+
 type AnyOp = (typeof OpSchema.options)[number];
 /** The op name of an option; setTransformTrack is itself a union of per-property variants. */
 const opName = (o: AnyOp): string =>
@@ -67,6 +74,11 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
   const obj = o as z.ZodObject<z.ZodRawShape>;
   if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
   if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "addBehavior") return obj.extend({ behavior: BehaviorBodySchema });
+  if (name === "updateBehavior")
+    return obj.extend({
+      set: z.looseObject({}).describe("Behavior fields to replace (not id or type)."),
+    });
   if (name === "addAsset")
     return obj.extend({
       asset: z
@@ -84,7 +96,7 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set` and `addAsset.asset`,
+ * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set` and `addAsset.asset`,
  * which the server validates in full against `OpSchema` before anything is applied.
  */
 export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);

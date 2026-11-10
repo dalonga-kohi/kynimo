@@ -1,8 +1,17 @@
 import { z } from "zod";
 import { type Asset, AssetSchema } from "./asset.js";
+import {
+  type Behavior,
+  BehaviorAmountSchema,
+  BehaviorPropertySchema,
+  BehaviorSchema,
+  LoopBehaviorSchema,
+  OscillateBehaviorSchema,
+} from "./behavior.js";
 import { MaskSchema, TrackMatteSchema } from "./compositing.js";
 import {
   AssetIdSchema,
+  BehaviorIdSchema,
   CompositionIdSchema,
   LayerIdSchema,
   MarkerIdSchema,
@@ -11,9 +20,21 @@ import {
 import type { Animatable, PositionTrack } from "./keyframes.js";
 import { type Layer, LayerSchema } from "./layer.js";
 import { MAX_LAYERS } from "./limits.js";
-import { MarkerSchema, NameSchema } from "./primitives.js";
+import {
+  MarkerSchema,
+  NameSchema,
+  NonNegativeSchema,
+  NumberSchema,
+  PositiveSchema,
+  Vec2Schema,
+} from "./primitives.js";
 import { LayerSelectorSchema } from "./selectors.js";
-import { TransformSchema } from "./transform.js";
+import {
+  animatable,
+  TRANSFORM_PROPERTIES,
+  type TransformProperty,
+  TransformSchema,
+} from "./transform.js";
 
 export const MAX_BATCH_OPS = 500;
 
@@ -26,16 +47,6 @@ const LayerInputSchema = z.discriminatedUnion(
   "type",
   (LayerSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
 ) as unknown as z.ZodType<LayerInput>;
-
-export type TransformProperty = (typeof TRANSFORM_PROPERTIES)[number];
-export const TRANSFORM_PROPERTIES = [
-  "anchorPoint",
-  "position",
-  "scale",
-  "rotation",
-  "skew",
-  "opacity",
-] as const satisfies readonly (keyof z.infer<typeof TransformSchema>)[];
 
 /** Layer fields `updateLayer` may change. Transform tracks have their own op. */
 export const LayerPatchSchema = z
@@ -148,6 +159,80 @@ const removeMask = z.strictObject({
   mask: MaskIdSchema,
 });
 
+/** A behavior without its id: the id is supplied by the op or generated from the seeded counter. */
+export type BehaviorInput = Behavior extends infer B
+  ? B extends Behavior
+    ? Omit<B, "id">
+    : never
+  : never;
+export const BehaviorInputSchema = z.discriminatedUnion(
+  "type",
+  (BehaviorSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
+) as unknown as z.ZodType<BehaviorInput>;
+
+const addBehavior = z.strictObject({
+  op: z.literal("addBehavior"),
+  layer: LayerSelectorSchema,
+  /** Optional; generated from the seeded counter when omitted. Unique within the layer. */
+  id: BehaviorIdSchema.optional(),
+  behavior: BehaviorInputSchema,
+  /** Position in the layer's behavior list. Default: the end. */
+  index: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Behavior fields `updateBehavior` may change, whichever the behavior's type has; fields the type
+ * lacks are refused when the op runs, and the merged behavior is validated whole. The type itself
+ * can't change. Tracks are replaced whole.
+ */
+export const BehaviorPatchSchema = z
+  .strictObject({
+    name: NameSchema,
+    enabled: z.boolean(),
+    property: BehaviorPropertySchema,
+    frequency: z.union([animatable(NonNegativeSchema), PositiveSchema]),
+    amplitude: z.union([BehaviorAmountSchema, NonNegativeSchema]),
+    octaves: z.number().int(),
+    seed: z.number().int(),
+    linked: z.boolean(),
+    phase: NumberSchema,
+    waveform: OscillateBehaviorSchema.shape.waveform,
+    direction: LoopBehaviorSchema.shape.direction,
+    mode: LoopBehaviorSchema.shape.mode,
+    span: z.number().int(),
+    decay: NumberSchema,
+    source: z.strictObject({ layer: LayerIdSchema, property: BehaviorPropertySchema }),
+    multiply: NumberSchema,
+    offset: z.union([NumberSchema, Vec2Schema]),
+    delay: z.number().int(),
+    /** Present only to be refused with a clear message. */
+    type: z.string(),
+  })
+  .partial()
+  .superRefine((p, ctx) => {
+    if (Object.keys(p).length === 0)
+      ctx.addIssue({ code: "custom", message: "set at least one field" });
+    if (p.type !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["type"],
+        message: "a behavior's type can't change; remove it and add a new behavior",
+      });
+  });
+
+const updateBehavior = z.strictObject({
+  op: z.literal("updateBehavior"),
+  layer: LayerSelectorSchema,
+  behavior: BehaviorIdSchema,
+  set: BehaviorPatchSchema,
+});
+
+const removeBehavior = z.strictObject({
+  op: z.literal("removeBehavior"),
+  layer: LayerSelectorSchema,
+  behavior: BehaviorIdSchema,
+});
+
 /** Sets or clears a layer's track matte. The source is a layer of the same composition. */
 const setMatte = z.strictObject({
   op: z.literal("setMatte"),
@@ -208,6 +293,9 @@ export const OpSchema = z.discriminatedUnion("op", [
   addMask,
   updateMask,
   removeMask,
+  addBehavior,
+  updateBehavior,
+  removeBehavior,
   setMatte,
   precompose,
   addAsset,

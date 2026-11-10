@@ -1,18 +1,20 @@
 import type { Asset } from "./asset.js";
+import { type Behavior, BehaviorSchema } from "./behavior.js";
 import {
   applyChange,
   type Change,
   clone,
   findComposition,
+  findLayer,
   findMarker,
   jsonEqual,
   readPath,
 } from "./changes.js";
 import type { Mask } from "./compositing.js";
 import type { Composition } from "./composition.js";
-import type { AssetId, CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
+import type { AssetId, BehaviorId, CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
 import type { Layer } from "./layer.js";
-import { BatchSchema, type Op } from "./ops.js";
+import { BatchSchema, type BehaviorInput, type Op } from "./ops.js";
 import type { Json } from "./primitives.js";
 import { type Project, ProjectSchema } from "./project.js";
 import { type LayerSelector, matchLayers } from "./selectors.js";
@@ -48,7 +50,7 @@ interface Ctx {
   draft: Project;
   changes: Change[];
   counter: number;
-  /** Layer, marker, composition and asset ids are separate namespaces. Mask ids are per layer. */
+  /** Layer, marker, composition and asset ids are separate namespaces. Mask and behavior ids are per layer. */
   usedIds: { layer: Set<string>; marker: Set<string>; comp: Set<string>; asset: Set<string> };
 }
 
@@ -61,7 +63,7 @@ const emit = (ctx: Ctx, change: Change): void => {
 /** Ids come from a counter carried by the caller (ADR-0009), skipping any id already in use. */
 function nextId(
   ctx: Ctx,
-  prefix: "layer" | "marker" | "comp" | "asset" | "mask",
+  prefix: "layer" | "marker" | "comp" | "asset" | "mask" | "behavior",
   taken?: Set<string>,
 ): string {
   const used = taken ?? ctx.usedIds[prefix as "layer" | "marker" | "comp" | "asset"];
@@ -99,13 +101,56 @@ function maskIndex(layer: DrawnLayer, id: string, path: (string | number)[]): nu
   return index;
 }
 
-/** The layer a link (parent or track matte) points at, if any. */
-const links = (layer: Layer): { field: "parent" | "matte"; target: string }[] => {
-  const out: { field: "parent" | "matte"; target: string }[] = [];
+type TransformedLayer = Exclude<Layer, { type: "audio" }>;
+
+/** Resolves a selector to a layer that has a transform, and so can carry behaviors. */
+function resolveTransformed(ctx: Ctx, selector: LayerSelector, path: (string | number)[]) {
+  const ref = resolve(ctx, selector, path);
+  if (ref.layer.type === "audio")
+    fail(
+      path,
+      `layer '${ref.layer.id}' is an audio layer and has no transform, so no behaviors; use any other layer type`,
+    );
+  return { ...ref, layer: ref.layer as TransformedLayer };
+}
+
+function behaviorIndex(layer: TransformedLayer, id: string, path: (string | number)[]): number {
+  const index = layer.behaviors.findIndex((b) => b.id === id);
+  if (index === -1)
+    fail(
+      path,
+      `layer '${layer.id}' has no behavior '${id}'; its behaviors: ${layer.behaviors.map((b) => b.id).join(", ") || "none"}`,
+    );
+  return index;
+}
+
+/** A link behavior's source must be a layer of the layer's own composition (checked again by the project). */
+function checkLinkSource(
+  ctx: Ctx,
+  composition: Composition,
+  behavior: Behavior | BehaviorInput,
+  path: (string | number)[],
+): void {
+  if (behavior.type !== "link") return;
+  const source = findLayer(ctx.draft, behavior.source.layer);
+  if (source !== undefined && source.composition.id !== composition.id)
+    fail(
+      [...path, "source", "layer"],
+      `link source '${source.layer.id}' is in composition '${source.composition.id}', not '${composition.id}'; a link source must be a layer of the same composition`,
+    );
+}
+
+/** What a layer points at, by parent, track matte or link behavior (a link to itself stays inside any precomp). */
+const links = (layer: Layer): { field: "parent" | "matte" | "link"; target: string }[] => {
+  const out: { field: "parent" | "matte" | "link"; target: string }[] = [];
   if (layer.type !== "audio" && layer.parent !== null)
     out.push({ field: "parent", target: layer.parent });
   if (isDrawn(layer) && layer.matte !== null)
     out.push({ field: "matte", target: layer.matte.layerId });
+  if (layer.type !== "audio")
+    for (const b of layer.behaviors)
+      if (b.type === "link" && b.source.layer !== layer.id)
+        out.push({ field: "link", target: b.source.layer });
   return out;
 };
 
@@ -322,6 +367,68 @@ function run(ctx: Ctx, op: Op, i: number): void {
       setLayerValue(ctx, i, layer, ["masks"], layer.masks.filter((_, k) => k !== index) as Json);
       return;
     }
+    case "addBehavior": {
+      const { composition, layer } = resolveTransformed(ctx, op.layer, [i, "layer"]);
+      const index = op.index ?? layer.behaviors.length;
+      if (index > layer.behaviors.length)
+        fail(
+          [i, "index"],
+          `index ${index} is past the end; layer '${layer.id}' has ${layer.behaviors.length} behaviors`,
+        );
+      const taken = new Set<string>(layer.behaviors.map((b) => b.id));
+      if (op.id !== undefined && taken.has(op.id))
+        fail(
+          [i, "id"],
+          `layer '${layer.id}' already has a behavior '${op.id}'; choose another id or omit it`,
+        );
+      checkLinkSource(ctx, composition, op.behavior, [i, "behavior"]);
+      const id = (op.id ?? nextId(ctx, "behavior", taken)) as BehaviorId;
+      const behaviors: Behavior[] = [...layer.behaviors];
+      behaviors.splice(index, 0, { ...op.behavior, id } as Behavior);
+      setLayerValue(ctx, i, layer, ["behaviors"], behaviors as Json);
+      return;
+    }
+    case "updateBehavior": {
+      const { composition, layer } = resolveTransformed(ctx, op.layer, [i, "layer"]);
+      const index = behaviorIndex(layer, op.behavior, [i, "behavior"]);
+      const current = layer.behaviors[index] as Behavior;
+      for (const key of Object.keys(op.set))
+        if (!(key in current))
+          fail(
+            [i, "set", key],
+            `'${key}' is not a field of a ${current.type} behavior; its fields: ${Object.keys(
+              current,
+            )
+              .filter((k) => k !== "id" && k !== "type")
+              .join(", ")}`,
+          );
+      // Parsed partials hold only the keys the caller sent, never explicit undefined.
+      const merged = BehaviorSchema.safeParse({ ...current, ...op.set });
+      if (!merged.success)
+        throw new OpFailure(
+          merged.error.issues.map((e) => ({
+            path: ["ops", i, "set", ...e.path.map(seg)],
+            message: e.message,
+          })),
+        );
+      checkLinkSource(ctx, composition, merged.data, [i, "set"]);
+      const behaviors: Behavior[] = [...layer.behaviors];
+      behaviors[index] = merged.data;
+      setLayerValue(ctx, i, layer, ["behaviors"], behaviors as Json);
+      return;
+    }
+    case "removeBehavior": {
+      const { layer } = resolveTransformed(ctx, op.layer, [i, "layer"]);
+      const index = behaviorIndex(layer, op.behavior, [i, "behavior"]);
+      setLayerValue(
+        ctx,
+        i,
+        layer,
+        ["behaviors"],
+        layer.behaviors.filter((_, k) => k !== index) as Json,
+      );
+      return;
+    }
     case "setMatte": {
       const { composition, layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
       let matte: Json = null;
@@ -428,13 +535,24 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     const inside = selected.has(layer.id);
     for (const { field, target } of links(layer)) {
       if (selected.has(target) === inside) continue;
-      const what = field === "parent" ? "parent" : "track matte";
+      const what =
+        field === "parent"
+          ? "parent"
+          : field === "matte"
+            ? "track matte"
+            : "a link behavior pointing at layer";
+      const clear =
+        field === "parent"
+          ? "clear the parent"
+          : field === "matte"
+            ? "clear the track matte"
+            : "remove the link behavior";
       const k = selected.get(inside ? layer.id : target) as number;
       fail(
         [i, "layers", k],
         inside
-          ? `layer '${layer.id}' has ${what} '${target}', which is not being precomposed; add '${target}' to layers, or clear the ${what} first`
-          : `layer '${layer.id}' (not being precomposed) has ${what} '${target}'; add '${layer.id}' to layers, or clear its ${what} first`,
+          ? `layer '${layer.id}' has ${what} '${target}', which is not being precomposed; add '${target}' to layers, or ${clear} first`
+          : `layer '${layer.id}' (not being precomposed) has ${what} '${target}'; add '${layer.id}' to layers, or ${clear} first`,
       );
     }
   }
@@ -518,6 +636,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     blendMode: "normal",
     matte: null,
     masks: [],
+    behaviors: [],
     compositionId: compId,
   };
   emit(ctx, {
