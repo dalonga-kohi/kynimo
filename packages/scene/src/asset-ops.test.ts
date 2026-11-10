@@ -51,6 +51,7 @@ const textLayer = (id: string, family: string): Obj => ({
   leading: { value: 1.2 },
   align: "left",
   textCase: "none",
+  animators: [],
   fill: { value: "#ffffff" },
 });
 

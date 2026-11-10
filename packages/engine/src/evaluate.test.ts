@@ -430,6 +430,7 @@ describe("evaluateFrame: layer contents", () => {
       leading: prop(1.2),
       align: "center",
       textCase: "upper",
+      animators: [],
       fill: { keyframes: [kf(0, "#000000"), kf(10, "#ffffff")] },
     });
     const t = single([composition("main", [text])], 10).layers[0];
@@ -442,8 +443,50 @@ describe("evaluateFrame: layer contents", () => {
       leading: 1.2,
       align: "center",
       textCase: "upper",
+      animators: [],
       fill: { r: 1, g: 1, b: 1, a: 1 },
     });
+  });
+
+  it("samples text animators at the layer frame, keyframes included", () => {
+    const text = layer("t", "text", {
+      content: { value: "Hello" },
+      box: { mode: "point" },
+      font: { family: "Inter", weight: 400, size: prop(48) },
+      tracking: prop(0),
+      leading: prop(1.2),
+      align: "left",
+      textCase: "none",
+      fill: prop("#ffffff"),
+      animators: [
+        {
+          name: "rise",
+          selector: {
+            unit: "characters",
+            start: prop(0),
+            end: { keyframes: [kf(0, 0), kf(10, 1)] },
+            offset: prop(0),
+            shape: "square",
+            easeHigh: prop(0),
+            easeLow: prop(0),
+            order: "forward",
+            seed: 4,
+            amount: prop(1),
+          },
+          properties: { position: prop([0, 30]), opacity: { keyframes: [kf(0, 0), kf(10, 0.5)] } },
+        },
+      ],
+    });
+    const doc = [composition("main", [text])];
+    const at = (frame: number) => {
+      const t = single(doc, frame).layers[0];
+      if (t?.type !== "text") throw new Error("expected a text layer");
+      return t.animators[0];
+    };
+    expect(at(0)?.selector).toMatchObject({ end: 0, seed: 4, shape: "square" });
+    expect(at(5)).toMatchObject({ name: "rise", position: [0, 30], opacity: 0.25, fill: null });
+    expect(at(5)?.selector.end).toBeCloseTo(0.5, 12);
+    expect(at(10)?.selector.end).toBe(1);
   });
 
   it("passes image, solid, adjustment and component layers through with their data", () => {

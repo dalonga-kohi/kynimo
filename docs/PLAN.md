@@ -15,15 +15,16 @@ Goal: a stranger's Claude or ChatGPT connects to a URL, signs in and rebuilds a 
 
 Open: region, and whether renders share the server process until M7 (recommended: yes, with a concurrency cap).
 
-## Text animators + range selectors (M4)
+## Per-glyph text cost (M4 follow-up to ADR-0038)
 
-The feature most launch videos lean on, so it is the first to reach reference-scene quality.
+Animated text draws each cluster as its own paragraph: about 0.25 ms per glyph, so the budgets are 1 000 per layer and 4 000 per frame. A frame of long animated text is near a second, and contact sheets multiply it.
 
-1. Scene (format bump + migration): `animators[]` on text layers; each has a range selector (unit, start, end, offset, shape, ease high/low, order incl. seeded random, reverse, center-out) and animatable properties (position, scale, rotation, opacity, fill, blur, tracking).
-2. Engine: pure function from selector + glyph index/count to a 0–1 weight per glyph. Property-test it against hand-computed After Effects cases for each shape.
-3. Renderer: per-glyph transforms after shaping, so layout never shifts while animating; tracking is the one property that re-lays out. Glyph work joins the per-frame work budget (same pattern as ADR-0034).
-4. Per-glyph blur needs the effect path; if effects haven't landed, the manifest reports it as accepted, not rendered.
-5. `describe_motion` summarises an animator as one line ("words fade up, 3-frame stagger"), not per-glyph data.
+1. Measure first: time a fade, a rise and a tracking animator at 200, 1 000 and 4 000 glyphs, in Node and in the pinned Chromium, and write the numbers into ADR-0038.
+2. Candidates, cheapest first:
+   - Cache shaped paragraphs by text only and apply color and alpha at draw time (a color filter in a layer), so a fade stops defeating the cache.
+   - Draw glyph runs from the full layout's own glyph ids and positions (`drawGlyphs`), which also keeps ligatures and joining. canvaskit 0.42 reports run typefaces as null, so the font per run has to be matched by hand, fallback fonts included.
+   - Reuse shaped clusters across frames in the render cache (M7).
+3. Constraint: a layer with an active animator must stay pixel-identical to the plain layer when the animator changes nothing visible; the parity tests in `packages/renderer/src/text-animator.test.ts` and the `text-animators` reference frames are the gate. Raise the budgets only with the measured numbers.
 
 ## Behaviors (M4)
 

@@ -54,6 +54,7 @@ describe("ProjectSchema: valid documents", () => {
             leading: prop(1.2),
             align: "center",
             textCase: "none",
+            animators: [],
             fill: prop("#ffffff"),
           },
           {
@@ -470,6 +471,7 @@ describe("ProjectSchema: integrity", () => {
       leading: prop(1.2),
       align: "left",
       textCase: "none",
+      animators: [],
       fill: prop("#ffffff"),
     });
 
@@ -642,6 +644,6 @@ describe("JSON Schema export", () => {
     expect(JSON.stringify(schema)).toContain("formatVersion");
     const compact = z.toJSONSchema(ProjectSchema, { io: "output", reused: "ref" });
     // The MCP resource uses the deduplicated form; keep it small so new properties cannot bloat it unnoticed.
-    expect(JSON.stringify(compact).length).toBeLessThan(60_000);
+    expect(JSON.stringify(compact).length).toBeLessThan(66_000);
   });
 });

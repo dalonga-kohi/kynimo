@@ -27,6 +27,7 @@ export function withLayerDefaults(input: unknown, composition: Composition | und
     markers: [],
   };
   if (type === "audio") base.volume = { value: 1 };
+  if (type === "text") base.animators = [];
   const out: Obj = { ...base, ...input };
   if (!NO_TRANSFORM.has(type)) {
     out.parent = input.parent === undefined ? null : input.parent;

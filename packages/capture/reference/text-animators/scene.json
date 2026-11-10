@@ -1,0 +1,276 @@
+{
+  "formatVersion": 6,
+  "name": "Reference: text animators",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 640,
+      "height": 360,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 30,
+      "background": "#0b0d17",
+      "markers": [],
+      "layers": [
+        {
+          "id": "lines",
+          "name": "lines",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "box": {
+            "mode": "point"
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "textCase": "none",
+          "content": {
+            "value": "Café\nÜber Åre"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 600,
+            "size": {
+              "value": 44
+            }
+          },
+          "tracking": {
+            "value": 80
+          },
+          "align": "center",
+          "fill": {
+            "value": "#aab4d0"
+          },
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [480, 230]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "animators": [
+            {
+              "name": "lines",
+              "selector": {
+                "unit": "lines",
+                "start": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": 0,
+                      "interpolation": {
+                        "type": "linear"
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": 1,
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.2,
+                        "y1": 0,
+                        "x2": 0,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                },
+                "end": {
+                  "value": 1
+                },
+                "offset": {
+                  "value": 0
+                },
+                "shape": "square",
+                "easeHigh": {
+                  "value": 0
+                },
+                "easeLow": {
+                  "value": 0
+                },
+                "order": "forward",
+                "seed": 0,
+                "amount": {
+                  "value": 1
+                }
+              },
+              "properties": {
+                "fill": {
+                  "value": "#ff6b6b"
+                },
+                "position": {
+                  "value": [0, -14]
+                },
+                "opacity": {
+                  "value": 0.3
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "title",
+          "name": "title",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "box": {
+            "mode": "point"
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "textCase": "none",
+          "content": {
+            "value": "Kinetic type"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 800,
+            "size": {
+              "value": 76
+            }
+          },
+          "tracking": {
+            "value": 0
+          },
+          "align": "left",
+          "fill": {
+            "value": "#ffffff"
+          },
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [30, 150]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "animators": [
+            {
+              "name": "rise",
+              "selector": {
+                "unit": "characters",
+                "start": {
+                  "value": 0
+                },
+                "end": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": 0,
+                      "interpolation": {
+                        "type": "linear"
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": 1,
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.2,
+                        "y1": 0,
+                        "x2": 0,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                },
+                "offset": {
+                  "value": 0
+                },
+                "shape": "ramp-up",
+                "easeHigh": {
+                  "value": 0.3
+                },
+                "easeLow": {
+                  "value": 0
+                },
+                "order": "forward",
+                "seed": 0,
+                "amount": {
+                  "value": 1
+                }
+              },
+              "properties": {
+                "position": {
+                  "value": [0, 40]
+                },
+                "rotation": {
+                  "value": -14
+                },
+                "opacity": {
+                  "value": 0.15
+                },
+                "fill": {
+                  "value": "#5b8cff"
+                },
+                "tracking": {
+                  "value": 60
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

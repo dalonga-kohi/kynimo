@@ -1,8 +1,17 @@
-import type { BlendMode, LayerType, MaskMode, Paint, ShapeItem, TrackMatte } from "@kynimo/scene";
+import type {
+  AnimatorProperties,
+  BlendMode,
+  LayerType,
+  MaskMode,
+  Paint,
+  ShapeItem,
+  TrackMatte,
+} from "@kynimo/scene";
 import { MAX_FRAME_SHAPE_WORK, MAX_SHAPE_LAYER_WORK } from "./binding.js";
 import { BLEND_MODE_IDS } from "./compositor/pipeline.js";
 import { BUNDLED_FONTS, FONT_FORMATS } from "./fonts.js";
 import { IMAGE_FORMATS } from "./images.js";
+import { MAX_ANIMATED_CLUSTERS, MAX_FRAME_ANIMATED_CLUSTERS } from "./text.js";
 
 /**
  * Whether this build draws something the scene format accepts (ADR-0018). `accepted` means a
@@ -64,6 +73,33 @@ export const SHAPE_ITEM_SUPPORT: Readonly<Record<ShapeItem["type"], Support>> = 
     note: `copies everything listed above it; path work (items times copies, plus path segments per paint and operator) is limited to ${MAX_SHAPE_LAYER_WORK} units per shape layer and ${MAX_FRAME_SHAPE_WORK} per frame`,
   },
 };
+
+/**
+ * What a text animator may change, typed over its property list like the tables above (ADR-0038).
+ * Each animated glyph is shaped and drawn on its own, so the glyph count is limited.
+ */
+export const TEXT_ANIMATOR_SUPPORT: Readonly<Record<keyof AnimatorProperties, Support>> = {
+  position: RENDERS,
+  scale: { status: "renders", note: "about the middle of each character on its baseline" },
+  rotation: { status: "renders", note: "about the middle of each character on its baseline" },
+  opacity: RENDERS,
+  fill: RENDERS,
+  blur: {
+    status: "accepted",
+    reason:
+      "blur arrives with effects (M4); the animator is kept, and renders carry an 'animator-blur' warning",
+  },
+  tracking: {
+    status: "renders",
+    note: "moves characters within the lines the base layout chose; wrapping does not change",
+  },
+};
+
+/** Glyph limits of animated text, stated in the manifest. */
+export const TEXT_ANIMATOR_LIMITS = {
+  glyphsPerLayer: MAX_ANIMATED_CLUSTERS,
+  glyphsPerFrame: MAX_FRAME_ANIMATED_CLUSTERS,
+} as const;
 
 export const PAINT_SUPPORT: Readonly<Record<Paint["type"], Support>> = {
   solid: RENDERS,

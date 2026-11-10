@@ -1,6 +1,12 @@
-import type { ResolvedTextLayer } from "@kynimo/engine";
+import {
+  animateText,
+  type GlyphEffect,
+  multiply,
+  type ResolvedTextLayer,
+  transformMatrix,
+} from "@kynimo/engine";
 import { FALLBACK_FONT_FAMILY } from "@kynimo/scene";
-import type { CanvasKit, Paragraph } from "canvaskit-wasm";
+import type { CanvasKit, LineMetrics, Paragraph } from "canvaskit-wasm";
 import { RenderError } from "./errors.js";
 import type { FontLibrary, LoadedFont } from "./fonts.js";
 import type { RasterImage, RenderWarning } from "./raster.js";
@@ -117,6 +123,10 @@ function linesThatFit(paragraph: Paragraph, height: number): number {
 
 export interface TextLayout {
   paragraph: Paragraph;
+  /** The laid-out string: the layer's content after its case. */
+  text: string;
+  /** Where each line starts in `text` (UTF-16), for every line the layout makes, hidden ones too. */
+  lineStarts: number[];
   /** Where the paragraph's top-left corner sits in layer space. */
   origin: [number, number];
   /** The font size laid out: the layer's, or smaller after auto-fit. */
@@ -153,7 +163,14 @@ export function layoutText(
     const first = paragraph.getLineMetrics()[0];
     if (first === undefined) return null;
     const dx = layer.align === "center" ? -width / 2 : layer.align === "right" ? -width : 0;
-    return { paragraph, origin: [dx, -first.baseline], size, pad: size };
+    return {
+      paragraph,
+      text,
+      lineStarts: paragraph.getLineMetrics().map((l) => l.startIndex),
+      origin: [dx, -first.baseline],
+      size,
+      pad: size,
+    };
   }
 
   if (!(box.width > 0) || !(box.height > 0)) return null;
@@ -185,8 +202,10 @@ export function layoutText(
   }
   const visible = linesThatFit(paragraph, box.height);
   if (visible === 0) return null;
-  if (visible < paragraph.getLineMetrics().length) paragraph = layoutAt(fitted, visible);
-  return { paragraph, origin: [0, 0], size: fitted, pad: fitted };
+  // Units divide the whole text, so lines a box hides still count (taken before they are cut).
+  const lineStarts = paragraph.getLineMetrics().map((l) => l.startIndex);
+  if (visible < lineStarts.length) paragraph = layoutAt(fitted, visible);
+  return { paragraph, text, lineStarts, origin: [0, 0], size: fitted, pad: fitted };
 }
 
 /** Layer-space box around every line, padded for ink that overhangs the line boxes. */
@@ -277,9 +296,221 @@ export function textWarnings(
   });
 }
 
+/** Glyph clusters one animated text layer may draw per frame: each is shaped and drawn on its own. */
+export const MAX_ANIMATED_CLUSTERS = 1_000;
+/** The same limit across a frame's text layers, precomps included. */
+export const MAX_FRAME_ANIMATED_CLUSTERS = 4_000;
+
+/** Shared across a frame like `FrameShapeWork`: animated glyphs are charged before they are shaped. */
+export class FrameTextWork {
+  private left: number;
+  constructor(readonly limit = MAX_FRAME_ANIMATED_CLUSTERS) {
+    this.left = limit;
+  }
+  charge(units: number): void {
+    this.left -= units;
+    if (this.left < 0)
+      throw new RenderError(
+        `the frame animates more than ${this.limit} glyphs across its text layers; animate fewer or shorter text layers`,
+      );
+  }
+}
+
+/** One cluster of an animated layer, placed by the unchanged layout and ready to draw. */
+interface PlacedGlyph {
+  text: string;
+  effect: GlyphEffect;
+  /** Layer space: left edge of the cluster, and its width. */
+  x: number;
+  width: number;
+  baseline: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Where every visible cluster sits in the layout as it is, plus what tracking animators add:
+ * a cluster moves by the tracking of the clusters before it on its line, and a centered or
+ * right-aligned line grows around its anchor. Wrapping stays as the base layout chose it.
+ */
+function placeGlyphs(
+  ck: CanvasKit,
+  layout: TextLayout,
+  animation: ReturnType<typeof animateText>,
+  align: ResolvedTextLayer["align"],
+): PlacedGlyph[] {
+  const { paragraph, origin, size, text } = layout;
+  const lines: LineMetrics[] = paragraph.getLineMetrics();
+  const found: (PlacedGlyph & { lineNo: number; before: number })[] = [];
+  const running = new Map<number, number>();
+  animation.clusters.forEach((cluster, i) => {
+    const effect = animation.effects[i];
+    // `getLineNumberAt` takes UTF-8 byte offsets in canvaskit-wasm, unlike every other call here, so
+    // the line is found from the visible lines' own UTF-16 ranges.
+    const lineNo = lines.findIndex(
+      (l) =>
+        cluster.start >= l.startIndex &&
+        cluster.start < Math.max(l.endIndex, l.endIncludingNewline),
+    );
+    const line = lines[lineNo];
+    if (effect === undefined || line === undefined) return;
+    const rects = paragraph.getRectsForRange(
+      cluster.start,
+      cluster.end,
+      ck.RectHeightStyle.Tight,
+      ck.RectWidthStyle.Tight,
+    );
+    if (rects.length === 0) return;
+    const left = Math.min(...rects.map((r) => r.rect[0] ?? 0));
+    const right = Math.max(...rects.map((r) => r.rect[2] ?? 0));
+    const before = running.get(lineNo) ?? 0;
+    running.set(lineNo, before + (effect.tracking / 1000) * size);
+    found.push({
+      text: text.slice(cluster.start, cluster.end),
+      effect,
+      x: origin[0] + left,
+      width: right - left,
+      baseline: origin[1] + line.baseline,
+      top: origin[1] + line.baseline - line.ascent,
+      bottom: origin[1] + line.baseline + line.descent,
+      lineNo,
+      before,
+    });
+  });
+  return found.map(({ lineNo, before, ...glyph }) => {
+    const total = running.get(lineNo) ?? 0;
+    const shift = align === "center" ? -total / 2 : align === "right" ? -total : 0;
+    return { ...glyph, x: glyph.x + before + shift };
+  });
+}
+
+/** Local matrix of one glyph's animator transform about its baseline center, in layer space. */
+function glyphMatrix(g: PlacedGlyph) {
+  const ax = g.x + g.width / 2;
+  return transformMatrix({
+    anchorPoint: [ax, g.baseline],
+    position: [ax + g.effect.dx, g.baseline + g.effect.dy],
+    scale: [g.effect.scaleX, g.effect.scaleY],
+    rotation: g.effect.rotation,
+    skew: 0,
+  });
+}
+
+/** Text animators draw each cluster as its own paragraph at the position the whole layout gave it. */
+function rasterizeAnimated(
+  ck: CanvasKit,
+  library: FontLibrary,
+  layer: ResolvedTextLayer,
+  layout: TextLayout,
+  animation: ReturnType<typeof animateText>,
+  width: number,
+  height: number,
+  reserve: (width: number, height: number) => void,
+  work: FrameTextWork | undefined,
+  own: Own,
+): { x: number; y: number; raster: RasterImage } | null {
+  const glyphs = placeGlyphs(ck, layout, animation, layer.align).filter(
+    (g) => g.effect.opacity * g.effect.fill.a > 0 && g.text.trim() !== "",
+  );
+  if (glyphs.length > MAX_ANIMATED_CLUSTERS)
+    throw new RenderError(
+      `text layer '${layer.id}' animates ${glyphs.length} glyphs; at most ${MAX_ANIMATED_CLUSTERS} are drawn per layer. Split the text across layers or animate less of it`,
+    );
+  work?.charge(glyphs.length);
+
+  const pad = layout.pad;
+  let bounds: Rect | null = null;
+  for (const g of glyphs) {
+    const box = transformRect(multiply(layer.matrix, glyphMatrix(g)), [
+      g.x - pad,
+      g.top - pad,
+      g.x + g.width + pad,
+      g.bottom + pad,
+    ]);
+    if (box !== null) bounds = bounds === null ? box : union(bounds, box);
+  }
+  if (bounds === null) return null;
+  const crop = cropToComposition(bounds, width, height);
+  if (crop === null) return null;
+  const [x0, y0, x1, y1] = crop;
+  reserve(x1 - x0, y1 - y0);
+
+  const fonts = resolveFonts(library, layer);
+  // Clusters that repeat in the same color share one shaped paragraph.
+  const shaped = new Map<string, { paragraph: Paragraph; baseline: number }>();
+  const shape = (text: string, color: ResolvedTextLayer["fill"]) => {
+    const key = `${text}|${color.r}|${color.g}|${color.b}|${color.a}`;
+    let entry = shaped.get(key);
+    if (entry === undefined) {
+      // Tracking is zero: the full layout already placed the cluster, and spacing is added after it.
+      const single = {
+        ...layer,
+        fill: color,
+        tracking: 0,
+        align: "left",
+        box: { mode: "point" },
+      } as const;
+      const paragraph = buildParagraph(
+        ck,
+        library,
+        fonts,
+        single,
+        text,
+        layout.size,
+        undefined,
+        own,
+      );
+      paragraph.layout(UNBOUNDED);
+      entry = { paragraph, baseline: paragraph.getLineMetrics()[0]?.baseline ?? 0 };
+      shaped.set(key, entry);
+    }
+    return entry;
+  };
+
+  const raster = rasterize(ck, x1 - x0, y1 - y0, (canvas) => {
+    canvas.translate(-x0, -y0);
+    canvas.concat(toSkMatrix(layer.matrix));
+    for (const g of glyphs) {
+      const { paragraph, baseline } = shape(g.text, {
+        ...g.effect.fill,
+        a: g.effect.fill.a * g.effect.opacity,
+      });
+      canvas.save();
+      canvas.concat(toSkMatrix(glyphMatrix(g)));
+      canvas.drawParagraph(paragraph, g.x, g.baseline - baseline);
+      canvas.restore();
+    }
+  });
+  const trimmed = trimTransparent(raster);
+  return trimmed === null
+    ? null
+    : { x: x0 + trimmed.dx, y: y0 + trimmed.dy, raster: trimmed.raster };
+}
+
+/**
+ * Animated properties this renderer accepts but does not draw yet (ADR-0038). Blur needs the
+ * effect path (M4); until then it is reported, so an agent does not wait for a blur that never shows.
+ */
+export function textAnimatorWarnings(layer: ResolvedTextLayer): RenderWarning[] {
+  const blurred = layer.animators.some((a) => a.blur !== null && a.blur > 0);
+  return blurred
+    ? [
+        {
+          id: layer.id,
+          kind: "animator-blur",
+          codepoints: [],
+          message:
+            "a text animator sets blur, which is accepted but not drawn yet: blur arrives with effects",
+        },
+      ]
+    : [];
+}
+
 /**
  * Rasterizes a text layer in composition space (ADR-0016), cropped to its ink within the
- * `width × height` composition. Returns `null` when nothing visible lands inside it.
+ * `width × height` composition. Returns `null` when nothing visible lands inside it. With text
+ * animators that change something this frame, each cluster is drawn on its own (ADR-0038);
+ * otherwise the layer is one paragraph, exactly as before animators existed.
  */
 export function rasterizeTextLayer(
   ck: CanvasKit,
@@ -289,11 +520,30 @@ export function rasterizeTextLayer(
   height: number,
   /** Called with the raster size before it is allocated; may throw to refuse it. */
   reserve: (width: number, height: number) => void = () => {},
+  /** The frame's shared glyph budget; omitted, only the per-layer limit applies. */
+  work?: FrameTextWork,
 ): { x: number; y: number; raster: RasterImage } | null {
-  if (!(layer.fill.a > 0)) return null;
+  if (!(layer.fill.a > 0) && layer.animators.length === 0) return null;
   return scoped((own) => {
     const layout = layoutText(ck, library, layer, own);
     if (layout === null) return null;
+    if (layer.animators.length > 0) {
+      const animation = animateText(layout.text, layer.animators, layout.lineStarts, layer.fill);
+      if (animation.active)
+        return rasterizeAnimated(
+          ck,
+          library,
+          layer,
+          layout,
+          animation,
+          width,
+          height,
+          reserve,
+          work,
+          own,
+        );
+    }
+    if (!(layer.fill.a > 0)) return null;
     const local = layoutBounds(layout);
     const bounds = local === null ? null : transformRect(layer.matrix, local);
     if (bounds === null) return null;

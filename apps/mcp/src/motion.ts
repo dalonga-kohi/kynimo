@@ -1,4 +1,11 @@
-import { type Composition, type Layer, type Project, springSettleFrames } from "@kynimo/scene";
+import {
+  type Animatable,
+  type Composition,
+  type Layer,
+  type Project,
+  springSettleFrames,
+  type TextAnimator,
+} from "@kynimo/scene";
 import { type RawKeyframe, walkTracks } from "./summary.js";
 
 /** Segments one `describe_motion` reply lists; the rest are counted in `truncated_segments`. */
@@ -63,6 +70,8 @@ export interface LayerMotion {
   /** Left out by the filters, but listed because it parents a listed layer and moves it. */
   parent_of_listed?: true;
   properties: MotionProperty[];
+  /** Text layers with animators: one line each, so a per-character reveal reads as one idea. */
+  animators?: string[];
 }
 
 export interface MotionDescription {
@@ -245,6 +254,9 @@ export function describeMotion(
           }
         : {}),
       ...(parents.has(layer.id) ? { parent_of_listed: true as const } : {}),
+      ...(layer.type === "text" && layer.animators.length > 0
+        ? { animators: layer.animators.map(describeAnimator) }
+        : {}),
       properties,
     });
   });
@@ -259,6 +271,23 @@ export function describeMotion(
     layers,
     truncated_segments: truncated,
   };
+}
+
+/** A track's value when constant, else "animated" (its keyframes are listed under `properties`). */
+const staticOrAnimated = (track: Animatable<number>): string =>
+  "value" in track ? String(Math.round(track.value * 1000) / 1000) : "animated";
+
+/** One line per text animator: what it changes, per what unit, and the window it selects. */
+export function describeAnimator(a: TextAnimator): string {
+  const { selector: s, properties } = a;
+  const changes = Object.entries(properties)
+    .filter(([, track]) => track !== undefined)
+    .map(([name]) => name);
+  const order =
+    s.order === "forward"
+      ? ""
+      : `, ${s.order} order${s.order === "random" ? ` (seed ${s.seed})` : ""}`;
+  return `${a.name}: ${changes.length > 0 ? changes.join(", ") : "no properties"} by ${s.unit.replace(/s$/, "")}, ${s.shape} range ${staticOrAnimated(s.start)}..${staticOrAnimated(s.end)}${"value" in s.offset && s.offset.value === 0 ? "" : ` offset ${staticOrAnimated(s.offset)}`}${order}`;
 }
 
 const parentOf = (layer: Layer | undefined): string | null =>

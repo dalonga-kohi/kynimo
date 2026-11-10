@@ -20,10 +20,13 @@
  * 5: shape path operators: trim paths, round corners and repeater items (ADR-0034). All three are
  *    new variants, so the step from 4 changes nothing.
  *
+ * 6: text animators on text layers (ADR-0038). The step from 5 adds an empty `animators` list,
+ *    which draws exactly as version 5 did.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 5 as const;
+export const SCENE_FORMAT_VERSION = 6 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;

@@ -21,7 +21,13 @@ import type {
 } from "./raster.js";
 import { rasterizeShapeLayer } from "./shapes.js";
 import { rasterize, toSkColor } from "./skia.js";
-import { rasterizeTextLayer, textWarnings } from "./text.js";
+import {
+  FrameTextWork,
+  MAX_FRAME_ANIMATED_CLUSTERS,
+  rasterizeTextLayer,
+  textAnimatorWarnings,
+  textWarnings,
+} from "./text.js";
 
 export { RenderError };
 
@@ -51,6 +57,8 @@ interface Context {
   remaining: number;
   /** Shape path work, shared by every shape layer of the frame, precomps included (ADR-0034). */
   shapeWork: FrameShapeWork;
+  /** Animated glyph clusters, shared the same way (ADR-0038). */
+  textWork: FrameTextWork;
 }
 
 /**
@@ -59,7 +67,9 @@ interface Context {
  * Throws {@link RenderError} when an image layer's asset is not in `images`, when a text layer's
  * font family (or the bundled fallback font) is not in `fonts`, or when the frame would allocate
  * more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}) or its shape layers need
- * more than `maxShapeWork` units of path work (default {@link MAX_FRAME_SHAPE_WORK}, ADR-0034).
+ * more than `maxShapeWork` units of path work (default {@link MAX_FRAME_SHAPE_WORK}, ADR-0034), or
+ * its animated text needs more than `maxAnimatedGlyphs` glyphs (default
+ * {@link MAX_FRAME_ANIMATED_CLUSTERS}, ADR-0038).
  */
 export function rasterizeFrame(
   ck: CanvasKit,
@@ -72,7 +82,8 @@ export function rasterizeFrame(
   {
     maxRasterPixels = MAX_FRAME_RASTER_PIXELS,
     maxShapeWork = MAX_FRAME_SHAPE_WORK,
-  }: { maxRasterPixels?: number; maxShapeWork?: number } = {},
+    maxAnimatedGlyphs = MAX_FRAME_ANIMATED_CLUSTERS,
+  }: { maxRasterPixels?: number; maxShapeWork?: number; maxAnimatedGlyphs?: number } = {},
 ): FramePlan {
   return planComposition(
     {
@@ -84,6 +95,7 @@ export function rasterizeFrame(
       limit: maxRasterPixels,
       remaining: maxRasterPixels,
       shapeWork: new FrameShapeWork(maxShapeWork),
+      textWork: new FrameTextWork(maxAnimatedGlyphs),
     },
     comp,
   );
@@ -118,8 +130,16 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         return drawn === null ? null : { ...base, type: "shape", space: "composition", ...drawn };
       }
       case "text": {
-        warnings.push(...textWarnings(ck, ctx.fonts, layer));
-        const drawn = rasterizeTextLayer(ck, ctx.fonts, layer, comp.width, comp.height, reserve);
+        warnings.push(...textWarnings(ck, ctx.fonts, layer), ...textAnimatorWarnings(layer));
+        const drawn = rasterizeTextLayer(
+          ck,
+          ctx.fonts,
+          layer,
+          comp.width,
+          comp.height,
+          reserve,
+          ctx.textWork,
+        );
         return drawn === null ? null : { ...base, type: "text", space: "composition", ...drawn };
       }
       case "solid":

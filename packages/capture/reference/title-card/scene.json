@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 6,
   "name": "Reference: title card",
   "mainCompositionId": "main",
   "style": null,
@@ -95,7 +95,8 @@
           "textCase": "upper",
           "fill": {
             "value": "#ff7a59"
-          }
+          },
+          "animators": []
         },
         {
           "id": "title",
@@ -195,7 +196,8 @@
           "textCase": "none",
           "fill": {
             "value": "#f5f7fb"
-          }
+          },
+          "animators": []
         },
         {
           "id": "rule",
@@ -402,7 +404,8 @@
           "textCase": "none",
           "fill": {
             "value": "#9aa3ba"
-          }
+          },
+          "animators": []
         },
         {
           "id": "glow",

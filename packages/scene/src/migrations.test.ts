@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { project } from "./fixtures.test-util.js";
+import { project, visual } from "./fixtures.test-util.js";
 import {
   checkMigrations,
   MIGRATIONS,
@@ -222,18 +222,71 @@ describe("migrateProject", () => {
     expect(audio).not.toHaveProperty("masks");
   });
 
-  it("3 → 5 leaves a version 3 document unchanged apart from its version", () => {
+  it("3 → 6 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 5 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 6 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
-  it("4 → 5 leaves a version 4 document unchanged apart from its version", () => {
+  it("4 → 6 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 5 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 6 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
+  });
+
+  it("5 → 6 gives every text layer an empty animator list and changes nothing else", () => {
+    const v5 = { ...project(), formatVersion: 5 } as unknown as {
+      compositions: { layers: Record<string, unknown>[] }[];
+    };
+    const text = {
+      ...visual("t1"),
+      type: "text",
+      content: { value: "Hi" },
+      box: { mode: "point" },
+      font: { family: "Inter", weight: 400, size: { value: 48 } },
+      tracking: { value: 0 },
+      leading: { value: 1.2 },
+      align: "left",
+      textCase: "none",
+      fill: { value: "#ffffff" },
+    } as Record<string, unknown>;
+    const comp = v5.compositions[0];
+    if (comp) comp.layers = [text];
+    const r = migrateProject(v5);
+    expect(r).toMatchObject({ ok: true, from: 5, to: 6 });
+    if (!r.ok) return;
+    const migrated = r.doc.compositions[0]?.layers[0];
+    expect(migrated).toMatchObject({ type: "text", animators: [] });
+    // Running it again on a layer that already has animators leaves them alone.
+    const animator = {
+      name: "a",
+      selector: {
+        unit: "words",
+        start: { value: 0 },
+        end: { value: 1 },
+        offset: { value: 0 },
+        shape: "square",
+        easeHigh: { value: 0 },
+        easeLow: { value: 0 },
+        order: "forward",
+        seed: 0,
+        amount: { value: 1 },
+      },
+      properties: { opacity: { value: 0 } },
+    };
+    const withOne = {
+      ...r.doc,
+      formatVersion: 5,
+      compositions: [
+        { ...r.doc.compositions[0], layers: [{ ...migrated, animators: [animator] }] },
+      ],
+    };
+    const again = migrateProject(withOne);
+    expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({
+      animators: [{ name: "a" }],
+    });
   });
 
   it("rejects unknown and future versions", () => {

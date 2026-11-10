@@ -300,6 +300,55 @@ describe("MCP server", () => {
     expect(outcome).toMatchObject({ status: "rejected", kind: "invalid" });
   });
 
+  it("still takes a text layer written before animators existed through apply_ops", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    const transform = {
+      anchorPoint: { value: [0, 0] },
+      position: { value: [100, 100] },
+      scale: { value: [1, 1] },
+      rotation: { value: 0 },
+      skew: { value: 0 },
+      opacity: { value: 1 },
+    };
+    // Exactly the body a format 5 client sends: no `animators`.
+    const layer = {
+      type: "text",
+      name: "Old",
+      inFrame: 0,
+      outFrame: 30,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+      parent: null,
+      transform,
+      blendMode: "normal",
+      matte: null,
+      masks: [],
+      content: { value: "Hi" },
+      box: { mode: "point" },
+      font: { family: "Inter", weight: 400, size: { value: 40 } },
+      tracking: { value: 0 },
+      leading: { value: 1.2 },
+      align: "left",
+      textCase: "none",
+      fill: { value: "#ffffff" },
+    };
+    const r = await call(client, "apply_ops", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      ops: [{ op: "addLayer", composition: "main", id: "old", layer }],
+    });
+    expect(r).toMatchObject({ version: 2 });
+    const got = await call(client, "get_layer", { project_id, layer: "old" });
+    expect(JSON.stringify(got)).toContain('"animators":[]');
+  });
+
   it("returns a stale-version conflict with the current version", async () => {
     const { id: project_id } = await call(client, "create_project", {
       name: "P",

@@ -186,6 +186,7 @@ describe("hostile and out-of-range springs", () => {
       leading: prop(1.2),
       align: "left",
       textCase: "none",
+      animators: [],
       fill: prop("#ffffff"),
     };
     expect(paths(doc(text))).toContain("compositions.0.layers.0.content");
