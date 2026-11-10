@@ -297,9 +297,9 @@ export function textWarnings(
 }
 
 /** Glyph clusters one animated text layer may draw per frame: each is shaped and drawn on its own. */
-export const MAX_ANIMATED_CLUSTERS = 2_000;
+export const MAX_ANIMATED_CLUSTERS = 1_000;
 /** The same limit across a frame's text layers, precomps included. */
-export const MAX_FRAME_ANIMATED_CLUSTERS = 20_000;
+export const MAX_FRAME_ANIMATED_CLUSTERS = 4_000;
 
 /** Shared across a frame like `FrameShapeWork`: animated glyphs are charged before they are shaped. */
 export class FrameTextWork {
@@ -345,7 +345,13 @@ function placeGlyphs(
   const running = new Map<number, number>();
   animation.clusters.forEach((cluster, i) => {
     const effect = animation.effects[i];
-    const lineNo = paragraph.getLineNumberAt(cluster.start);
+    // `getLineNumberAt` takes UTF-8 byte offsets in canvaskit-wasm, unlike every other call here, so
+    // the line is found from the visible lines' own UTF-16 ranges.
+    const lineNo = lines.findIndex(
+      (l) =>
+        cluster.start >= l.startIndex &&
+        cluster.start < Math.max(l.endIndex, l.endIncludingNewline),
+    );
     const line = lines[lineNo];
     if (effect === undefined || line === undefined) return;
     const rects = paragraph.getRectsForRange(
@@ -436,7 +442,14 @@ function rasterizeAnimated(
     const key = `${text}|${color.r}|${color.g}|${color.b}|${color.a}`;
     let entry = shaped.get(key);
     if (entry === undefined) {
-      const single = { ...layer, fill: color, align: "left", box: { mode: "point" } } as const;
+      // Tracking is zero: the full layout already placed the cluster, and spacing is added after it.
+      const single = {
+        ...layer,
+        fill: color,
+        tracking: 0,
+        align: "left",
+        box: { mode: "point" },
+      } as const;
       const paragraph = buildParagraph(
         ck,
         library,

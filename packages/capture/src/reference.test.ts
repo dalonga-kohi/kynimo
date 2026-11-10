@@ -20,6 +20,7 @@ const SCENES = [
   "nested-precomp-parenting",
   "product-card",
   "path-operators",
+  "text-animators",
 ] as const;
 
 interface Reference {

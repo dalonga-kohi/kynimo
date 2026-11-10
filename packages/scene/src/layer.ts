@@ -107,7 +107,8 @@ export const TextLayerSchema = z.strictObject({
   textCase: z.enum(["none", "upper", "lower"]),
   fill: animatable(ColorSchema),
   /** Per-unit changes, applied in list order after layout (ADR-0038). */
-  animators: z.array(TextAnimatorSchema).max(MAX_TEXT_ANIMATORS),
+  /** Absent means none, so text layers written before format 6 still validate (ADR-0024). */
+  animators: z.array(TextAnimatorSchema).max(MAX_TEXT_ANIMATORS).default([]),
 });
 
 export const ImageLayerSchema = z.strictObject({

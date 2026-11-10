@@ -107,7 +107,7 @@ describe("text animators", () => {
   });
 
   it("applies a partial window as a partial weight", () => {
-    // One third of the way across two characters: the first is fully selected, the second not.
+    // End at 0.5 selects the first character of two.
     const full = inkOf(
       render([text("II", [animator({ position: prop([0, -60]) }, { end: prop(0.5) })])]),
     );
@@ -251,11 +251,81 @@ describe("text animators", () => {
     const long = "x".repeat(MAX_ANIMATED_CLUSTERS + 1);
     const opacity = animator({ opacity: prop(0.5) });
     expect(() => plan([text(long, [opacity])])).toThrow(RenderError);
-    expect(() => plan([text(long, [opacity])])).toThrow(/at most 2000/);
+    expect(() => plan([text(long, [opacity])])).toThrow(/at most 1000/);
     expect(() => plan([text("abcdef", [opacity])], { maxAnimatedGlyphs: 5 })).toThrow(
       /more than 5 glyphs/,
     );
     // Unanimated text is not charged.
     expect(() => plan([text("abcdef", [])], { maxAnimatedGlyphs: 5 })).not.toThrow();
+  });
+
+  describe("layout does not move when an animator becomes active", () => {
+    // A fill that differs by one level from white: the animator is active, nothing visibly changes.
+    const nearWhite = animator({ fill: prop("#fffffe") });
+    const alpha = (r: RasterImage) => {
+      const a = new Uint8Array(r.width * r.height);
+      for (let i = 0; i < a.length; i++) a[i] = r.pixels[i * 4 + 3] ?? 0;
+      return a;
+    };
+    const same = (over: Obj, content = "Tracked Café\nÜber ÅB") => {
+      const plain = render([text(content, [], over)]);
+      const active = render([text(content, [nearWhite], over)]);
+      expect(Array.from(alpha(active))).toEqual(Array.from(alpha(plain)));
+    };
+
+    it.each(["left", "center", "right"])("with tracking, %s aligned", (align) => {
+      same({ align, tracking: prop(200), transform: at(100.4, 120.3) });
+      same({ align, tracking: prop(-50), transform: at(200, 120) });
+    });
+
+    it("on multi-line non-ASCII text, with \r\n line breaks", () => {
+      same({ align: "left" }, "é\r\nB\nÜber");
+      same({ align: "left" }, "日本\nB");
+    });
+
+    it("in box text, wrapped and with hidden lines", () => {
+      same(
+        {
+          box: { mode: "box", width: prop(150), height: prop(100), autoFit: false },
+          align: "left",
+        },
+        "Café one two three four five six",
+      );
+    });
+  });
+
+  it("counts lines the box hides, so a lines range keeps its meaning", () => {
+    const box = {
+      box: { mode: "box", width: prop(120), height: prop(100), autoFit: false },
+      font: { family: "Inter", weight: 700, size: prop(40) },
+      align: "left",
+      transform: at(10, 10),
+    };
+    const content = "aaaa bbbb cccc dddd";
+    // Four lines, two fit. 0.25..0.5 is the second line.
+    const moved = render([
+      text(
+        content,
+        [
+          animator(
+            { position: prop([30, 0]) },
+            { unit: "lines", start: prop(0.25), end: prop(0.5) },
+          ),
+        ],
+        box,
+      ),
+    ]);
+    const base = render([text(content, [], box)]);
+    expect(inkOf(moved, 0, W)).not.toBeNull();
+    expect((inkOf(moved)?.[0] ?? 0) - (inkOf(base)?.[0] ?? 0)).toBe(0);
+    expect((inkOf(moved)?.[2] ?? 0) - (inkOf(base)?.[2] ?? 0)).toBe(30);
+  });
+
+  it("does not leave the per-glyph path, or its budget, for blur alone", () => {
+    const long = "x".repeat(MAX_ANIMATED_CLUSTERS + 500);
+    expect(() => plan([text(long, [animator({ blur: prop(5) })])])).not.toThrow();
+    expect(plan([text("Hi", [animator({ blur: prop(5) })])]).warnings.map((w) => w.kind)).toEqual([
+      "animator-blur",
+    ]);
   });
 });

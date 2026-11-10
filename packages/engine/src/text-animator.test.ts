@@ -75,6 +75,11 @@ describe("assignUnits", () => {
     expect(count).toBe(3);
     expect(unitOf).toEqual([0, 0, 0, 1, 1, 2, 2]);
   });
+  it("joins leading spaces to the first word", () => {
+    const t = "  ab  cd";
+    const r = assignUnits(t, textClusters(t), "words", hardLineStarts(t));
+    expect(r).toEqual({ count: 2, unitOf: [0, 0, 0, 0, 0, 0, 1, 1] });
+  });
   it("groups lines from the given line starts", () => {
     const { count, unitOf } = assignUnits(text, clusters, "lines", [0, 6]);
     expect(count).toBe(2);
@@ -205,6 +210,17 @@ describe("animateText", () => {
       animateText("abc", [animator({ position: [0, 9] }, { end: 0 })], [0], WHITE).active,
     ).toBe(false);
     expect(animateText("abc", [animator()], [0], WHITE).active).toBe(false);
+  });
+
+  it("treats blur alone as inactive, since it is not drawn", () => {
+    const r = animateText("ab", [animator({ blur: 6 })], [0], WHITE);
+    expect(r.active).toBe(false);
+    expect(r.effects[0]?.blur).toBe(6);
+  });
+
+  it("snaps weights that full coverage leaves a rounding error short of 1", () => {
+    for (const n of [3, 5, 6, 7, 9, 11, 13])
+      for (const w of rangeWeights(selector(), n)) expect(w).toBe(1);
   });
 
   it("applies weight × value to position, rotation, tracking and blur", () => {

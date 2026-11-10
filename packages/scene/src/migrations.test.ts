@@ -260,8 +260,33 @@ describe("migrateProject", () => {
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
     // Running it again on a layer that already has animators leaves them alone.
-    const again = migrateProject({ ...r.doc, formatVersion: 5 });
-    expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({ animators: [] });
+    const animator = {
+      name: "a",
+      selector: {
+        unit: "words",
+        start: { value: 0 },
+        end: { value: 1 },
+        offset: { value: 0 },
+        shape: "square",
+        easeHigh: { value: 0 },
+        easeLow: { value: 0 },
+        order: "forward",
+        seed: 0,
+        amount: { value: 1 },
+      },
+      properties: { opacity: { value: 0 } },
+    };
+    const withOne = {
+      ...r.doc,
+      formatVersion: 5,
+      compositions: [
+        { ...r.doc.compositions[0], layers: [{ ...migrated, animators: [animator] }] },
+      ],
+    };
+    const again = migrateProject(withOne);
+    expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({
+      animators: [{ name: "a" }],
+    });
   });
 
   it("rejects unknown and future versions", () => {

@@ -169,17 +169,29 @@ export function assignUnits(
       while (line + 1 < lineStarts.length && (lineStarts[line + 1] ?? Infinity) <= c.start) line++;
       return line;
     });
-    // Renumber so empty lines (no cluster) do not leave gaps: the selector divides what exists.
-    const seen = [...new Set(unitOf)];
-    return { count: seen.length, unitOf: unitOf.map((u) => seen.indexOf(u)) };
+    // Renumber so empty lines (no cluster) leave no gap: the selector divides what exists.
+    let renumbered = -1;
+    let last = -1;
+    const renumberedOf = unitOf.map((u) => {
+      if (u !== last) {
+        renumbered++;
+        last = u;
+      }
+      return renumbered;
+    });
+    return { count: renumbered + 1, unitOf: renumberedOf };
   }
   let word = 0;
+  let seenWord = false;
   let prevSpace = false;
   let prevEnd = 0;
   const unitOf = clusters.map((c, i) => {
     const space = isSpace(text.slice(c.start, c.end));
     const brokeLine = i > 0 && hasBreak(text, prevEnd, c.start);
-    if (i > 0 && !space && (prevSpace || brokeLine)) word++;
+    if (!space) {
+      if (seenWord && (prevSpace || brokeLine)) word++;
+      seenWord = true;
+    }
     prevSpace = space;
     prevEnd = c.end;
     return word;
@@ -271,7 +283,8 @@ export function rangeWeights(selector: ResolvedRangeSelector, count: number): nu
     const b = clampUnit(((slot + 1) / count - lo) / width);
     // Both ends clamped: slices outside the window have a == b and no weight.
     const mean = b > a ? (area(b) - area(a)) * count * width : 0;
-    const w = clampUnit(mean);
+    const snapped = mean < 1e-9 ? 0 : mean > 1 - 1e-9 ? 1 : mean;
+    const w = clampUnit(snapped);
     return (ease === null ? w : ease(w)) * selector.amount;
   });
 }
@@ -359,7 +372,6 @@ export function animateText(
       e.scaleY !== 1 ||
       e.rotation !== 0 ||
       e.opacity !== 1 ||
-      e.blur !== 0 ||
       e.tracking !== 0 ||
       !sameColor(e.fill, baseFill),
   );
