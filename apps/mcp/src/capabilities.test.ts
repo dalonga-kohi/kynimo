@@ -28,6 +28,19 @@ describe("capability manifest", () => {
     }
   });
 
+  it("lists what text animators change and how many glyphs they may draw", () => {
+    const props = manifest.features.text_animator_properties;
+    expect(sorted(Object.keys(props))).toEqual(
+      sorted(["position", "scale", "rotation", "opacity", "fill", "blur", "tracking"]),
+    );
+    expect(props.blur.status).toBe("accepted");
+    expect(props.position.status).toBe("renders");
+    expect(manifest.limits.text_animators.glyphsPerLayer).toBeGreaterThan(0);
+    // Shipped features leave the unavailable list.
+    expect(manifest.unavailable).not.toHaveProperty("text_animators");
+    expect(manifest.unavailable).not.toHaveProperty("shape_operators");
+  });
+
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
     expect(JSON.stringify(manifest).length).toBeLessThan(8_000);

@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-09):** M0–M2 done; M3 done except deployment; M4 started; M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It cannot yet export a video, use intent tools, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-10):** M0–M2 done; M3 done except deployment; M4 under way (shape operators and text animators done); M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It cannot yet export a video, use intent tools, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -44,7 +44,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 ## M4 — Motion depth
 
 - [x] Shape operators: trim paths, repeater, round corners; path morphing (equal vertex counts) → ADR-0034: format v5, After Effects reach (operators change the paths above them, every paint draws the result), our own fixed-work arc length, repeater copies as groups, path work budgets per layer (500 000 units) and per frame (2 000 000) charged before the work; morphing already shipped with schema v1 part 2
-- [ ] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out)
+- [x] Text animators + range selectors (character / word / line, shapes, ease, seeded randomize, reverse / center-out) → ADR-0038: format v6, windows that select units partly, per-cluster drawing at the full layout's positions, tracking without re-wrap, blur accepted but not drawn until effects, glyph budgets per layer (2 000) and frame (20 000)
 - [ ] Behaviors: wiggle, loop, inertia/overshoot, follow/link, oscillate (seeded)
 - [ ] Intent tools: `animate`, `apply_preset` (preset catalog, also as an MCP resource), `stagger`, `retime`; `add_effect`, `add_behavior`. They take raw values or token names from `@kynimo/guidelines` (ADR-0037): the pinned pack's, or Keynote's when none is pinned
 - [ ] `run_script` (ADR-0036): TypeScript run once in the QuickJS sandbox against an SDK generated from the operation schemas, applied as one validated batch; `dry_run`; SDK types as an MCP resource; declared limits. Token names come from `@kynimo/guidelines`

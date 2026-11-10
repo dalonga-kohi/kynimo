@@ -323,6 +323,67 @@ describe("describeMotion: review regressions", () => {
   });
 });
 
+describe("text animators", () => {
+  const linear = { type: "linear" };
+  const textBody = (animators: unknown[]) => ({
+    type: "text",
+    name: "Title",
+    content: { value: "Hello world" },
+    box: { mode: "point" },
+    font: { family: "Inter", weight: 600, size: { value: 64 } },
+    tracking: { value: 0 },
+    leading: { value: 1.2 },
+    align: "left",
+    textCase: "none",
+    fill: { value: "#ffffff" },
+    animators,
+  });
+  const animator = (name: string, selector: Record<string, unknown>, properties: object) => ({
+    name,
+    selector: {
+      unit: "words",
+      start: { value: 0 },
+      end: { value: 1 },
+      offset: { value: 0 },
+      shape: "square",
+      easeHigh: { value: 0 },
+      easeLow: { value: 0 },
+      order: "forward",
+      seed: 0,
+      amount: { value: 1 },
+      ...selector,
+    },
+    properties,
+  });
+
+  it("describes each animator in one line and lists its keyframed selector as motion", () => {
+    const sweep = animator(
+      "rise",
+      {
+        end: {
+          keyframes: [
+            { frame: 0, value: 0, interpolation: linear },
+            { frame: 20, value: 1, interpolation: linear },
+          ],
+        },
+      },
+      { position: { value: [0, 40] }, opacity: { value: 0 } },
+    );
+    const shuffled = animator(
+      "pop",
+      { unit: "characters", order: "random", seed: 7, offset: { value: 0.25 } },
+      { scale: { value: [0, 0] } },
+    );
+    const l = describe_(comp([textBody([sweep, shuffled])])).layers[0];
+    expect(l?.animators).toEqual([
+      "rise: position, opacity by word, square range 0..animated",
+      "pop: scale by character, square range 0..1 offset 0.25, random order (seed 7)",
+    ]);
+    expect(l?.properties.map((p) => p.property)).toEqual(["animators.0.selector.end"]);
+    expect(describe_(comp([textBody([])])).layers[0]).not.toHaveProperty("animators");
+  });
+});
+
 describe("summarizeValue", () => {
   it("rounds numbers and summarizes paths and large values", () => {
     expect(summarizeValue([1.23456, -0.0001])).toEqual([1.235, 0]);

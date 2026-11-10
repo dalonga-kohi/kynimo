@@ -106,7 +106,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 | Rich runs (mixed weight/color in one layer)                                                                                                                  | Per-character style   | v1.x   |
 | Text animators: per-glyph position, scale, rotation, opacity, fill, blur, tracking                                                                           | Text animators        | beta   |
 | Range selectors: by character / word / line; start, end, offset; shapes square, ramp up/down, triangle, round, smooth; ease high/low; seeded randomize order | Range selector        | beta   |
-| Additional orders: reverse, center-out                                                                                                                       | — (Kynimo extension)  | beta   |
+| Additional orders: reverse, center-out, edges-in                                                                                                             | — (Kynimo extension)  | beta   |
 | Text on a path                                                                                                                                               | Path options          | later  |
 
 ## 6. Animation

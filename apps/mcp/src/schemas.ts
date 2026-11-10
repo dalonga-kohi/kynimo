@@ -130,7 +130,7 @@ export const AddLayerInput = z.object({
   ...writeMeta,
   composition: z.string().min(1).max(64).describe("Composition id, e.g. 'main'."),
   layer: LayerBodySchema.describe(
-    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no matte, no masks. Type-specific fields (e.g. shape `contents`, text `content`, `box`, `font`, `tracking`, `leading`, `align`, `textCase`, `fill`) must be given; see get_layer_schema.",
+    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no matte, no masks, text without animators. Type-specific fields (e.g. shape `contents`, text `content`, `box`, `font`, `tracking`, `leading`, `align`, `textCase`, `fill`) must be given; see get_layer_schema.",
   ),
   id: z.string().min(1).max(64).optional().describe("Optional layer id; generated when omitted."),
   index: z
