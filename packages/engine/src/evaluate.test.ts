@@ -11,6 +11,7 @@ import {
   solid,
   transform,
 } from "./fixtures.test-util.js";
+import { cubicPath } from "./path.js";
 import type { ResolvedLayer, ResolvedPrecompLayer } from "./resolved.js";
 
 const linear = { type: "linear" };
@@ -21,6 +22,7 @@ const kf = (frame: number, value: unknown, interpolation: Obj = linear) => ({
 });
 const ids = (layers: readonly ResolvedLayer[]) => layers.map((l) => l.id);
 const single = (doc: Obj[], frame = 0) => evaluateFrame(project(doc), frame);
+const jsonClone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("evaluateFrame: inputs", () => {
   const doc = project([composition("main", [solid("a")]), composition("other", [])]);
@@ -668,5 +670,581 @@ describe("video layers", () => {
       { assets: [clip({ num: 30000, den: 1001 }, 90)] },
     );
     expect([0, 1, 89].map((f) => at(doc, f))).toEqual([0, 1, 89]);
+  });
+});
+
+describe("evaluateFrame: behaviors", () => {
+  const b = (id: string, property: string, type: string, rest: Obj): Obj => ({
+    id,
+    name: id,
+    enabled: true,
+    property,
+    type,
+    ...rest,
+  });
+  const wiggle = (id: string, property: string, rest: Obj = {}) =>
+    b(id, property, "wiggle", {
+      frequency: prop(2),
+      amplitude: prop(property === "position" || property === "scale" ? [20, 10] : 10),
+      octaves: 2,
+      seed: 7,
+      linked: false,
+      ...rest,
+    });
+  const oscillate = (id: string, property: string, rest: Obj = {}) =>
+    b(id, property, "oscillate", {
+      frequency: prop(7.5), // 4 frames per period at 30 fps
+      amplitude: prop(10),
+      phase: 0,
+      waveform: "sine",
+      ...rest,
+    });
+  const loopB = (property: string, mode: string, rest: Obj = {}) =>
+    b(`loop-${property}-${mode}`, property, "loop", { direction: "out", mode, span: 0, ...rest });
+  const inertiaB = (property: string, rest: Obj = {}) =>
+    b(`inertia-${property}`, property, "inertia", {
+      amplitude: 0.1,
+      frequency: 1.25,
+      decay: 3,
+      ...rest,
+    });
+  const link = (id: string, property: string, layerId: string, from: string, rest: Obj = {}) =>
+    b(id, property, "link", {
+      source: { layer: layerId, property: from },
+      multiply: 1,
+      offset: property === "position" || property === "scale" ? [0, 0] : 0,
+      delay: 0,
+      ...rest,
+    });
+  const withBehaviors = (id: string, behaviors: Obj[], tf: Obj = {}, rest: Obj = {}) =>
+    solid(id, { behaviors, transform: transform(tf), ...rest });
+  const at = (doc: Obj[], frame: number, i = 0) => single(doc, frame).layers[i] as ResolvedLayer;
+  const rotationTrack = (...keys: [number, number][]) => ({
+    keyframes: keys.map(([f, v]) => kf(f, v)),
+  });
+  const long = { durationFrames: 100_000 };
+  const longLayer = { outFrame: 100_000 };
+
+  it("evaluates a layer with an empty or disabled-only list exactly like one without", () => {
+    const tf = {
+      position: { keyframes: [kf(0, [0, 0]), kf(60, [100, 50])] },
+      rotation: rotationTrack([0, 0], [60, 90]),
+    };
+    const plain = single([composition("main", [solid("a", { transform: transform(tf) })])], 17);
+    const empty = single([composition("main", [withBehaviors("a", [], tf)])], 17);
+    const disabled = single(
+      [
+        composition("main", [
+          withBehaviors(
+            "a",
+            [
+              oscillate("o", "rotation", { enabled: false }),
+              wiggle("w", "position", { enabled: false }),
+              link("l", "opacity", "b", "opacity", { enabled: false }),
+            ],
+            tf,
+          ),
+          solid("b"),
+        ]),
+      ],
+      17,
+    );
+    expect(empty).toEqual(plain);
+    expect(disabled.layers[0]).toEqual(plain.layers[0]);
+  });
+
+  it("is deterministic: any frame order gives the same values, and the document is untouched", () => {
+    const doc = deepFreeze(
+      project([
+        composition("main", [
+          withBehaviors(
+            "a",
+            [wiggle("w", "position", { octaves: 3 }), oscillate("o", "rotation")],
+            { rotation: prop(5) },
+          ),
+        ]),
+      ]),
+    );
+    const frames = [30, 5, 60, 5, 89, 0, 30];
+    const first = new Map(frames.map((f) => [f, evaluateFrame(doc, f)]));
+    for (const f of [...frames].reverse()) expect(evaluateFrame(doc, f)).toEqual(first.get(f));
+  });
+
+  describe("wiggle", () => {
+    const pos = (doc: Obj[], frame: number) => at(doc, frame).transform.position;
+    const base = { position: prop([100, 200]) };
+
+    it("stays within the amplitude of the base value over many frames", () => {
+      const doc = [composition("main", [withBehaviors("a", [wiggle("w", "position")], base)])];
+      let moved = false;
+      for (let f = 0; f < 90; f++) {
+        const [x, y] = pos(doc, f);
+        expect(Math.abs(x - 100)).toBeLessThanOrEqual(20);
+        expect(Math.abs(y - 200)).toBeLessThanOrEqual(10);
+        if (x !== 100) moved = true;
+      }
+      expect(moved).toBe(true);
+    });
+
+    it("uses layer time, so startFrame shifts the noise", () => {
+      const doc = (start: number) => [
+        composition("main", [
+          withBehaviors("a", [wiggle("w", "position")], base, { startFrame: start }),
+        ]),
+      ];
+      expect(pos(doc(0), 40)).toEqual(pos(doc(10), 50));
+      expect(pos(doc(0), 40)).not.toEqual(pos(doc(0), 41));
+    });
+
+    it("differs by seed and by octaves", () => {
+      const run = (rest: Obj) =>
+        pos([composition("main", [withBehaviors("a", [wiggle("w", "position", rest)], base)])], 11);
+      expect(run({ seed: 1 })).not.toEqual(run({ seed: 2 }));
+      expect(run({ octaves: 1 })).not.toEqual(run({ octaves: 4 }));
+      expect(run({ seed: 4294967295 })).not.toEqual(run({ seed: 0 }));
+    });
+
+    it("gives linked axes the same noise, scaled by each amplitude (uniform scale wiggle)", () => {
+      const doc = [
+        composition("main", [
+          withBehaviors(
+            "a",
+            [wiggle("w", "scale", { linked: true, amplitude: prop([0.4, 0.1]) })],
+            {
+              scale: prop([1, 1]),
+            },
+          ),
+        ]),
+      ];
+      for (let f = 0; f < 60; f++) {
+        const [sx, sy] = at(doc, f).transform.scale;
+        expect((sx - 1) / 4).toBeCloseTo(sy - 1, 12);
+      }
+      const unlinked = [
+        composition("main", [
+          withBehaviors("a", [wiggle("w", "scale", { amplitude: prop([0.4, 0.4]) })], {
+            scale: prop([1, 1]),
+          }),
+        ]),
+      ];
+      const [ux, uy] = at(unlinked, 7).transform.scale;
+      expect(ux).not.toBe(uy);
+    });
+
+    it("samples an animated amplitude and frequency at the layer frame", () => {
+      const quiet = [
+        composition("main", [
+          withBehaviors("a", [
+            wiggle("w", "rotation", { amplitude: { keyframes: [kf(0, 0), kf(60, 30)] } }),
+          ]),
+        ]),
+      ];
+      expect(at(quiet, 0).transform.rotation).toBe(0);
+      expect(Math.abs(at(quiet, 30).transform.rotation)).toBeLessThanOrEqual(15);
+    });
+  });
+
+  describe("oscillate", () => {
+    const rot = (waveform: string, frame: number, phase = 0) =>
+      at(
+        [
+          composition("main", [
+            withBehaviors("a", [oscillate("o", "rotation", { waveform, phase })], {
+              rotation: prop(10),
+            }),
+          ]),
+        ],
+        frame,
+      ).transform.rotation;
+
+    it("adds the wave to the base value at quarter periods", () => {
+      expect(rot("sine", 0)).toBe(10);
+      expect(rot("sine", 1)).toBeCloseTo(20, 9);
+      expect(rot("sine", 3)).toBeCloseTo(0, 9);
+      expect(rot("sine", 0, 90)).toBeCloseTo(20, 9);
+      expect(rot("triangle", 1)).toBeCloseTo(20, 9);
+      expect(rot("triangle", 3)).toBeCloseTo(0, 9);
+      expect(rot("square", 1)).toBe(20);
+      expect(rot("square", 3)).toBe(0);
+      expect(rot("sawtooth", 0)).toBe(0);
+      expect(rot("sawtooth", 2)).toBeCloseTo(10, 9);
+      expect(rot("sawtooth", 3)).toBeCloseTo(15, 9);
+    });
+
+    it("works on vectors with a vector amplitude", () => {
+      const out = at(
+        [
+          composition("main", [
+            withBehaviors("a", [oscillate("o", "position", { amplitude: prop([30, -6]) })], {
+              position: prop([100, 100]),
+            }),
+          ]),
+        ],
+        1,
+      ).transform.position;
+      expect(out[0]).toBeCloseTo(130, 9);
+      expect(out[1]).toBeCloseTo(94, 9);
+    });
+
+    it("rejects an amplitude of the wrong kind with a clear error", () => {
+      const doc = jsonClone(
+        project([composition("main", [withBehaviors("a", [oscillate("o", "rotation")])])]),
+      );
+      const tampered = doc.compositions[0]?.layers[0] as unknown as {
+        behaviors: Record<string, unknown>[];
+      };
+      tampered.behaviors = [{ ...tampered.behaviors[0], amplitude: { value: [1, 2] } }];
+      expect(() => evaluateFrame(doc, 0)).toThrow(/amplitude of 'o' must be a number/);
+    });
+  });
+
+  describe("loop", () => {
+    const track = { rotation: rotationTrack([0, 0], [30, 90]) };
+    const rot = (loops: Obj[], frame: number, layerOverrides: Obj = {}, comp: Obj = {}) =>
+      at([composition("main", [withBehaviors("a", loops, track, layerOverrides)], comp)], frame)
+        .transform.rotation;
+
+    it("plays nothing different inside the keyframes", () => {
+      expect(rot([loopB("rotation", "cycle")], 15)).toBe(45);
+      expect(rot([loopB("rotation", "cycle")], 30)).toBe(90);
+    });
+
+    it("cycles, ping-pongs, offsets and continues out", () => {
+      expect(rot([loopB("rotation", "cycle")], 45)).toBe(45);
+      expect(rot([loopB("rotation", "pingpong")], 45)).toBe(45);
+      expect(rot([loopB("rotation", "pingpong")], 60)).toBe(0);
+      expect(rot([loopB("rotation", "offset")], 45)).toBe(135);
+      expect(rot([loopB("rotation", "offset")], 75)).toBe(225);
+      expect(rot([loopB("rotation", "continue")], 60)).toBe(180);
+    });
+
+    it("does the same before the first keyframe with direction in", () => {
+      const inward = (mode: string, frame: number) =>
+        rot([loopB("rotation", mode, { direction: "in" })], frame, { startFrame: 40 });
+      // comp frame 25 is layer frame -15.
+      expect(inward("cycle", 25)).toBe(45);
+      expect(inward("pingpong", 25)).toBe(45);
+      expect(inward("offset", 25)).toBe(-45);
+      expect(inward("continue", 25)).toBe(-45);
+    });
+
+    it("applies the span, and loops far past the end", () => {
+      const keys = { rotation: rotationTrack([0, 0], [30, 30], [60, 90]) };
+      const spanned = (span: number, frame: number) =>
+        at(
+          [
+            composition(
+              "main",
+              [withBehaviors("a", [loopB("rotation", "cycle", { span })], keys, longLayer)],
+              long,
+            ),
+          ],
+          frame,
+        ).transform.rotation;
+      expect(spanned(1, 75)).toBe(60); // 30..60 repeats: 75 -> 45 -> 30 + 15 * 2
+      expect(spanned(0, 75)).toBe(15); // 0..60 repeats: 75 -> 15
+      expect(spanned(5, 75)).toBe(15);
+      expect(spanned(1, 60 * 1000 + 45)).toBe(60);
+    });
+
+    it("does nothing on a property with one keyframe or a constant value", () => {
+      const one = at(
+        [
+          composition("main", [
+            withBehaviors("a", [loopB("rotation", "offset")], {
+              rotation: rotationTrack([10, 33]),
+            }),
+          ]),
+        ],
+        50,
+      );
+      expect(one.transform.rotation).toBe(33);
+      const constant = at(
+        [
+          composition("main", [
+            withBehaviors("a", [loopB("rotation", "cycle")], { rotation: prop(5) }),
+          ]),
+        ],
+        50,
+      );
+      expect(constant.transform.rotation).toBe(5);
+    });
+
+    it("loops X and Y of a separate position independently", () => {
+      const sep = {
+        position: {
+          separate: {
+            x: rotationTrack([0, 0], [30, 60]),
+            y: rotationTrack([0, 0], [60, 30]),
+          },
+        },
+      };
+      const pos = (mode: string, frame: number) =>
+        at(
+          [
+            composition(
+              "main",
+              [withBehaviors("a", [loopB("position", mode)], sep, longLayer)],
+              long,
+            ),
+          ],
+          frame,
+        ).transform.position;
+      expect(pos("cycle", 45)).toEqual([30, 22.5]);
+      expect(pos("continue", 90)).toEqual([180, 45]);
+    });
+
+    it("continues a spatial path along its end tangent at its length per second", () => {
+      const spatial = {
+        position: {
+          keyframes: [
+            { ...kf(0, [0, 0]), spatial: { inTangent: [0, 0], outTangent: [0, 50] } },
+            { ...kf(30, [100, 0]), spatial: { inTangent: [0, 50], outTangent: [0, 0] } },
+          ],
+        },
+      };
+      const length = cubicPath([0, 0], [0, 50], [100, 50], [100, 0]).length;
+      const [x, y] = at(
+        [composition("main", [withBehaviors("a", [loopB("position", "continue")], spatial)])],
+        60,
+      ).transform.position;
+      expect(x).toBeCloseTo(100, 9);
+      expect(y).toBeCloseTo(-length, 9);
+    });
+  });
+
+  describe("inertia", () => {
+    const pos = (kfs: unknown[], frame: number, rest: Obj = {}) =>
+      at(
+        [
+          composition("main", [
+            withBehaviors("a", [inertiaB("position", rest)], { position: { keyframes: kfs } }),
+          ]),
+        ],
+        frame,
+      ).transform.position;
+    const ramp = [kf(0, [0, 0]), kf(30, [300, 0])];
+
+    it("settles after a linear arrival with the formula's offset", () => {
+      expect(pos(ramp, 30)).toEqual([300, 0]);
+      // t = 0.2 s: sin(pi / 2) = 1; v = 300 units/s.
+      expect(pos(ramp, 36)[0]).toBeCloseTo(300 + (300 * 0.1) / Math.exp(0.6), 9);
+      expect(pos(ramp, 36)[1]).toBe(0);
+      expect(Math.abs(pos(ramp, 80)[0] - 300)).toBeLessThan(Math.abs(pos(ramp, 36)[0] - 300));
+    });
+
+    it("adds nothing when the move arrives at rest", () => {
+      const easeOut = { type: "bezier", x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 };
+      expect(pos([kf(0, [0, 0], easeOut), kf(30, [300, 0])], 36)).toEqual([300, 0]);
+      expect(pos([kf(0, [0, 0], { type: "hold" }), kf(30, [300, 0])], 36)).toEqual([300, 0]);
+      const spring = { type: "spring", damping: 0.8, response: 0.5 };
+      expect(pos([kf(0, [0, 0], spring), kf(60, [300, 0])], 70)).toEqual([300, 0]);
+    });
+
+    it("adds nothing before the second keyframe is reached", () => {
+      expect(pos(ramp, 10)).toEqual([100, 0]);
+    });
+  });
+
+  describe("link", () => {
+    const src = (extra: Obj[] = [], tf: Obj = {}, rest: Obj = {}) =>
+      withBehaviors("src", extra, { rotation: rotationTrack([0, 0], [89, 89]), ...tf }, rest);
+    const dst = (behaviors: Obj[], tf: Obj = {}, rest: Obj = {}) =>
+      withBehaviors("dst", behaviors, tf, rest);
+    const rotationOf = (doc: Obj[], frame: number, id: string) =>
+      (single(doc, frame).layers.find((l) => l.id === id) as ResolvedLayer).transform.rotation;
+
+    it("is source * multiply + offset", () => {
+      const doc = [
+        composition("main", [
+          dst([link("l", "rotation", "src", "rotation", { multiply: 2, offset: 5 })]),
+          src(),
+        ]),
+      ];
+      expect(rotationOf(doc, 10, "dst")).toBe(25);
+      const vec = [
+        composition("main", [
+          dst([link("l", "position", "src", "position", { multiply: 0.5, offset: [1, -1] })]),
+          src([], { position: { keyframes: [kf(0, [0, 0]), kf(60, [60, 120])] } }),
+        ]),
+      ];
+      expect(at(vec, 30).transform.position).toEqual([16, 29]);
+    });
+
+    it("reads the source at frame minus delay, including before frame 0", () => {
+      const doc = (delay: number) => [
+        composition("main", [dst([link("l", "rotation", "src", "rotation", { delay })]), src()]),
+      ];
+      expect(rotationOf(doc(3), 10, "dst")).toBe(7);
+      expect(rotationOf(doc(5), 2, "dst")).toBe(0); // frame -3: the track holds its first value
+    });
+
+    it("reads the source's own behaviors, with the same delay", () => {
+      const doc = (delay: number) => [
+        composition("main", [
+          dst([link("l", "rotation", "src", "rotation", { delay })]),
+          src([wiggle("w", "rotation"), oscillate("o", "rotation")], { rotation: prop(3) }),
+        ]),
+      ];
+      const lagged = rotationOf(doc(4), 20, "dst");
+      expect(lagged).toBe(rotationOf(doc(0), 16, "src"));
+      expect(lagged).not.toBe(3);
+    });
+
+    it("reads the source's clamped value and its own parent space, not world", () => {
+      const doc = [
+        composition("main", [
+          dst([link("l", "rotation", "src", "opacity", { multiply: 100 })]),
+          src(
+            [oscillate("o", "opacity", { amplitude: prop(5) })],
+            { opacity: prop(0.5) },
+            { parent: "p" },
+          ),
+          layer("p", "null", {
+            transform: transform({ position: prop([500, 500]), rotation: prop(45) }),
+          }),
+        ]),
+      ];
+      expect([0, 1, 3].map((f) => rotationOf(doc, f, "dst"))).toEqual([50, 100, 0]);
+      expect(single(doc, 0).layers[1]?.transform.position).toEqual([0, 0]);
+    });
+
+    it("can read another property of the same layer", () => {
+      const doc = [
+        composition("main", [
+          withBehaviors("a", [link("l", "rotation", "a", "opacity", { multiply: 90 })], {
+            opacity: prop(0.5),
+          }),
+        ]),
+      ];
+      expect(rotationOf(doc, 0, "a")).toBe(45);
+    });
+
+    it("lets behaviors on the linked property apply on top", () => {
+      const doc = [
+        composition("main", [
+          dst([link("l", "rotation", "src", "rotation"), oscillate("o", "rotation")]),
+          src(),
+        ]),
+      ];
+      expect(rotationOf(doc, 1, "dst")).toBeCloseTo(1 + 10, 9);
+    });
+
+    it("resolves a chain of 1000 links without recursing", () => {
+      const layers: Obj[] = [];
+      for (let i = 999; i >= 0; i--)
+        layers.push(
+          i === 0
+            ? withBehaviors("l0", [], { rotation: prop(10) })
+            : withBehaviors(`l${i}`, [
+                link("k", "rotation", `l${i - 1}`, "rotation", { offset: 1 }),
+              ]),
+        );
+      const out = single([composition("main", layers)]);
+      expect(out.layers).toHaveLength(1000);
+      expect(out.layers[0]?.transform.rotation).toBe(1009);
+      expect(out.layers[999]?.transform.rotation).toBe(10);
+    });
+
+    it("resolves a 300-link chain where every link has a delay", () => {
+      const layers: Obj[] = [];
+      for (let i = 299; i >= 0; i--)
+        layers.push(
+          i === 0
+            ? withBehaviors("l0", [], { rotation: rotationTrack([0, 0], [89, 89]) })
+            : withBehaviors(`l${i}`, [
+                link("k", "rotation", `l${i - 1}`, "rotation", { delay: 1 }),
+              ]),
+        );
+      const out = single([composition("main", layers)], 80);
+      // The top of the chain reads layer 0 at frame 80 - 299: the track holds its first value.
+      expect(out.layers[0]?.transform.rotation).toBe(0);
+      expect(out.layers[298]?.transform.rotation).toBe(79); // l1 reads l0 at frame 79
+    });
+
+    it("refuses links that form a cycle instead of looping", () => {
+      const doc = jsonClone(
+        project([composition("main", [dst([link("l", "rotation", "src", "rotation")]), src()])]),
+      );
+      const srcLayer = doc.compositions[0]?.layers[1] as unknown as { behaviors: unknown[] };
+      srcLayer.behaviors = [link("back", "rotation", "dst", "rotation", { delay: 1 })];
+      expect(() => evaluateFrame(doc, 5)).toThrow(/links form a cycle/);
+    });
+
+    it("drives a child from a parent's behaviors through parenting", () => {
+      const doc = [
+        composition("main", [
+          solid("child", { parent: "parent", transform: transform({ position: prop([10, 0]) }) }),
+          withBehaviors("parent", [oscillate("o", "rotation", { amplitude: prop(90) })], {
+            position: prop([100, 100]),
+          }),
+        ]),
+      ];
+      const out = single(doc, 1);
+      const parent = out.layers[1] as ResolvedLayer;
+      const child = out.layers[0] as ResolvedLayer;
+      expect(parent.transform.rotation).toBeCloseTo(90, 9);
+      expect(applyToPoint(child.matrix, [0, 0])[0]).toBeCloseTo(100, 9);
+      expect(applyToPoint(child.matrix, [0, 0])[1]).toBeCloseTo(110, 9);
+      expect(child.matrix).toEqual(multiply(parent.matrix, transformMatrix(child.transform)));
+    });
+  });
+
+  describe("order and clamps", () => {
+    it("clamps opacity to 0..1 and skew to +-85 after the behaviors", () => {
+      const doc = [
+        composition("main", [
+          withBehaviors(
+            "a",
+            [
+              oscillate("o1", "opacity", { amplitude: prop(2), waveform: "square" }),
+              oscillate("o2", "skew", { amplitude: prop(200), waveform: "square" }),
+            ],
+            { opacity: prop(0.5), skew: prop(0) },
+          ),
+        ]),
+      ];
+      expect(at(doc, 1).transform.opacity).toBe(1);
+      expect(at(doc, 3).transform.opacity).toBe(0);
+      expect(at(doc, 1).transform.skew).toBe(85);
+      expect(at(doc, 3).transform.skew).toBe(-85);
+    });
+
+    it("applies the base, inertia, link, then oscillators and wigglers, whatever the list order", () => {
+      const ramp = rotationTrack([0, 0], [30, 90]);
+      const a = at(
+        [
+          composition("main", [
+            withBehaviors(
+              "a",
+              [
+                oscillate("o", "rotation", { amplitude: prop(10) }),
+                inertiaB("rotation"),
+                loopB("rotation", "cycle"),
+              ],
+              { rotation: ramp },
+            ),
+          ]),
+        ],
+        37,
+      );
+      const b = at(
+        [
+          composition("main", [
+            withBehaviors(
+              "a",
+              [
+                loopB("rotation", "cycle"),
+                inertiaB("rotation"),
+                oscillate("o", "rotation", { amplitude: prop(10) }),
+              ],
+              { rotation: ramp },
+            ),
+          ]),
+        ],
+        37,
+      );
+      expect(a.transform.rotation).toBe(b.transform.rotation);
+    });
   });
 });

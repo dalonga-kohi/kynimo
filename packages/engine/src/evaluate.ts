@@ -11,6 +11,7 @@ import type {
 } from "@kynimo/scene";
 import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
+import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
@@ -33,7 +34,9 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
 /**
  * Most work one `evaluateFrame` call may do inside precomps, in units: 1 per layer, plus 1 per
  * shape item, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
- * a precomp evaluates. The root composition is not charged: its work is already linear in the document.
+ * a precomp evaluates. The root composition is not charged: its work is linear in the document, except
+ * that link behaviors with delays (ADR-0039) can make a chain of N links touch N² (layer, frame) pairs
+ * (about 1 s for 1000 chained layers); behaviors are not charged.
  * The memo only collapses precomps that land on the same local frame, so precomps placed at many
  * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
  * of JSON. For scale: a 1000-layer composition evaluated at 1000 different offsets costs 1,000,000.
@@ -119,10 +122,16 @@ function evaluateComposition(
   const local = new Map<string, { transform: ResolvedTransform; matrix: Affine }>();
   const world = new Map<string, Affine>();
 
+  // Layers without behaviors take the plain sampling path below, untouched.
+  const behaviors = createBehaviorResolver(byId, fps);
+
   const localOf = (layer: VisualLayer) => {
     let entry = local.get(layer.id);
     if (entry === undefined) {
-      entry = resolveTransform(layer.transform, frame - layer.startFrame, fps);
+      entry =
+        layer.behaviors.length === 0
+          ? resolveTransform(layer.transform, frame - layer.startFrame, fps)
+          : behaviors.transform(layer, frame);
       local.set(layer.id, entry);
     }
     return entry;
