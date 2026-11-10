@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BehaviorIdSchema, LayerIdSchema } from "./ids.js";
+import { MAX_FPS } from "./limits.js";
 import {
   NameSchema,
   NonNegativeSchema,
@@ -8,6 +9,12 @@ import {
   Vec2Schema,
 } from "./primitives.js";
 import { animatable, TRANSFORM_PROPERTIES } from "./transform.js";
+
+/**
+ * Largest behavior `frequency`, in Hz: more than one cycle per frame at the highest frame rate
+ * only aliases.
+ */
+const FrequencySchema = NonNegativeSchema.max(MAX_FPS);
 
 /** Behaviors per layer. */
 export const MAX_BEHAVIORS = 16;
@@ -49,7 +56,7 @@ const base = {
 export const WiggleBehaviorSchema = z.strictObject({
   ...base,
   type: z.literal("wiggle"),
-  frequency: animatable(NonNegativeSchema),
+  frequency: animatable(FrequencySchema),
   amplitude: BehaviorAmountSchema,
   octaves: z.number().int().min(1).max(8),
   seed: z.number().int().min(0).max(0xffffffff),
@@ -62,7 +69,7 @@ export const WiggleBehaviorSchema = z.strictObject({
 export const OscillateBehaviorSchema = z.strictObject({
   ...base,
   type: z.literal("oscillate"),
-  frequency: animatable(NonNegativeSchema),
+  frequency: animatable(FrequencySchema),
   amplitude: BehaviorAmountSchema,
   phase: NumberSchema,
   waveform: z.enum(["sine", "triangle", "square", "sawtooth"]),
@@ -89,7 +96,7 @@ export const InertiaBehaviorSchema = z.strictObject({
   ...base,
   type: z.literal("inertia"),
   amplitude: NonNegativeSchema,
-  frequency: PositiveSchema,
+  frequency: PositiveSchema.max(MAX_FPS),
   decay: NonNegativeSchema,
 });
 

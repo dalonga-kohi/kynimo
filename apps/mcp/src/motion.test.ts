@@ -509,13 +509,16 @@ describe("behaviors", () => {
         ...extra,
       });
     expect(
-      each([
-        b("inertia", "scale", { amplitude: 0.05, frequency: 4, decay: 8 }),
-        link({ multiply: -1, offset: 5, delay: 10 }),
-        link({}),
-        link({ delay: 1 }),
-        link({ offset: [3, -4] }, "position"),
-      ]),
+      each(
+        [
+          b("inertia", "scale", { amplitude: 0.05, frequency: 4, decay: 8 }),
+          link({ multiply: -1, offset: 5, delay: 10 }),
+          link({}),
+          link({ delay: 1 }),
+          link({ offset: [3, -4] }, "position"),
+        ],
+        { scale: kf([0, [1, 1]], [10, [2, 2]]) },
+      ),
     ).toEqual([
       "inertia on scale: amplitude 0.05 s, 4 Hz, decay 8/s",
       "link rotation ← 'l5'.rotation × -1 + 5, 10 frames later",
@@ -525,14 +528,37 @@ describe("behaviors", () => {
     ]);
   });
 
+  it("prints a negative link offset as a subtraction", () => {
+    const link = b("link", "rotation", {
+      source: { layer: "l1", property: "rotation" },
+      multiply: 1,
+      offset: -5,
+      delay: 0,
+    });
+    expect(each([link])).toEqual(["link rotation ← 'l1'.rotation - 5"]);
+  });
+
+  it("says when inertia has too few keyframes to act on", () => {
+    const inertia = b("inertia", "scale", { amplitude: 0.05, frequency: 4, decay: 8 });
+    expect(each([inertia], { scale: kf([0, [1, 1]]) })).toEqual([
+      "inertia on scale: amplitude 0.05 s, 4 Hz, decay 8/s — no effect: needs at least two keyframes",
+    ]);
+    expect(each([inertia], { scale: kf([0, [1, 1]], [10, [2, 2]]) })).toEqual([
+      "inertia on scale: amplitude 0.05 s, 4 Hz, decay 8/s",
+    ]);
+  });
+
   it("marks disabled behaviors and lists none for layers without", () => {
     expect(
-      lines([
-        {
-          ...b("inertia", "position", { amplitude: 0.1, frequency: 2, decay: 3 }),
-          enabled: false,
-        },
-      ]),
+      lines(
+        [
+          {
+            ...b("inertia", "position", { amplitude: 0.1, frequency: 2, decay: 3 }),
+            enabled: false,
+          },
+        ],
+        { position: kf([0, [0, 0]], [10, [5, 5]]) },
+      ),
     ).toEqual(["inertia on position: amplitude 0.1 s, 2 Hz, decay 3/s (disabled)"]);
     expect(describe_(comp([solid()])).layers[0]).not.toHaveProperty("behaviors");
   });

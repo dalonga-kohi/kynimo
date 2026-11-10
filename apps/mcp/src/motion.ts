@@ -342,13 +342,15 @@ export function describeBehavior(layer: Layer, b: Behavior): string {
       line = `loop ${b.direction} on ${p}: ${b.mode}, ${range}${idle ? " — no effect: needs at least two keyframes" : ""}`;
       break;
     }
-    case "inertia":
-      line = `inertia on ${p}: amplitude ${round(b.amplitude)} s, ${round(b.frequency)} Hz, decay ${round(b.decay)}/s`;
+    case "inertia": {
+      const idle = keyframeCounts(layer, p).every((n) => n < 2);
+      line = `inertia on ${p}: amplitude ${round(b.amplitude)} s, ${round(b.frequency)} Hz, decay ${round(b.decay)}/s${idle ? " — no effect: needs at least two keyframes" : ""}`;
       break;
+    }
     case "link": {
       const neutral =
         typeof b.offset === "number" ? b.offset === 0 : b.offset.every((c) => c === 0);
-      line = `link ${p} ← '${b.source.layer}'.${b.source.property}${b.multiply === 1 ? "" : ` × ${round(b.multiply)}`}${neutral ? "" : ` + ${amount(b.offset)}`}${b.delay === 0 ? "" : `, ${b.delay} frame${b.delay === 1 ? "" : "s"} later`}`;
+      line = `link ${p} ← '${b.source.layer}'.${b.source.property}${b.multiply === 1 ? "" : ` × ${round(b.multiply)}`}${neutral ? "" : typeof b.offset === "number" && b.offset < 0 ? ` - ${amount(-b.offset)}` : ` + ${amount(b.offset)}`}${b.delay === 0 ? "" : `, ${b.delay} frame${b.delay === 1 ? "" : "s"} later`}`;
       break;
     }
   }

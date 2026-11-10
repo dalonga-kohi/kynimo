@@ -55,8 +55,10 @@ const visual = {
   ...common,
   parent: LayerIdSchema.nullable(),
   transform: TransformSchema,
-  /** Motion on transform properties that keyframes don't describe: wiggle, loops, links (ADR-0039). */
-  /** Absent means none, so layers written before format 7 still validate (ADR-0024). */
+  /**
+   * Motion on transform properties that keyframes don't describe: wiggle, loops, links (ADR-0039).
+   * Absent means none, so layers written before format 7 still validate (ADR-0024).
+   */
   behaviors: z.array(BehaviorSchema).max(MAX_BEHAVIORS).default([]),
 };
 

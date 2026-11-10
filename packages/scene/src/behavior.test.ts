@@ -167,6 +167,23 @@ describe("behavior schema", () => {
     bad({ ...wiggle(), type: "shake" }, "");
   });
 
+  it("caps every frequency at the highest frame rate", () => {
+    const ok = (b: Obj) => expect(issues(withBehaviors([b]))).toEqual([]);
+    const bad = (b: Obj) => expect(issues(withBehaviors([b]))[0]?.path).toContain("frequency");
+    ok(wiggle({ frequency: prop(240) }));
+    bad(wiggle({ frequency: prop(240.5) }));
+    ok(oscillate({ frequency: prop(240) }));
+    bad(oscillate({ frequency: prop(1e9) }));
+    ok(inertia({ frequency: 240 }));
+    bad(inertia({ frequency: 241 }));
+    const kf = (frame: number, value: number) => ({
+      frame,
+      value,
+      interpolation: { type: "linear" },
+    });
+    bad(wiggle({ frequency: { keyframes: [kf(0, 1), kf(30, 500)] } }));
+  });
+
   it("accepts the largest octave count and seed", () => {
     expect(BehaviorSchema.safeParse(wiggle({ octaves: 8, seed: 4294967295 })).success).toBe(true);
   });

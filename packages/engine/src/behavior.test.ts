@@ -55,6 +55,19 @@ const inertia = (amplitude: number, frequency: number, decay: number): InertiaBe
   decay,
 });
 
+describe("trackGroups cache", () => {
+  it("builds a track's groups once, however often evaluation asks", () => {
+    const track = numberTrack(...Array.from({ length: 2000 }, (_, i) => kf(i, i % 5)));
+    const first = trackGroups(track, false);
+    for (let i = 0; i < 100; i++) expect(trackGroups(track, false)).toBe(first);
+    // An edited document has new track objects, so it never sees another track's groups.
+    const edited = numberTrack(...Array.from({ length: 2000 }, (_, i) => kf(i, 1)));
+    expect(trackGroups(edited, false)).not.toBe(first);
+    expect(trackGroups(edited, false)[0]?.values[5]).toEqual([1]);
+    expect(first[0]?.values[5]).toEqual([0]);
+  });
+});
+
 describe("hash and noise", () => {
   it("pins the integer hash (seed, axis, octave, index), including negative and huge indices", () => {
     expect(hashLattice(0, 0, 0, 0)).toBe(3187378880);

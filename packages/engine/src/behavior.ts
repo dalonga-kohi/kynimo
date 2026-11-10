@@ -180,10 +180,25 @@ const vectorGroup = (track: PositionTrack): TrackGroup =>
     (frame, fps) => samplePosition(track, frame, fps),
   );
 
+/**
+ * Groups built per track object. Building one copies every keyframe (up to the schema's cap), and
+ * evaluation asks again for every (layer, property, frame), so without this each ask would cost
+ * O(keyframes). Safe because documents are immutable while evaluated and the key is the track's
+ * identity: an edited document has new track objects, so a stale entry is never read, and the
+ * WeakMap lets old documents' entries go. `vector` is fixed by the property a track belongs to.
+ */
+const groupCache = new WeakMap<object, TrackGroup[]>();
+
 /** The groups of a property's track; `vector` is true for `[x, y]` properties. */
 export function trackGroups(track: PropertyTrack, vector: boolean): TrackGroup[] {
-  if ("separate" in track) return [numberGroup(track.separate.x), numberGroup(track.separate.y)];
-  return [vector ? vectorGroup(track as PositionTrack) : numberGroup(track as Animatable<number>)];
+  const cached = groupCache.get(track);
+  if (cached !== undefined) return cached;
+  const groups =
+    "separate" in track
+      ? [numberGroup(track.separate.x), numberGroup(track.separate.y)]
+      : [vector ? vectorGroup(track as PositionTrack) : numberGroup(track as Animatable<number>)];
+  groupCache.set(track, groups);
+  return groups;
 }
 
 // ---------------------------------------------------------------------------------------------

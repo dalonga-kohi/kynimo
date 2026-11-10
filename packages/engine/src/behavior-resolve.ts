@@ -88,6 +88,20 @@ function sampleAmount(
     : [sampleNumber(track as Animatable<number>, frame, fps)];
 }
 
+/** Refuses a behavior result that is not a finite number, naming what to lower. */
+function assertFinite(
+  value: Components,
+  layer: VisualLayer,
+  behaviorId: string,
+  property: TransformProperty,
+  lower: string,
+): void {
+  if (value.every(Number.isFinite)) return;
+  throw new RangeError(
+    `behavior '${behaviorId}' on layer '${layer.id}' makes '${property}' not finite (overflow); lower its ${lower}`,
+  );
+}
+
 const keyOf = (layerId: string, property: string, frame: number) =>
   `${layerId}\u0000${property}\u0000${frame}`;
 
@@ -155,17 +169,22 @@ export function createBehaviorResolver(
           `link '${link.id}' on layer '${layer.id}' reads ${source.length === 1 ? "a number" : "an [x, y] pair"} from '${link.source.layer}.${link.source.property}', but '${property}' is ${vector ? "an [x, y] pair" : "a number"}`,
         );
       value = source.map((x, i) => x * link.multiply + (offset[i] as number));
+      assertFinite(value, layer, link.id, property, "multiply or offset");
     } else {
       const loops = enabled.filter((b): b is LoopBehavior => b.type === "loop");
       const inertias = enabled.filter((b): b is InertiaBehavior => b.type === "inertia");
       value = trackGroups(track, vector).flatMap((g) =>
         evaluateGroup(g, loops, inertias, layerFrame, fps),
       );
+      if (inertias.length > 0)
+        assertFinite(value, layer, inertias.map((i) => i.id).join(", "), property, "amplitude");
     }
     const t = (layerFrame * fps.den) / fps.num;
     for (const b of enabled) {
       if (b.type === "oscillate") value = oscillate(b, value, vector, layerFrame, t);
       else if (b.type === "wiggle") value = wiggle(b, value, vector, layerFrame, t);
+      else continue;
+      assertFinite(value, layer, b.id, property, "amplitude");
     }
     return clampProperty(property, value);
   };

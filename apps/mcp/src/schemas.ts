@@ -76,23 +76,49 @@ export const CompactLayerSelectorSchema = z
 function compactSelectors<T extends z.ZodType>(schema: T): z.ZodType {
   const s: z.ZodType = schema;
   if (s === (LayerSelectorSchema as z.ZodType)) return CompactLayerSelectorSchema;
+  const walked = walk(s);
+  // Only paths that hold a selector are rebuilt; every other schema is returned as it is.
+  return walked === s ? s : withMeta(s, walked);
+}
+
+/** Zod 4 keeps `.describe()` and `.meta()` in a registry keyed by instance, so a rebuild drops them. */
+function withMeta(from: z.ZodType, to: z.ZodType): z.ZodType {
+  const meta = z.globalRegistry.get(from);
+  return meta === undefined ? to : to.meta(meta);
+}
+
+/** One rebuild step: the same schema (identical instance) when no selector is inside it. */
+function walk(s: z.ZodType): z.ZodType {
   if (s instanceof z.ZodObject) {
-    const shape: Record<string, z.ZodType> = {};
-    for (const [key, field] of Object.entries(s.shape as z.ZodRawShape))
-      shape[key] = compactSelectors(field as z.ZodType);
+    const fields = Object.entries(s.shape as z.ZodRawShape) as [string, z.ZodType][];
+    const swapped = fields.map(([key, field]) => [key, compactSelectors(field)] as const);
+    if (swapped.every(([key, next]) => next === s.shape[key])) return s;
     // safeExtend keeps the object's refinements; the field types change only for selectors.
-    return (s as z.ZodObject<z.ZodRawShape>).safeExtend(shape);
+    return (s as z.ZodObject<z.ZodRawShape>).safeExtend(Object.fromEntries(swapped));
   }
-  if (s instanceof z.ZodNullable) return compactSelectors(s.unwrap() as z.ZodType).nullable();
-  if (s instanceof z.ZodOptional) return compactSelectors(s.unwrap() as z.ZodType).optional();
-  if (s instanceof z.ZodArray)
-    return z
-      .array(compactSelectors(s.element as z.ZodType))
-      .check(...((s.def.checks ?? []) as never[]));
-  if (s instanceof z.ZodUnion)
-    return z.union(
-      (s.options as z.ZodType[]).map(compactSelectors) as [z.ZodType, z.ZodType, ...z.ZodType[]],
-    );
+  if (s instanceof z.ZodNullable) {
+    const inner = compactSelectors(s.unwrap() as z.ZodType);
+    return inner === s.unwrap() ? s : inner.nullable();
+  }
+  if (s instanceof z.ZodOptional) {
+    const inner = compactSelectors(s.unwrap() as z.ZodType);
+    return inner === s.unwrap() ? s : inner.optional();
+  }
+  if (s instanceof z.ZodArray) {
+    const element = compactSelectors(s.element as z.ZodType);
+    if (element === s.element) return s;
+    return z.array(element).check(...((s.def.checks ?? []) as never[]));
+  }
+  if (s instanceof z.ZodUnion) {
+    const options = (s.options as z.ZodType[]).map(compactSelectors);
+    if (options.every((o, i) => o === (s.options as z.ZodType[])[i])) return s;
+    const tuple = options as [z.ZodType, z.ZodType, ...z.ZodType[]];
+    // A discriminated union stays one (same discriminator), so it lists as before.
+    const discriminator = (s.def as { discriminator?: string }).discriminator;
+    return discriminator === undefined
+      ? z.union(tuple)
+      : z.discriminatedUnion(discriminator, tuple as unknown as [z.ZodObject, ...z.ZodObject[]]);
+  }
   return s;
 }
 

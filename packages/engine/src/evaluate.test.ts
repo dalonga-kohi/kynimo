@@ -1224,6 +1224,82 @@ describe("evaluateFrame: behaviors", () => {
         expect(out.layers).toHaveLength(10);
       });
     });
+    it("evaluates a precomp placed at many offsets over 2000-keyframe tracks with wiggle and inertia", () => {
+      const keys = Array.from({ length: 2000 }, (_, i) => kf(i, (i % 7) * 10));
+      const inner = composition(
+        "inner",
+        [
+          withBehaviors(
+            "a",
+            [wiggle("w", "rotation"), inertiaB("rotation")],
+            { rotation: { keyframes: keys } },
+            { outFrame: 2000 },
+          ),
+        ],
+        { durationFrames: 2000 },
+      );
+      const outer = composition(
+        "main",
+        Array.from({ length: 300 }, (_, s) =>
+          layer(`p${s}`, "precomp", {
+            compositionId: "inner",
+            startFrame: s,
+            outFrame: 2000,
+          }),
+        ),
+        { durationFrames: 2000 },
+      );
+      const out = single([outer, inner], 1000);
+      expect(out.layers).toHaveLength(300);
+    });
+
+    it("refuses an overflowing link, oscillate or wiggle result, naming what to lower", () => {
+      const tf = { rotation: prop(1e308) };
+      expect(() =>
+        single([
+          composition("main", [
+            withBehaviors("a", [link("k", "rotation", "s", "rotation", { multiply: 10 })]),
+            withBehaviors("s", [], tf),
+          ]),
+        ]),
+      ).toThrow(
+        /behavior 'k' on layer 'a' makes 'rotation' not finite.*lower its multiply or offset/,
+      );
+      expect(() =>
+        single([
+          composition("main", [
+            withBehaviors(
+              "a",
+              [oscillate("o", "rotation", { amplitude: prop(1e308), phase: 90 })],
+              tf,
+            ),
+          ]),
+        ]),
+      ).toThrow(/behavior 'o' on layer 'a' makes 'rotation' not finite.*lower its amplitude/);
+      // The noise's sign varies by frame, so over a stretch of frames and both signs of a base near
+      // the largest double, some frame pushes it past the limit.
+      const failures: string[] = [];
+      for (const sign of [1, -1])
+        for (let f = 0; f < 90; f++) {
+          try {
+            single(
+              [
+                composition("main", [
+                  withBehaviors("a", [wiggle("w", "rotation", { amplitude: prop(1.7e308) })], {
+                    rotation: prop(sign * 1.7e308),
+                  }),
+                ]),
+              ],
+              f,
+            );
+          } catch (e) {
+            failures.push((e as Error).message);
+          }
+        }
+      expect(failures.length).toBeGreaterThan(0);
+      expect(failures[0]).toMatch(/behavior 'w' on layer 'a'.*lower its amplitude/);
+    });
+
     it("refuses links that form a cycle instead of looping", () => {
       const doc = jsonClone(
         project([composition("main", [dst([link("l", "rotation", "src", "rotation")]), src()])]),

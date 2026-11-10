@@ -36,7 +36,9 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
  * shape item, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
  * a precomp evaluates. The root composition is not charged: its work is linear in the document, except
  * that link behaviors with delays (ADR-0039) can make a chain of N links touch N² (layer, frame) pairs
- * (see {@link MAX_FRAME_LINK_STEPS}, which caps it); other behaviors are not charged.
+ * (see {@link MAX_FRAME_LINK_STEPS}, which caps it). Other behaviors are not charged: each costs
+ * O(log K) per (layer, property, evaluation) over a track's K keyframes (K is capped by the schema),
+ * since the keyframe groups they read are built once per track.
  * The memo only collapses precomps that land on the same local frame, so precomps placed at many
  * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
  * of JSON. For scale: a 1000-layer composition evaluated at 1000 different offsets costs 1,000,000.
@@ -44,7 +46,7 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
 export const MAX_EVALUATION_UNITS = 1_000_000;
 
 /**
- * Most link steps one valuateFrame call may take, across every composition it evaluates. A step is one
+ * Most link steps one evaluateFrame call may take, across every composition it evaluates. A step is one
  * (layer, property, composition frame) value that a link behavior (ADR-0039) asks for and the call's memo
  * does not hold yet. Each delay reads another frame, so a chain of N delayed links touches about N²/2
  * values per frame; undelayed chains hit the memo and cost N. Calibration: about 100,000 steps took
