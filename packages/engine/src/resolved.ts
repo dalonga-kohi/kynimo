@@ -1,6 +1,7 @@
 import type { BlendMode, Json, MaskMode, TrackMatte } from "@kynimo/scene";
 import type { Affine } from "./affine.js";
 import type { Rgba } from "./color.js";
+import type { ResolvedTextAnimator } from "./text-animator.js";
 
 /**
  * The output of {@link evaluateFrame}: plain values only, no tracks. Everything the renderer
@@ -93,6 +94,8 @@ export interface ResolvedTextLayer extends LayerBase {
   align: "left" | "center" | "right" | "justify";
   textCase: "none" | "upper" | "lower";
   fill: Rgba;
+  /** Sampled animators in list order; empty draws the layer as one paragraph (ADR-0038). */
+  animators: ResolvedTextAnimator[];
 }
 
 export interface ResolvedImageLayer extends LayerBase {

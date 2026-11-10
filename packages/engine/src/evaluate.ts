@@ -21,6 +21,7 @@ import type {
   ResolvedTransform,
 } from "./resolved.js";
 import { resolveShapeItems, samplePath } from "./shape.js";
+import { resolveTextAnimators } from "./text-animator.js";
 import { sampleColor, sampleNumber } from "./track.js";
 
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
@@ -309,6 +310,7 @@ function resolveLayer(
         align: layer.align,
         textCase: layer.textCase,
         fill: sampleColor(layer.fill, frame, fps),
+        animators: resolveTextAnimators(layer.animators, frame, fps),
       };
     }
     case "image":
