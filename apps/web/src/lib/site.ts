@@ -22,7 +22,7 @@ export const REPO_URL = "https://github.com/dalonga-kohi/kynimo";
 
 export const SITE = {
   name: "Kynimo",
-  tagline: "Motion graphics that agents create and humans finish.",
+  tagline: "Motion graphics for your AI agent.",
   description:
     "Kynimo is a motion graphics engine for AI assistants. Connect it over MCP, describe a video, and get back editable layers and keyframes, checked against motion guidelines.",
 } as const;
@@ -54,6 +54,86 @@ export const MCP_TOOLS = [
   "get_write_outcome",
 ] as const;
 
+/** What the assistant does with Kynimo, in order. `next` marks tools that are not built yet. */
+export const LOOP = [
+  {
+    step: "Brief",
+    body: "You say what the video is for, in plain words. A launch teaser, a feature promo, a 10 second social clip.",
+    tools: [],
+    next: false,
+  },
+  {
+    step: "Build",
+    body: "It lays out shapes, text, images and your footage, then animates them with spring and bezier keyframes.",
+    tools: ["add_layer", "set_keyframes", "apply_ops"],
+    next: false,
+  },
+  {
+    step: "Look",
+    body: "Rendered frames come back into the chat as images. Your assistant sees what it made, not what it meant.",
+    tools: ["render_frames", "render_contact_sheet"],
+    next: false,
+  },
+  {
+    step: "Check",
+    body: "The frames are graded against the style's rules. Each finding names the frame, the layer and the fix.",
+    tools: ["check_quality"],
+    next: true,
+  },
+  {
+    step: "Fix",
+    body: "Small typed edits to the scene. One layer changes, every other frame stays exactly as it was.",
+    tools: ["apply_ops", "undo"],
+    next: false,
+  },
+  {
+    step: "Export",
+    body: "MP4, WebM or GIF, and a link your team can scrub and comment on. The project stays editable.",
+    tools: ["export"],
+    next: true,
+  },
+] as const;
+
+/** Rules and thresholds from the Keynote draft pack (packages/guidelines, 0.1.0). */
+export const RULES = [
+  {
+    id: "readable-hold",
+    says: "Text stays on screen long enough to read.",
+    value: "2.5 words / s, at least 1.2 s",
+    source: "BBC subtitle guidelines",
+  },
+  {
+    id: "text-contrast",
+    says: "Text stands off its background.",
+    value: "7 : 1, or 4.5 : 1 from 48 px",
+    source: "WCAG 2.2",
+  },
+  {
+    id: "safe-area",
+    says: "Text stays clear of the frame edge.",
+    value: "inside the middle 90%",
+    source: "EBU R 95",
+  },
+  {
+    id: "concurrent-motion",
+    says: "One idea moves at a time.",
+    value: "at most 2 starts in 200 ms",
+    source: "The Illusion of Life",
+  },
+  {
+    id: "entrance-duration",
+    says: "Entrances are neither abrupt nor sluggish.",
+    value: "300 to 1400 ms",
+    source: "Material Design 3",
+  },
+  {
+    id: "flash-rate",
+    says: "Nothing flashes fast enough to hurt.",
+    value: "at most 3 flashes / s",
+    source: "WCAG 2.2",
+  },
+] as const;
+
 export const FAQ = [
   {
     q: "What is Kynimo?",
@@ -68,8 +148,8 @@ export const FAQ = [
     a: "Generators return pixels. To change a word you generate again and hope. Kynimo returns a scene document, so a word, a colour or a timing is one small edit and every other frame stays the same.",
   },
   {
-    q: "What are quality guidelines?",
-    a: "A guideline pack is a motion design system written as tokens and rules: type, colour, springs, durations, safe areas, reading time. Kynimo is being built to grade every render against the pack and tell the assistant exactly what to fix.",
+    q: "What is a style pack?",
+    a: "A motion design system written as tokens and rules: type, colour, springs, durations, safe areas, reading time. Four draft packs exist today. Kynimo is being built to grade every render against the pack and tell the assistant exactly what to fix.",
   },
   {
     q: "Can I use it today?",
@@ -90,7 +170,7 @@ export const STATUS = {
     ["Shape operators", "Trim paths, repeater, round corners, path morphing."],
     ["Text animators", "Per character, word and line, with range selectors."],
     ["MCP server", "Streamable HTTP with OAuth. Frames come back as images."],
-    ["Guideline packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
+    ["Style packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
   ],
   next: [
     ["Hosted endpoint", "One URL for every client."],

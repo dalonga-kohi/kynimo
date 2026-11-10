@@ -158,9 +158,6 @@ export interface SceneState {
   fixed: boolean;
   /** Stroboscopic trails behind moving layers. */
   echoes: boolean;
-  /** Draw the safe area and outline a layer (the quality section). */
-  guides?: boolean;
-  highlight?: SceneLayer | null;
 }
 
 export const DEFAULT_TITLE = "Every frame, on purpose.";
@@ -168,9 +165,6 @@ export const DEFAULT_CAPTION = "Made over MCP";
 
 /** Frame the title starts to leave. The unfixed scene cuts the hold short on purpose. */
 export const OUT_FRAME = { open: 84, fixed: 132 } as const;
-/** The unfixed scene loops early, so its short hold reads as rushed rather than as a blank tail. */
-export const LOOP_FRAMES = { open: OUT_FRAME.open + 16, fixed: SCENE.frames } as const;
-export const SAFE_MARGIN = 0.05;
 const CAPTION_BASELINE = { open: SCENE.height - 22, fixed: SCENE.height - 76 } as const;
 
 const MARK_PIECES = [
@@ -330,7 +324,6 @@ export function drawScene(
   const lineHeight = title.size * 1.06;
   const firstBaseline = 430 + title.size;
   const lastBaseline = firstBaseline + (title.lines.length - 1) * lineHeight;
-  let titleRight = LEFT;
   if (visible("title")) {
     ctx.font = fontOf(look, title.size);
     const space = ctx.measureText(" ").width;
@@ -345,7 +338,6 @@ export function drawScene(
         x += ctx.measureText(word).width + space;
         index++;
       }
-      titleRight = Math.max(titleRight, x - space);
     });
   }
   const wordCount = title.lines.reduce((n, line) => n + line.length, 0);
@@ -363,7 +355,6 @@ export function drawScene(
   const captionBaseline = state.fixed ? CAPTION_BASELINE.fixed : CAPTION_BASELINE.open;
   ctx.font = fontOf({ ...look, wide: false }, 36, look.upper ? 700 : 500);
   const caption = look.upper ? state.caption.toUpperCase() : state.caption;
-  const captionWidth = ctx.measureText(caption).width;
   if (visible("caption")) {
     const pose = poseAt(frame, ruleStart + 8, outAt, { ...look, travel: 0 }, "y");
     ctx.globalAlpha = pose.opacity;
@@ -372,29 +363,6 @@ export function drawScene(
   }
 
   ctx.globalAlpha = 1;
-  if (state.guides) {
-    const mx = SCENE.width * SAFE_MARGIN;
-    const my = SCENE.height * SAFE_MARGIN;
-    ctx.lineWidth = 2 / Math.max(k, 0.25);
-    ctx.setLineDash([14, 12]);
-    ctx.strokeStyle = "rgba(142, 193, 255, 0.55)";
-    ctx.strokeRect(mx, my, SCENE.width - mx * 2, SCENE.height - my * 2);
-    ctx.setLineDash([]);
-  }
-  if (state.highlight === "title" || state.highlight === "caption") {
-    const box =
-      state.highlight === "title"
-        ? [
-            LEFT - 24,
-            firstBaseline - title.size,
-            titleRight - LEFT + 48,
-            lastBaseline - firstBaseline + title.size * 1.3,
-          ]
-        : [LEFT - 20, captionBaseline - 44, captionWidth + 40, 62];
-    ctx.lineWidth = 3 / Math.max(k, 0.25);
-    ctx.strokeStyle = state.fixed ? "#8dc48a" : "#ef6a4c";
-    ctx.strokeRect(box[0] as number, box[1] as number, box[2] as number, box[3] as number);
-  }
   ctx.restore();
 }
 

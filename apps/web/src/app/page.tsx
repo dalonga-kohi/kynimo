@@ -1,14 +1,12 @@
 import { Connect, ToolTicker } from "@/components/Connect";
-import { Editable } from "@/components/Editable";
+import { ExposureStudy } from "@/components/ExposureStudy";
 import { HeroField } from "@/components/HeroField";
+import { HeroPlayer } from "@/components/HeroPlayer";
+import { LayerStack } from "@/components/LayerStack";
 import { GitHubIcon, Mark } from "@/components/Mark";
 import { Nav } from "@/components/Nav";
-import { PackSwitcher, QualityReport } from "@/components/Quality";
-import { Session } from "@/components/Session";
-import { Statement } from "@/components/Statement";
-import { FAQ, REPO_URL, SITE, SITE_URL, STATUS } from "@/lib/site";
-
-const HEADLINE = ["Motion", "graphics", "that", "agents", "create", "and", "humans", "finish."];
+import { Packs } from "@/components/Packs";
+import { FAQ, LOOP, REPO_URL, RULES, SITE, SITE_URL, STATUS } from "@/lib/site";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -35,7 +33,7 @@ const jsonLd = {
       featureList: [
         "Remote MCP server for any MCP client",
         "Editable scene document: layers, keyframes, components",
-        "Guideline packs, with automatic quality checks planned",
+        "Style packs, with automatic quality checks planned",
         "Deterministic rendering",
       ],
     },
@@ -64,24 +62,10 @@ function Arrow() {
   );
 }
 
-function StatusList({
-  items,
-  kind,
-}: {
-  items: readonly (readonly [string, string])[];
-  kind: string;
-}) {
-  return (
-    <dl className="status-list" data-kind={kind}>
-      {items.map(([name, body]) => (
-        <div key={name}>
-          <dt>{name}</dt>
-          <dd>{body}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
+const ROADMAP = [
+  ...STATUS.built.map(([name, body]) => ({ name, body, done: true })),
+  ...STATUS.next.map(([name, body]) => ({ name, body, done: false })),
+];
 
 export default function Home() {
   return (
@@ -100,43 +84,90 @@ export default function Home() {
         <section className="hero" id="top">
           <HeroField />
           <div className="wrap hero-copy">
-            <h1 className="display">
-              {HEADLINE.map((word, i) => (
-                <span key={word} className="word" style={{ "--i": i } as React.CSSProperties}>
-                  {word}{" "}
-                </span>
-              ))}
+            <h1 className="display hero-title">
+              <span className="echo">Motion graphics</span> <span>for your AI agent.</span>
             </h1>
             <p className="hero-sub">
-              Connect Kynimo to your AI assistant. Describe the video. Get back layers and
-              keyframes, not pixels.
+              Kynimo is an MCP server that gives Claude, Cursor or any assistant a real motion
+              engine. It builds the video from layers and keyframes, looks at the frames it made,
+              and hands you a project you can still change.
             </p>
             <div className="hero-actions">
               <a className="btn btn-primary" href={REPO_URL} rel="noopener">
                 <GitHubIcon />
                 Follow on GitHub
               </a>
-              <a className="link-down" href="#connect">
-                See how it connects
+              <a className="link-down" href="#layers">
+                See what you get
                 <Arrow />
               </a>
             </div>
-            <p className="hero-status">In development. Built in the open.</p>
           </div>
           <div className="wrap hero-stage">
-            <Session />
+            <HeroPlayer />
+            <p className="hero-note">
+              A scene document, drawn live in your browser. Drag the timeline.
+            </p>
           </div>
         </section>
 
-        <Statement />
+        <section className="section layers" id="layers" aria-labelledby="layers-title">
+          <div className="wrap layers-grid">
+            <header className="layers-copy">
+              <h2 id="layers-title">Not a clip. A project.</h2>
+              <p className="lede">
+                Video generators hand you finished pixels. Want a different word? Generate again and
+                hope.
+              </p>
+              <p className="lede">
+                Kynimo builds a scene: every layer, keyframe, colour and timing has a name. Your
+                assistant changes one of them, and every other frame stays exactly as it was.
+              </p>
+            </header>
+            <LayerStack />
+          </div>
+        </section>
 
-        <section className="section" id="connect" aria-labelledby="connect-title">
+        <section className="section" id="how" aria-labelledby="how-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="connect-title">One URL. Any assistant.</h2>
+              <h2 id="how-title">What your assistant does with it.</h2>
               <p className="lede">
-                Kynimo is a remote MCP server. Add it once. Your assistant gets a motion studio's
-                worth of tools, and you install nothing.
+                It works like a motion designer with a checklist: build, look, check, fix. Every
+                step is a tool call you can read.
+              </p>
+            </header>
+            <ol className="sheet">
+              {LOOP.map((item, i) => (
+                <li key={item.step} className="sheet-cell" data-next={item.next}>
+                  <span className="sheet-frame">f{String(i * 30).padStart(3, "0")}</span>
+                  <h3>
+                    {item.step}
+                    {item.next && <span className="soon">Next</span>}
+                  </h3>
+                  <p>{item.body}</p>
+                  {item.tools.length > 0 && (
+                    <ul className="sheet-tools">
+                      {item.tools.map((tool) => (
+                        <li key={tool}>
+                          <code>{tool}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section className="section" id="connect" aria-labelledby="connect-title">
+          <div className="wrap connect-wrap">
+            <header className="section-head center">
+              <h2 id="connect-title">One line to connect.</h2>
+              <p className="lede">
+                Kynimo runs in the cloud. Add the server, sign in once in your browser, and ask for
+                a video. No install, no API keys to paste.
               </p>
             </header>
             <Connect />
@@ -144,64 +175,71 @@ export default function Home() {
           <ToolTicker />
         </section>
 
-        <section className="section" id="quality" aria-labelledby="quality-title">
+        <section className="section" id="styles" aria-labelledby="styles-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="quality-title">Taste, written down.</h2>
+              <h2 id="styles-title">Styles that set the motion, not just the colours.</h2>
               <p className="lede">
-                A guideline pack is a motion design system your assistant has to follow: type,
-                colour, springs, timing. Kynimo is being built to grade every render against it and
-                name the fix for every finding.
+                A style pack is a motion design system: typeface, palette, springs, staggers and the
+                rules a frame must pass. Same scene, four packs.
               </p>
             </header>
-            <QualityReport />
+            <Packs />
 
-            <header className="section-head section-head-sub">
-              <h3 className="h2-like">Same scene. Four temperaments.</h3>
-              <p className="lede">
-                Switch the pack and everything moves differently. The words stay the same.
-              </p>
-            </header>
-            <PackSwitcher />
-            <p className="fineprint center">
-              Pack colours and springs are the real 0.1 drafts. The grading engine is next on the
-              roadmap.
-            </p>
-          </div>
-        </section>
-
-        <section className="section" id="edit" aria-labelledby="edit-title">
-          <div className="wrap">
-            <header className="section-head">
-              <h2 id="edit-title">Change a word. Keep the video.</h2>
-              <p className="lede">
-                Go on, type something. Each change is one small operation on the scene. Nothing is
-                generated again.
-              </p>
-            </header>
-            <Editable />
-          </div>
-        </section>
-
-        <section className="section" id="status" aria-labelledby="status-title">
-          <div className="wrap">
-            <header className="section-head">
-              <h2 id="status-title">Built in the open.</h2>
-              <p className="lede">
-                No launch countdown. Here is what runs today, and what comes next.
-              </p>
-            </header>
-            <div className="status">
-              <div>
-                <h3>Runs today</h3>
-                <StatusList items={STATUS.built} kind="built" />
-              </div>
-              <div>
-                <h3>Next</h3>
-                <StatusList items={STATUS.next} kind="next" />
-              </div>
+            <div className="rulebook">
+              <header>
+                <h3>The rules every frame is held to.</h3>
+                <p>
+                  Thresholds from the Keynote pack, each with its source. The engine that grades a
+                  render against them is next on the roadmap.
+                </p>
+              </header>
+              <dl>
+                {RULES.map((rule) => (
+                  <div key={rule.id} className="rule">
+                    <dt>
+                      <code>{rule.id}</code>
+                    </dt>
+                    <dd className="rule-says">{rule.says}</dd>
+                    <dd className="rule-value">{rule.value}</dd>
+                    <dd className="rule-source">{rule.source}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </div>
+        </section>
+
+        <section className="section" id="roadmap" aria-labelledby="roadmap-title">
+          <div className="wrap">
+            <header className="section-head">
+              <h2 id="roadmap-title">Built in the open.</h2>
+              <p className="lede">
+                No launch countdown. Here is what runs today and what comes next, in order.
+              </p>
+            </header>
+          </div>
+          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a horizontally scrolling region must be reachable by keyboard */}
+          <section className="roadmap" aria-label="Roadmap, scrolls sideways" tabIndex={0}>
+            <ol className="roadmap-track">
+              {ROADMAP.map((item, i) => {
+                const today = !item.done && ROADMAP[i - 1]?.done;
+                return (
+                  <li key={item.name} className="milestone" data-done={item.done}>
+                    {today && (
+                      <span className="today" aria-hidden="true">
+                        Today
+                      </span>
+                    )}
+                    <i className="milestone-key" aria-hidden="true" />
+                    <h3>{item.name}</h3>
+                    <p>{item.body}</p>
+                    <span className="sr-only">{item.done ? "Built" : "Planned"}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
         </section>
 
         <section className="section" id="faq" aria-labelledby="faq-title">
@@ -222,12 +260,13 @@ export default function Home() {
 
         <section className="close" aria-labelledby="close-title">
           <HeroField variant="close" />
-          <div className="wrap">
+          <div className="wrap close-inner">
+            <ExposureStudy />
             <h2 id="close-title" className="display">
-              Watch it get built.
+              Every frame, on purpose.
             </h2>
             <p className="lede">
-              Every decision is written down. Every milestone lands in the repo.
+              Every decision is written down. Every milestone lands in the repository.
             </p>
             <a className="btn btn-primary" href={REPO_URL} rel="noopener">
               <GitHubIcon />

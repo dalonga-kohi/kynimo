@@ -5,10 +5,10 @@ import { REPO_URL } from "@/lib/site";
 import { GitHubIcon, Mark } from "./Mark";
 
 const LINKS = [
+  ["How it works", "#how"],
   ["Connect", "#connect"],
-  ["Quality", "#quality"],
-  ["Editing", "#edit"],
-  ["Status", "#status"],
+  ["Styles", "#styles"],
+  ["Roadmap", "#roadmap"],
 ] as const;
 
 export function Nav() {
