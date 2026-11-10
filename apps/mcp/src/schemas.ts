@@ -602,6 +602,8 @@ export const DescribeMotionOutput = z.looseObject({
         .looseObject({ composition: z.string(), time_offset: z.number().int(), fps: Fps })
         .optional(),
       parent_of_listed: z.literal(true).optional(),
+      animators: z.array(z.string()).optional(),
+      behaviors: z.array(z.string()).optional(),
       properties: z.array(
         z.looseObject({
           property: z.string(),

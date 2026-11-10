@@ -1,4 +1,10 @@
-import { AssetSchema, LayerSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  AssetSchema,
+  BEHAVIOR_TYPES,
+  LayerSchema,
+  MAX_BEHAVIORS,
+  SCENE_FORMAT_VERSION,
+} from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { capabilityManifest } from "./capabilities.js";
 
@@ -39,6 +45,17 @@ describe("capability manifest", () => {
     // Shipped features leave the unavailable list.
     expect(manifest.unavailable).not.toHaveProperty("text_animators");
     expect(manifest.unavailable).not.toHaveProperty("shape_operators");
+  });
+
+  it("lists every behavior type as supported and states its limits", () => {
+    expect(sorted(Object.keys(manifest.features.behaviors))).toEqual(sorted(BEHAVIOR_TYPES));
+    for (const support of Object.values(manifest.features.behaviors))
+      expect(support.status).toBe("renders");
+    expect(manifest.limits.behaviors).toEqual({
+      behaviorsPerLayer: MAX_BEHAVIORS,
+      linkStepsPerFrame: 100_000,
+    });
+    expect(manifest.unavailable).not.toHaveProperty("behaviors");
   });
 
   it("names the format version and stays small enough to read in one go", () => {

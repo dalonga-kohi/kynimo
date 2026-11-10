@@ -1,5 +1,6 @@
 import type { CapturedFrame, CapturedSheet } from "@kynimo/capture";
-import type { Project } from "@kynimo/scene";
+import { evaluateFrame } from "@kynimo/engine";
+import { type Project, ProjectSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
 import { withLayerDefaults } from "./defaults.js";
 import type { FrameRenderer } from "./render.js";
@@ -191,6 +192,82 @@ describe("KynimoService: rendering", () => {
     expect((await rejection(bare.renderFrames(project, { frames: [0], max_size: 960 }))).kind).toBe(
       "unavailable",
     );
+  });
+
+  it("reports the engine's link-step budget error as a render_failed tool error", async () => {
+    const layers = Array.from({ length: 448 }, (_, r) => 447 - r).map((i) => ({
+      id: `l${i}`,
+      ...(withLayerDefaults(
+        {
+          type: "solid",
+          width: 10,
+          height: 10,
+          color: "#ffffff",
+          name: `n${i}`,
+          ...(i === 0
+            ? {
+                transform: {
+                  rotation: {
+                    keyframes: [0, 89].map((frame) => ({
+                      frame,
+                      value: frame,
+                      interpolation: { type: "linear" },
+                    })),
+                  },
+                },
+              }
+            : {
+                behaviors: [
+                  {
+                    id: "k",
+                    name: "k",
+                    enabled: true,
+                    property: "rotation",
+                    type: "link",
+                    source: { layer: `l${i - 1}`, property: "rotation" },
+                    multiply: 1,
+                    offset: 0,
+                    delay: 1,
+                  },
+                ],
+              }),
+        },
+        { width: 100, height: 100, durationFrames: 90 } as never,
+      ) as object),
+    }));
+    const doc = ProjectSchema.parse({
+      formatVersion: SCENE_FORMAT_VERSION,
+      name: "Chain",
+      mainCompositionId: "main",
+      style: null,
+      assets: [],
+      compositions: [
+        {
+          id: "main",
+          name: "Main",
+          width: 100,
+          height: 100,
+          fps: { num: 30, den: 1 },
+          durationFrames: 90,
+          background: null,
+          markers: [],
+          layers,
+        },
+      ],
+    });
+    try {
+      evaluateFrame(doc, 80);
+      throw new Error("expected the link budget to run out");
+    } catch (e) {
+      renderer.fail = e as Error;
+    }
+    const failed = await rejection(frames([80]));
+    expect(failed.kind).toBe("render_failed");
+    expect(failed.message).toMatch(/link steps.*Shorten link chains/);
+    renderer.fail = new RangeError("a sheet needs at least one frame");
+    expect(
+      (await rejection(svc.renderContactSheet(project, { count: 4, cell_size: 320 }))).kind,
+    ).toBe("render_failed");
   });
 
   describe("contact sheets", () => {

@@ -384,6 +384,160 @@ describe("text animators", () => {
   });
 });
 
+describe("behaviors", () => {
+  const linear = { type: "linear" };
+  const kf = (...frames: [number, unknown][]) => ({
+    keyframes: frames.map(([frame, value]) => ({ frame, value, interpolation: linear })),
+  });
+  let n = 0;
+  const b = (type: string, property: string, extra: Record<string, unknown>) => ({
+    id: `b${n++}`,
+    name: type,
+    enabled: true,
+    property,
+    type,
+    ...extra,
+  });
+  const lines = (behaviors: unknown[], transform: Record<string, unknown> = {}, extra = {}) =>
+    describe_(comp([solid({ behaviors, transform, ...extra })])).layers[0]?.behaviors;
+
+  it("describes wiggle and oscillate in one line each, with neutral parts left out", () => {
+    expect(
+      lines([
+        b("wiggle", "position", {
+          frequency: { value: 2 },
+          amplitude: { value: [20, 0] },
+          octaves: 2,
+          seed: 7,
+          linked: false,
+        }),
+        b("wiggle", "scale", {
+          frequency: { value: 1.5 },
+          amplitude: { value: [0.1, 0.25] },
+          octaves: 1,
+          seed: 0,
+          linked: true,
+        }),
+        b("oscillate", "rotation", {
+          frequency: { value: 0.5 },
+          amplitude: { value: 15 },
+          phase: 90,
+          waveform: "sine",
+        }),
+        b("oscillate", "opacity", {
+          frequency: { value: 1 },
+          amplitude: { value: 0.2 },
+          phase: 0,
+          waveform: "triangle",
+        }),
+      ]),
+    ).toEqual([
+      "wiggle position ±[20, 0] at 2 Hz, 2 octaves, seed 7",
+      "wiggle scale ±[0.1, 0.25] at 1.5 Hz, 1 octave, seed 0, linked",
+      "oscillate rotation ±15 at 0.5 Hz, sine, phase 90°",
+      "oscillate opacity ±0.2 at 1 Hz, triangle",
+    ]);
+  });
+
+  it("says animated for keyframed parameters", () => {
+    expect(
+      lines([
+        b("oscillate", "rotation", {
+          frequency: kf([0, 1], [30, 2]),
+          amplitude: kf([0, 5], [30, 10]),
+          phase: 0,
+          waveform: "square",
+        }),
+      ]),
+    ).toEqual(["oscillate rotation ±animated at animated frequency, square"]);
+  });
+
+  /** Each behavior on a layer of its own (a property takes one loop, one link), listed in order. */
+  const each = (behaviors: unknown[], transform: Record<string, unknown> = {}) =>
+    describe_(comp([...behaviors.map((x) => solid({ behaviors: [x], transform })), solid()]))
+      .layers.slice(0, behaviors.length)
+      .flatMap((l) => l.behaviors ?? []);
+
+  it("describes loops and says when there are too few keyframes", () => {
+    const loop = (property: string, direction: string, mode: string, span: number) =>
+      b("loop", property, { direction, mode, span });
+    expect(
+      each(
+        [
+          loop("position", "out", "cycle", 0),
+          loop("position", "out", "pingpong", 2),
+          loop("position", "in", "offset", 1),
+          loop("rotation", "out", "continue", 0),
+          loop("scale", "out", "cycle", 0),
+          loop("opacity", "out", "cycle", 0),
+        ],
+        {
+          position: kf([0, [0, 0]], [10, [100, 0]], [20, [100, 100]]),
+          rotation: { value: 0 },
+          scale: kf([0, [1, 1]]),
+          opacity: kf([0, 0], [10, 1]),
+        },
+      ),
+    ).toEqual([
+      "loop out on position: cycle, all keyframes",
+      "loop out on position: pingpong, last 2 segments",
+      "loop in on position: offset, first 1 segment",
+      "loop out on rotation: continue, all keyframes — no effect: needs at least two keyframes",
+      "loop out on scale: cycle, all keyframes — no effect: needs at least two keyframes",
+      "loop out on opacity: cycle, all keyframes",
+    ]);
+  });
+
+  it("checks both axes of a separate position", () => {
+    const loop = b("loop", "position", { direction: "out", mode: "cycle", span: 0 });
+    const separate = (x: unknown, y: unknown) => ({ position: { separate: { x, y } } });
+    expect(lines([loop], separate({ value: 0 }, kf([0, 0], [10, 5])))).toEqual([
+      "loop out on position: cycle, all keyframes",
+    ]);
+    expect(lines([loop], separate({ value: 0 }, { value: 5 }))).toEqual([
+      "loop out on position: cycle, all keyframes — no effect: needs at least two keyframes",
+    ]);
+  });
+
+  it("describes inertia and links, leaving neutral multiply, offset and delay out", () => {
+    const link = (extra: Record<string, unknown>, property = "rotation") =>
+      b("link", property, {
+        source: { layer: "l5", property },
+        multiply: 1,
+        offset: property === "position" ? [0, 0] : 0,
+        delay: 0,
+        ...extra,
+      });
+    expect(
+      each([
+        b("inertia", "scale", { amplitude: 0.05, frequency: 4, decay: 8 }),
+        link({ multiply: -1, offset: 5, delay: 10 }),
+        link({}),
+        link({ delay: 1 }),
+        link({ offset: [3, -4] }, "position"),
+      ]),
+    ).toEqual([
+      "inertia on scale: amplitude 0.05 s, 4 Hz, decay 8/s",
+      "link rotation ← 'l5'.rotation × -1 + 5, 10 frames later",
+      "link rotation ← 'l5'.rotation",
+      "link rotation ← 'l5'.rotation, 1 frame later",
+      "link position ← 'l5'.position + [3, -4]",
+    ]);
+  });
+
+  it("marks disabled behaviors and lists none for layers without", () => {
+    expect(
+      lines([
+        {
+          ...b("inertia", "position", { amplitude: 0.1, frequency: 2, decay: 3 }),
+          enabled: false,
+        },
+      ]),
+    ).toEqual(["inertia on position: amplitude 0.1 s, 2 Hz, decay 3/s (disabled)"]);
+    expect(describe_(comp([solid()])).layers[0]).not.toHaveProperty("behaviors");
+  });
+});
+
 describe("summarizeValue", () => {
   it("rounds numbers and summarizes paths and large values", () => {
     expect(summarizeValue([1.23456, -0.0001])).toEqual([1.235, 0]);
