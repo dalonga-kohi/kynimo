@@ -109,6 +109,8 @@ interface Pending {
 export function createBehaviorResolver(
   byId: ReadonlyMap<string, Layer>,
   fps: FrameRate,
+  /** Called before each value a link asks for and the memo does not hold; may throw to stop. */
+  onLinkStep: (layerId: string, property: string) => void,
 ): BehaviorResolver {
   const memo = new Map<string, Components>();
 
@@ -231,6 +233,7 @@ export function createBehaviorResolver(
               throw new RangeError(
                 `links form a cycle through layer '${sourceLayer.id}' property '${link.source.property}'`,
               );
+            onLinkStep(sourceLayer.id, link.source.property);
             onStack.add(pair);
             stack.push({
               layer: sourceLayer,

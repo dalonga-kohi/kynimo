@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { applyToPoint, multiply, transformMatrix } from "./affine.js";
-import { evaluateFrame, MAX_EVALUATION_UNITS, nestedFrame } from "./evaluate.js";
+import {
+  evaluateFrame,
+  MAX_EVALUATION_UNITS,
+  MAX_FRAME_LINK_STEPS,
+  nestedFrame,
+} from "./evaluate.js";
 import {
   composition,
   deepFreeze,
@@ -1162,6 +1167,63 @@ describe("evaluateFrame: behaviors", () => {
       expect(out.layers[298]?.transform.rotation).toBe(79); // l1 reads l0 at frame 79
     });
 
+    describe("link step budget", () => {
+      // Evaluating every layer of a delayed chain of n costs 1 + 2 + ... + (n - 1) steps.
+      const delayedChain = (n: number, id = "main", extra: Obj = {}) => {
+        const layers: Obj[] = [];
+        for (let i = n - 1; i >= 0; i--)
+          layers.push(
+            i === 0
+              ? withBehaviors("l0", [], { rotation: rotationTrack([0, 0], [89, 89]) })
+              : withBehaviors(`l${i}`, [
+                  link("k", "rotation", `l${i - 1}`, "rotation", { delay: 1 }),
+                ]),
+          );
+        return composition(id, layers, extra);
+      };
+
+      it("allows a delayed chain just under the budget and refuses one just over", () => {
+        expect((447 * 446) / 2).toBeLessThanOrEqual(MAX_FRAME_LINK_STEPS);
+        expect((448 * 447) / 2).toBeGreaterThan(MAX_FRAME_LINK_STEPS);
+        expect(single([delayedChain(447)], 80).layers).toHaveLength(447);
+        expect(() => single([delayedChain(448)], 80)).toThrow(
+          /more than 100000 link steps .*ran out at layer 'l\d+' property 'rotation'\. Shorten link chains/,
+        );
+      });
+
+      it("charges links inside precomps against the whole call", () => {
+        const place = (id: string, start: number) =>
+          layer(id, "precomp", { compositionId: "inner", startFrame: start });
+        const inner = delayedChain(300, "inner"); // 44,850 steps per evaluation
+        const outer = (starts: number[]) =>
+          composition(
+            "main",
+            starts.map((s) => place(`p${s}`, s)),
+          );
+        expect(single([outer([0, 1]), inner], 10).layers).toHaveLength(2);
+        // Three placements land on three different inner frames: 134,550 steps in all.
+        expect(() => single([outer([0, 1, 2]), inner], 10)).toThrow(/link steps/);
+      });
+
+      it("does not charge memo hits: an undelayed chain costs one step per link", () => {
+        const layers: Obj[] = [];
+        for (let i = 999; i >= 0; i--)
+          layers.push(
+            i === 0
+              ? withBehaviors("l0", [], { rotation: prop(1) })
+              : withBehaviors(`l${i}`, [link("k", "rotation", `l${i - 1}`, "rotation")]),
+          );
+        // Ten precomp placements of a 1000-link chain on different frames: about 10,000 steps.
+        const outer = composition(
+          "main",
+          Array.from({ length: 10 }, (_, s) =>
+            layer(`p${s}`, "precomp", { compositionId: "inner", startFrame: s }),
+          ),
+        );
+        const out = single([outer, composition("inner", layers)], 20);
+        expect(out.layers).toHaveLength(10);
+      });
+    });
     it("refuses links that form a cycle instead of looping", () => {
       const doc = jsonClone(
         project([composition("main", [dst([link("l", "rotation", "src", "rotation")]), src()])]),

@@ -36,12 +36,21 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
  * shape item, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
  * a precomp evaluates. The root composition is not charged: its work is linear in the document, except
  * that link behaviors with delays (ADR-0039) can make a chain of N links touch N² (layer, frame) pairs
- * (about 1 s for 1000 chained layers); behaviors are not charged.
+ * (see {@link MAX_FRAME_LINK_STEPS}, which caps it); other behaviors are not charged.
  * The memo only collapses precomps that land on the same local frame, so precomps placed at many
  * different offsets multiply: N placements of N placements of N layers is N³ work from 3N layers
  * of JSON. For scale: a 1000-layer composition evaluated at 1000 different offsets costs 1,000,000.
  */
 export const MAX_EVALUATION_UNITS = 1_000_000;
+
+/**
+ * Most link steps one valuateFrame call may take, across every composition it evaluates. A step is one
+ * (layer, property, composition frame) value that a link behavior (ADR-0039) asks for and the call's memo
+ * does not hold yet. Each delay reads another frame, so a chain of N delayed links touches about N²/2
+ * values per frame; undelayed chains hit the memo and cost N. Calibration: about 100,000 steps took
+ * about 0.2 s (190 to 240 ms over five runs of a 447-layer delayed chain) on the maintainer's machine, so a frame that hits the cap is rejected in about that time.
+ */
+export const MAX_FRAME_LINK_STEPS = 100_000;
 
 /** Units one evaluation of `comp` costs (see {@link MAX_EVALUATION_UNITS}). Iterative over shape groups. */
 function compositionCost(comp: Composition): number {
@@ -99,6 +108,8 @@ interface Context {
   memo: Map<string, ResolvedComposition>;
   /** Units left in this call's {@link MAX_EVALUATION_UNITS} budget. */
   budget: number;
+  /** Link steps left in this call's {@link MAX_FRAME_LINK_STEPS} budget. */
+  linkSteps: number;
   /** Per-composition cost, computed once per call so counting is not multiplied too. */
   costs: Map<string, number>;
   /** Precomp layer ids from the root down to the composition being evaluated, for error messages. */
@@ -123,7 +134,12 @@ function evaluateComposition(
   const world = new Map<string, Affine>();
 
   // Layers without behaviors take the plain sampling path below, untouched.
-  const behaviors = createBehaviorResolver(byId, fps);
+  const behaviors = createBehaviorResolver(byId, fps, (layerId, property) => {
+    if (--ctx.linkSteps < 0)
+      throw new RangeError(
+        `evaluating this frame needs more than ${MAX_FRAME_LINK_STEPS} link steps (link behaviors that read other layers, each delay a separate frame); it ran out at layer '${layerId}' property '${property}'. Shorten link chains, or use fewer delayed links`,
+      );
+  });
 
   const localOf = (layer: VisualLayer) => {
     let entry = local.get(layer.id);
@@ -405,6 +421,7 @@ export function evaluateFrame(
     videos,
     memo: new Map(),
     budget: MAX_EVALUATION_UNITS,
+    linkSteps: MAX_FRAME_LINK_STEPS,
     costs: new Map(),
     chain: [],
   };
