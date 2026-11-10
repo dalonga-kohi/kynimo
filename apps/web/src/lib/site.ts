@@ -81,19 +81,20 @@ export const FAQ = [
   },
 ] as const;
 
-/** What exists in the repository today versus what is planned (docs/ROADMAP.md, 2026-11-09). */
+/** What exists in the repository today versus what is planned (docs/ROADMAP.md, 2026-11-10). */
 export const STATUS = {
   built: [
     ["Scene format", "A versioned JSON document. Every change is a typed operation."],
     ["Engine", "Bezier and spring keyframes, parenting, precomps. Integer frames."],
     ["Renderer", "Shapes, text, images, video. Masks, mattes and blend modes."],
     ["Shape operators", "Trim paths, repeater, round corners, path morphing."],
+    ["Text animators", "Per character, word and line, with range selectors."],
     ["MCP server", "Streamable HTTP with OAuth. Frames come back as images."],
     ["Guideline packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
   ],
   next: [
     ["Hosted endpoint", "One URL for every client."],
-    ["Text animators", "Per character, word and line."],
+    ["Intent tools", "Animate, stagger, retime. Your assistant says what, not how."],
     ["Scripts", "Your assistant writes TypeScript. The scene gets ordinary layers."],
     ["Quality report", "Every finding names the frame and the fix."],
     ["Components and shaders", "TypeScript and GLSL, with typed props."],
