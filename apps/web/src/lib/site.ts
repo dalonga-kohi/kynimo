@@ -11,7 +11,7 @@ export const SITE_URL = trimSlash(process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SI
 
 /**
  * The hosted MCP endpoint. Unset until the server is deployed: the page then shows a
- * reserved `.example` host and no copy button, so nobody pastes a URL we don't control.
+ * reserved `.example` host, which can never resolve, with a note that it is a placeholder.
  */
 export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL
   ? trimSlash(process.env.NEXT_PUBLIC_MCP_URL)
@@ -22,7 +22,7 @@ export const REPO_URL = "https://github.com/dalonga-kohi/kynimo";
 
 export const SITE = {
   name: "Kynimo",
-  tagline: "Motion graphics that agents create and humans finish.",
+  tagline: "Motion graphics for your AI agent.",
   description:
     "Kynimo is a motion graphics engine for AI assistants. Connect it over MCP, describe a video, and get back editable layers and keyframes, checked against motion guidelines.",
 } as const;
@@ -54,6 +54,46 @@ export const MCP_TOOLS = [
   "get_write_outcome",
 ] as const;
 
+/** What the assistant does with Kynimo, in order. `next` marks tools that are not built yet. */
+export const LOOP = [
+  {
+    step: "Brief",
+    body: "You say what the video is for, in plain words. A launch teaser, a feature promo, a 10 second social clip.",
+    tools: [],
+    next: false,
+  },
+  {
+    step: "Build",
+    body: "It lays out shapes, text, images and your footage, then animates them with spring and bezier keyframes.",
+    tools: ["add_layer", "set_keyframes", "apply_ops"],
+    next: false,
+  },
+  {
+    step: "Look",
+    body: "Rendered frames come back into the chat as images. Your assistant sees what it made, not what it meant.",
+    tools: ["render_frames", "render_contact_sheet"],
+    next: false,
+  },
+  {
+    step: "Check",
+    body: "The frames are graded against the style's rules. Each finding names the frame, the layer and the fix.",
+    tools: ["check_quality"],
+    next: true,
+  },
+  {
+    step: "Fix",
+    body: "Small typed edits to the scene. One layer changes, every other frame stays exactly as it was.",
+    tools: ["apply_ops", "undo"],
+    next: false,
+  },
+  {
+    step: "Export",
+    body: "MP4, WebM or GIF, and a link your team can scrub and comment on. The project stays editable.",
+    tools: ["export"],
+    next: true,
+  },
+] as const;
+
 export const FAQ = [
   {
     q: "What is Kynimo?",
@@ -68,8 +108,8 @@ export const FAQ = [
     a: "Generators return pixels. To change a word you generate again and hope. Kynimo returns a scene document, so a word, a colour or a timing is one small edit and every other frame stays the same.",
   },
   {
-    q: "What are quality guidelines?",
-    a: "A guideline pack is a motion design system written as tokens and rules: type, colour, springs, durations, safe areas, reading time. Kynimo is being built to grade every render against the pack and tell the assistant exactly what to fix.",
+    q: "What is a style pack?",
+    a: "A motion design system written as tokens and rules: type, colour, springs, durations, safe areas, reading time. Four draft packs exist today. Kynimo is being built to grade every render against the pack and tell the assistant exactly what to fix.",
   },
   {
     q: "Can I use it today?",
@@ -90,7 +130,7 @@ export const STATUS = {
     ["Shape operators", "Trim paths, repeater, round corners, path morphing."],
     ["Text animators", "Per character, word and line, with range selectors."],
     ["MCP server", "Streamable HTTP with OAuth. Frames come back as images."],
-    ["Guideline packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
+    ["Style packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
   ],
   next: [
     ["Hosted endpoint", "One URL for every client."],

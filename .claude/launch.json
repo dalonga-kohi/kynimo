@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dlx", "serve@14.2.4", "design/mockups", "-l", "4321", "--no-clipboard"],
       "port": 4321
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@kynimo/web", "dev"],
+      "port": 3000
     }
   ]
 }
