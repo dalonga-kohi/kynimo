@@ -349,17 +349,25 @@ describe("evaluateFrame: precomps", () => {
       type: "path",
       path: prop({ closed: false, vertices }),
     });
-    const layers = Array.from({ length: 1000 }, (_, i) =>
-      layer(`p${i}`, "shape", {
-        inFrame: i % 90,
-        outFrame: (i % 90) + 1,
-        contents: [path(`p${i}path`)],
-      }),
-    );
-    expect(evaluateFrame(project([composition("main", layers)]), 0).layers.length).toBeGreaterThan(
-      0,
-    );
-  }, 20_000);
+    // Validate one layer, then copy the parsed layer: parsing a million vertices takes seconds and
+    // timed out on loaded CI runners, while every copy differs only in fields the schema checks the same way.
+    const parsed = project([
+      composition("main", [
+        layer("p0", "shape", { inFrame: 0, outFrame: 1, contents: [path("p0path")] }),
+      ]),
+    ]);
+    const main = parsed.compositions[0] as (typeof parsed.compositions)[number];
+    const template = main.layers[0] as (typeof main.layers)[number];
+    const layers = Array.from({ length: 1000 }, (_, i) => ({
+      ...template,
+      id: `p${i}`,
+      name: `p${i}`,
+      inFrame: i % 90,
+      outFrame: (i % 90) + 1,
+    }));
+    const big = { ...parsed, compositions: [{ ...main, layers }] } as typeof parsed;
+    expect(evaluateFrame(big, 0).layers.length).toBeGreaterThan(0);
+  });
 
   it("charges shape contents, not just layers", () => {
     // 700 placements of one shape layer with 500 groups of 3 rects: only 1,400 layers, but 1.4M units.
