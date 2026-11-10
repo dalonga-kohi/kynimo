@@ -15,6 +15,17 @@ Goal: a stranger's Claude or ChatGPT connects to a URL, signs in and rebuilds a 
 
 Open: region, and whether renders share the server process until M7 (recommended: yes, with a concurrency cap).
 
+## Per-glyph text cost (M4 follow-up to ADR-0038)
+
+Animated text draws each cluster as its own paragraph: about 0.25 ms per glyph, so the budgets are 1 000 per layer and 4 000 per frame. A frame of long animated text is near a second, and contact sheets multiply it.
+
+1. Measure first: time a fade, a rise and a tracking animator at 200, 1 000 and 4 000 glyphs, in Node and in the pinned Chromium, and write the numbers into ADR-0038.
+2. Candidates, cheapest first:
+   - Cache shaped paragraphs by text only and apply color and alpha at draw time (a color filter in a layer), so a fade stops defeating the cache.
+   - Draw glyph runs from the full layout's own glyph ids and positions (`drawGlyphs`), which also keeps ligatures and joining. canvaskit 0.42 reports run typefaces as null, so the font per run has to be matched by hand, fallback fonts included.
+   - Reuse shaped clusters across frames in the render cache (M7).
+3. Constraint: a layer with an active animator must stay pixel-identical to the plain layer when the animator changes nothing visible; the parity tests in `packages/renderer/src/text-animator.test.ts` and the `text-animators` reference frames are the gate. Raise the budgets only with the measured numbers.
+
 ## Behaviors (M4)
 
 1. One list per property, applied after keyframes in a fixed order. Each behavior is a pure function of (frame, base track, params, seed).
