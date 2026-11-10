@@ -15,10 +15,10 @@ THESIS: A calm, centered dark landing where each section shows one true thing ab
 
 OWN-WORLD: Warm near-blacks #0C0B0A / #171513 / #221F1C, screen-white #EDE8DF, dust #A39C90, marquee yellow #F5C842 as the only light (primary action, playhead, Today marker, hover accents). Mona Sans wide and heavy for display; Geist Mono only for code, tool names, frame numbers, timecode and thresholds. Hairlines, not cards. Motion-study echo (stroboscopic trail that closes into one sharp frame) on the hero's first line and the closing K mark.
 
-STORY: Hero says what it is (motion graphics for your AI agent) and plays one scene with its timeline. A flat frame comes apart into five labelled layers (not a clip, a project). A contact sheet shows the loop with real tools. One line to connect, with copy. Four packs play side by side, then the rulebook. The roadmap slides past with Today marked. Close: the K mark settles, "Every frame, on purpose."
+STORY: Hero says what it is (motion graphics for your AI agent) and plays one scene with its timeline. A flat frame comes apart into five labelled layers (not a clip, a project). A contact sheet shows the loop with real tools. One line to connect, with copy. Four packs, each with its own ten-second study in its own palette and motion. The roadmap as timeline tracks, all visible, with a Today line through every row. Section headings get the hero's echo once as they come on screen. Close: the K mark settles, "Every frame, on purpose."
 
 FIRST VIEWPORT: Centered two-line headline "Motion graphics / for your AI agent." over a centered dither field, three lines of subcopy, one yellow action (Follow on GitHub) and one text link. The scene player starts inside the first viewport, tilted back, and sits up as it scrolls in.
 
-FORM: Centered category landing with two scroll-driven moments (layer explode, roadmap slide). Code-led. seed: none (unavailable)
+FORM: Centered category landing with one scroll-driven moment (layer explode; on touch screens it opens on view and has a toggle instead). Code-led. seed: none (unavailable)
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

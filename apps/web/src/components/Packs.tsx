@@ -1,36 +1,73 @@
 "use client";
 
-import { useMemo, useRef } from "react";
-import { DEFAULT_CAPTION, DEFAULT_TITLE, PACK_LOOKS, SCENE, type SceneState } from "@/lib/scene";
-import { SceneCanvas, type SceneCanvasHandle } from "./SceneCanvas";
+import { useCallback, useEffect, useRef } from "react";
+import { PACK_LOOKS } from "@/lib/scene";
+import { drawStudy, STUDY, STUDY_POSTER, type StudyId } from "@/lib/studies";
 import { usePlayback } from "./usePlayback";
 
 type Pack = (typeof PACK_LOOKS)[number];
 
-function PackScene({ pack, offset }: { pack: Pack; offset: number }) {
-  const root = useRef<HTMLElement>(null);
-  const canvas = useRef<SceneCanvasHandle>(null);
-  // Each pack starts a little later than the one before, so the four never move in lockstep.
-  const clock = useRef(-offset);
+const LABELS: Record<StudyId, string> = {
+  keynote:
+    "Keynote study: a globe of points turns slowly while a blue wave passes over it, an orbit draws itself, then the line Every frame.",
+  "playful-saas":
+    "Playful SaaS study: shapes bounce in, a card pops up, a cursor clicks Ship it and confetti bursts out.",
+  editorial:
+    "Editorial study: a column grid draws down a magazine page, a large numeral 04 fades in, then the headline Motion, set like type.",
+  brutalist:
+    "Brutalist study: hard cuts through MAKE IT LOUD, a black slab, a grid of red squares and the name KYNIMO running across the frame.",
+};
 
-  const state = useMemo<SceneState>(
-    () => ({
-      look: pack,
-      title: DEFAULT_TITLE,
-      caption: DEFAULT_CAPTION,
-      layers: 4,
-      animated: true,
-      fixed: true,
-      echoes: false,
-    }),
-    [pack],
+function Study({ pack }: { pack: Pack }) {
+  const id = pack.id as StudyId;
+  const root = useRef<HTMLElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const clock = useRef(0);
+  const frame = useRef(0);
+
+  const paint = useCallback(
+    (f: number) => {
+      frame.current = f;
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx || canvas.width === 0) return;
+      drawStudy(ctx, canvas.width, canvas.height, id, f);
+    },
+    [id],
   );
 
   const moving = usePlayback(root, (delta) => {
     clock.current += delta;
-    const frame = Math.floor((Math.max(0, clock.current) / 1000) * SCENE.fps) % SCENE.frames;
-    canvas.current?.draw(frame);
+    paint(Math.floor((clock.current / 1000) * STUDY.fps) % STUDY.frames);
   });
+
+  useEffect(() => {
+    if (!moving) paint(STUDY_POSTER[id]);
+  }, [moving, paint, id]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.round(canvas.clientWidth * dpr);
+      if (width === 0 || width === canvas.width) return;
+      canvas.width = width;
+      canvas.height = Math.round((width * STUDY.height) / STUDY.width);
+      paint(frame.current);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    // Canvas text falls back to a system face until the webfonts are in.
+    let alive = true;
+    const repaint = () => alive && paint(frame.current);
+    document.fonts.ready.then(repaint, repaint);
+    return () => {
+      alive = false;
+      observer.disconnect();
+    };
+  }, [paint]);
 
   return (
     <figure
@@ -39,30 +76,26 @@ function PackScene({ pack, offset }: { pack: Pack; offset: number }) {
       style={{ "--pack-accent": pack.accent } as React.CSSProperties}
     >
       <div className="pack-screen">
-        <SceneCanvas
-          ref={canvas}
-          state={moving ? state : { ...state, animated: false }}
-          label={`The same scene in the ${pack.name} pack.`}
-        />
+        <canvas ref={canvasRef} className="scene-canvas" role="img" aria-label={LABELS[id]} />
       </div>
       <figcaption>
         <span className="pack-name">
           <i aria-hidden="true" />
           {pack.name}
         </span>
-        <p>{pack.summary}</p>
         <code>{pack.tokens}</code>
+        <p>{pack.summary}</p>
       </figcaption>
     </figure>
   );
 }
 
-/** The same scene in all four draft packs at once. */
+/** One ten-second study per draft pack, each in that pack's own palette and motion. */
 export function Packs() {
   return (
     <div className="packs">
-      {PACK_LOOKS.map((pack, i) => (
-        <PackScene key={pack.id} pack={pack} offset={i * 260} />
+      {PACK_LOOKS.map((pack) => (
+        <Study key={pack.id} pack={pack} />
       ))}
     </div>
   );

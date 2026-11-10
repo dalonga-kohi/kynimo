@@ -1,4 +1,5 @@
-import { Connect, ToolTicker } from "@/components/Connect";
+import { Connect } from "@/components/Connect";
+import { EchoOnView } from "@/components/EchoOnView";
 import { ExposureStudy } from "@/components/ExposureStudy";
 import { HeroField } from "@/components/HeroField";
 import { HeroPlayer } from "@/components/HeroPlayer";
@@ -6,7 +7,7 @@ import { LayerStack } from "@/components/LayerStack";
 import { GitHubIcon, Mark } from "@/components/Mark";
 import { Nav } from "@/components/Nav";
 import { Packs } from "@/components/Packs";
-import { FAQ, LOOP, REPO_URL, RULES, SITE, SITE_URL, STATUS } from "@/lib/site";
+import { FAQ, LOOP, REPO_URL, SITE, SITE_URL, STATUS } from "@/lib/site";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -66,6 +67,8 @@ const ROADMAP = [
   ...STATUS.built.map(([name, body]) => ({ name, body, done: true })),
   ...STATUS.next.map(([name, body]) => ({ name, body, done: false })),
 ];
+/** Where the Today line sits on every track: after the last built milestone. */
+const TODAY = STATUS.built.length / ROADMAP.length;
 
 export default function Home() {
   return (
@@ -79,6 +82,7 @@ export default function Home() {
         Skip to content
       </a>
       <Nav />
+      <EchoOnView />
 
       <main id="main">
         <section className="hero" id="top">
@@ -97,8 +101,8 @@ export default function Home() {
                 <GitHubIcon />
                 Follow on GitHub
               </a>
-              <a className="link-down" href="#layers">
-                See what you get
+              <a className="link-down" href="#connect">
+                Connect your assistant
                 <Arrow />
               </a>
             </div>
@@ -114,7 +118,9 @@ export default function Home() {
         <section className="section layers" id="layers" aria-labelledby="layers-title">
           <div className="wrap layers-grid">
             <header className="layers-copy">
-              <h2 id="layers-title">Not a clip. A project.</h2>
+              <h2 id="layers-title" data-echo>
+                Not a clip. A project.
+              </h2>
               <p className="lede">
                 Video generators hand you finished pixels. Want a different word? Generate again and
                 hope.
@@ -131,7 +137,9 @@ export default function Home() {
         <section className="section" id="how" aria-labelledby="how-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="how-title">What your assistant does with it.</h2>
+              <h2 id="how-title" data-echo>
+                What your assistant does with it.
+              </h2>
               <p className="lede">
                 It works like a motion designer with a checklist: build, look, check, fix. Every
                 step is a tool call you can read.
@@ -164,7 +172,9 @@ export default function Home() {
         <section className="section" id="connect" aria-labelledby="connect-title">
           <div className="wrap connect-wrap">
             <header className="section-head center">
-              <h2 id="connect-title">One line to connect.</h2>
+              <h2 id="connect-title" data-echo>
+                One line to connect.
+              </h2>
               <p className="lede">
                 Kynimo runs in the cloud. Add the server, sign in once in your browser, and ask for
                 a video. No install, no API keys to paste.
@@ -172,79 +182,67 @@ export default function Home() {
             </header>
             <Connect />
           </div>
-          <ToolTicker />
         </section>
 
         <section className="section" id="styles" aria-labelledby="styles-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="styles-title">Styles that set the motion, not just the colours.</h2>
+              <h2 id="styles-title" data-echo>
+                Four styles. Four different films.
+              </h2>
               <p className="lede">
-                A style pack is a motion design system: typeface, palette, springs, staggers and the
-                rules a frame must pass. Same scene, four packs.
+                A style pack is a motion design system: typeface, palette, springs and timing. Same
+                engine, same ten seconds, and each pack moves like nothing else on the list.
               </p>
             </header>
             <Packs />
-
-            <div className="rulebook">
-              <header>
-                <h3>The rules every frame is held to.</h3>
-                <p>
-                  Thresholds from the Keynote pack, each with its source. The engine that grades a
-                  render against them is next on the roadmap.
-                </p>
-              </header>
-              <dl>
-                {RULES.map((rule) => (
-                  <div key={rule.id} className="rule">
-                    <dt>
-                      <code>{rule.id}</code>
-                    </dt>
-                    <dd className="rule-says">{rule.says}</dd>
-                    <dd className="rule-value">{rule.value}</dd>
-                    <dd className="rule-source">{rule.source}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
           </div>
         </section>
 
         <section className="section" id="roadmap" aria-labelledby="roadmap-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="roadmap-title">Built in the open.</h2>
+              <h2 id="roadmap-title" data-echo>
+                Built in the open.
+              </h2>
               <p className="lede">
                 No launch countdown. Here is what runs today and what comes next, in order.
               </p>
             </header>
-          </div>
-          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a horizontally scrolling region must be reachable by keyboard */}
-          <section className="roadmap" aria-label="Roadmap, scrolls sideways" tabIndex={0}>
-            <ol className="roadmap-track">
-              {ROADMAP.map((item, i) => {
-                const today = !item.done && ROADMAP[i - 1]?.done;
-                return (
-                  <li key={item.name} className="milestone" data-done={item.done}>
-                    {today && (
-                      <span className="today" aria-hidden="true">
-                        Today
-                      </span>
-                    )}
-                    <i className="milestone-key" aria-hidden="true" />
+            <ol className="roadmap" style={{ "--today": TODAY } as React.CSSProperties}>
+              <li className="roadmap-head" aria-hidden="true">
+                <span>Runs today</span>
+                <span className="roadmap-lane">
+                  <b>Today</b>
+                  <span>Next</span>
+                </span>
+              </li>
+              {ROADMAP.map((item, i) => (
+                <li key={item.name} className="milestone" data-done={item.done}>
+                  <div className="milestone-text">
                     <h3>{item.name}</h3>
                     <p>{item.body}</p>
-                    <span className="sr-only">{item.done ? "Built" : "Planned"}</span>
-                  </li>
-                );
-              })}
+                    <span className="sr-only">{item.done ? "Built." : "Planned."}</span>
+                  </div>
+                  <span className="roadmap-lane" aria-hidden="true">
+                    <span
+                      className="milestone-clip"
+                      style={{ "--at": i / ROADMAP.length } as React.CSSProperties}
+                    >
+                      <i />
+                    </span>
+                  </span>
+                </li>
+              ))}
             </ol>
-          </section>
+          </div>
         </section>
 
         <section className="section" id="faq" aria-labelledby="faq-title">
           <div className="wrap faq">
-            <h2 id="faq-title">Questions</h2>
+            <h2 id="faq-title" data-echo>
+              Questions
+            </h2>
             <div className="faq-list">
               {FAQ.map(({ q, a }, i) => (
                 <details key={q} open={i === 0}>
@@ -262,7 +260,7 @@ export default function Home() {
           <HeroField variant="close" />
           <div className="wrap close-inner">
             <ExposureStudy />
-            <h2 id="close-title" className="display">
+            <h2 id="close-title" className="display" data-echo>
               Every frame, on purpose.
             </h2>
             <p className="lede">

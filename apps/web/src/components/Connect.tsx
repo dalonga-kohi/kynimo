@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { MCP_TOOLS, MCP_URL, MCP_URL_PLACEHOLDER } from "@/lib/site";
+import { MCP_URL, MCP_URL_PLACEHOLDER } from "@/lib/site";
 
 const url = MCP_URL ?? MCP_URL_PLACEHOLDER;
 
@@ -129,30 +129,6 @@ export function Connect() {
           The hosted endpoint opens with the private beta. Until then the address is a placeholder.
         </p>
       )}
-    </div>
-  );
-}
-
-/** Every tool the server registers today, scrolling past. Real names. */
-export function ToolTicker() {
-  const row = (hidden: boolean) => (
-    <ul aria-hidden={hidden || undefined}>
-      {MCP_TOOLS.map((tool) => (
-        <li key={tool}>
-          <code>{tool}</code>
-        </li>
-      ))}
-    </ul>
-  );
-  return (
-    <div className="ticker">
-      <p className="ticker-label">{MCP_TOOLS.length} tools on the server today</p>
-      <div className="ticker-window">
-        <div className="ticker-move">
-          {row(false)}
-          {row(true)}
-        </div>
-      </div>
     </div>
   );
 }

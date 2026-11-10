@@ -94,46 +94,6 @@ export const LOOP = [
   },
 ] as const;
 
-/** Rules and thresholds from the Keynote draft pack (packages/guidelines, 0.1.0). */
-export const RULES = [
-  {
-    id: "readable-hold",
-    says: "Text stays on screen long enough to read.",
-    value: "2.5 words / s, at least 1.2 s",
-    source: "BBC subtitle guidelines",
-  },
-  {
-    id: "text-contrast",
-    says: "Text stands off its background.",
-    value: "7 : 1, or 4.5 : 1 from 48 px",
-    source: "WCAG 2.2",
-  },
-  {
-    id: "safe-area",
-    says: "Text stays clear of the frame edge.",
-    value: "inside the middle 90%",
-    source: "EBU R 95",
-  },
-  {
-    id: "concurrent-motion",
-    says: "One idea moves at a time.",
-    value: "at most 2 starts in 200 ms",
-    source: "The Illusion of Life",
-  },
-  {
-    id: "entrance-duration",
-    says: "Entrances are neither abrupt nor sluggish.",
-    value: "300 to 1400 ms",
-    source: "Material Design 3",
-  },
-  {
-    id: "flash-rate",
-    says: "Nothing flashes fast enough to hurt.",
-    value: "at most 3 flashes / s",
-    source: "WCAG 2.2",
-  },
-] as const;
-
 export const FAQ = [
   {
     q: "What is Kynimo?",

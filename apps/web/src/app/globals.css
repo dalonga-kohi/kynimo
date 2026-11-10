@@ -165,7 +165,6 @@ button {
 
 .display,
 .section h2,
-.rulebook h3,
 .faq h2 {
   font-weight: 800;
   font-stretch: 125%;
@@ -611,18 +610,18 @@ button {
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .section-head > *,
-    .layers-copy > *,
-    .rulebook header > * {
+    .section-head > :not(h2),
+    .layers-copy > :not(h2) {
       animation: head-in linear both;
       animation-timeline: view();
-      animation-range: entry 5% entry 55%;
-    }
-    .section-head > :nth-child(2),
-    .layers-copy > :nth-child(n + 2) {
       animation-range: entry 15% entry 70%;
     }
   }
+}
+
+/* Section headings get the hero's echo once, as they come on screen (EchoOnView). */
+[data-echoed] {
+  animation: echo 1500ms var(--ease-out) both;
 }
 @keyframes head-in {
   from {
@@ -938,45 +937,6 @@ button {
   text-align: center;
 }
 
-.ticker {
-  margin-top: clamp(64px, 8vw, 112px);
-  border-block: 1px solid var(--line);
-}
-.ticker-label {
-  max-width: var(--page);
-  margin-inline: auto;
-  padding: 14px var(--gutter) 0;
-  color: var(--faint);
-  font-size: 0.8125rem;
-}
-.ticker-window {
-  overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
-}
-.ticker-move {
-  display: flex;
-  width: max-content;
-  animation: ticker 70s linear infinite;
-}
-.ticker:hover .ticker-move {
-  animation-play-state: paused;
-}
-.ticker ul {
-  display: flex;
-}
-.ticker li {
-  padding: 14px 22px 18px;
-}
-.ticker code {
-  font-size: 0.9375rem;
-  color: var(--muted);
-}
-@keyframes ticker {
-  to {
-    transform: translate3d(-50%, 0, 0);
-  }
-}
-
 /* Styles */
 
 .packs {
@@ -1021,179 +981,120 @@ button {
   max-width: 52ch;
 }
 
-.rulebook {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr);
-  gap: clamp(28px, 5vw, 80px);
-  align-items: start;
-  margin-top: clamp(96px, 12vw, 168px);
-}
-.rulebook header {
-  display: grid;
-  gap: 16px;
-}
-@media (min-width: 961px) {
-  .rulebook header {
-    position: sticky;
-    top: 120px;
-  }
-}
-.rulebook h3 {
-  font-size: clamp(1.625rem, 2.6vw, 2.25rem);
-}
-.rulebook header p {
-  color: var(--muted);
-  max-width: 36ch;
-}
-.rulebook dl {
-  border-top: 1px solid var(--line-strong);
-}
-.rule {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.1fr) max-content;
-  grid-template-areas:
-    "id says value"
-    "id says source";
-  gap: 2px 20px;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--line);
-}
-.rule dt {
-  grid-area: id;
-}
-.rule dt code {
-  font-size: 0.875rem;
-  color: var(--text);
-}
-.rule-says {
-  grid-area: says;
-  color: var(--muted);
-  font-size: 0.9375rem;
-}
-.rule-value {
-  grid-area: value;
-  font-family: var(--mono);
-  font-size: 0.8125rem;
-  color: var(--text);
-  transition: color 200ms ease-out;
-}
-.rule:hover .rule-value {
-  color: var(--accent);
-}
-.rule-source {
-  grid-area: source;
-  font-size: 0.8125rem;
-  color: var(--faint);
-}
-
-/* Roadmap: a keyframe track */
+/* Roadmap: every milestone is a track; the Today line runs down through all of them. */
 
 .roadmap {
-  --rm-pad: max(var(--gutter), calc((100vw - var(--page)) / 2 + var(--gutter)));
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-  scroll-padding-inline: var(--rm-pad);
-  padding-inline: var(--rm-pad);
-  padding-bottom: 24px;
-  scrollbar-color: var(--line-strong) transparent;
+  --text-col: minmax(0, 0.95fr);
+  --lane-col: minmax(0, 1.25fr);
+  border-top: 1px solid var(--line-strong);
 }
-
-/* Where scroll timelines exist, the track slides sideways as the page scrolls past it,
-   so "Today" comes into view without a sideways scroll. */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) and (min-width: 641px) {
-    .roadmap {
-      overflow-x: clip;
-      timeline-scope: --roadmap;
-      view-timeline: --roadmap block;
-    }
-    .roadmap-track {
-      animation: roadmap-slide linear both;
-      animation-timeline: --roadmap;
-      animation-range: cover 30% cover 85%;
-    }
-  }
+.roadmap > li {
+  display: grid;
+  grid-template-columns: var(--text-col) var(--lane-col);
+  align-items: center;
+  gap: 0 clamp(24px, 4vw, 64px);
 }
-@keyframes roadmap-slide {
-  to {
-    transform: translate3d(calc(-100% + 100vw - var(--rm-pad) * 2), 0, 0);
-  }
-}
-.roadmap:focus-visible {
-  outline-offset: -2px;
-}
-.roadmap-track {
-  display: flex;
-  width: max-content;
-}
-.milestone {
-  position: relative;
-  flex: none;
-  width: 236px;
-  padding: 64px 32px 0 0;
-  scroll-snap-align: start;
-}
-.milestone::before {
-  content: "";
-  position: absolute;
-  top: 37px;
-  left: 0;
-  right: 0;
-  border-top: 2px solid var(--muted);
-}
-.milestone[data-done="false"]::before {
-  border-top: 2px dotted var(--line-strong);
-}
-.milestone-key {
-  position: absolute;
-  top: 32px;
-  left: 0;
-  width: 12px;
-  height: 12px;
-  background: var(--text);
-  transform: rotate(45deg);
-}
-.milestone[data-done="false"] .milestone-key {
-  background: var(--ground);
-  box-shadow: inset 0 0 0 1.5px var(--muted);
-}
-.milestone h3 {
-  font-size: 1.0625rem;
-  font-weight: 650;
-  letter-spacing: -0.005em;
-}
-.milestone p {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 0.9375rem;
-  line-height: 1.45;
-}
-.today {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -18px;
-  width: 1px;
-  background: var(--accent);
-  color: var(--accent);
+.roadmap-head {
+  padding: 14px 0 10px;
   font-family: var(--mono);
   font-size: 0.75rem;
+  color: var(--faint);
 }
-.today::before {
+.roadmap-head .roadmap-lane b {
+  position: absolute;
+  left: calc(var(--today) * 100%);
+  bottom: 0;
+  padding-left: 10px;
+  font-weight: 400;
+  color: var(--accent);
+}
+.roadmap-head .roadmap-lane span {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+.roadmap-lane {
+  position: relative;
+  align-self: stretch;
+  min-height: 20px;
+}
+/* The Today line: one segment per row, so the rows draw it as one continuous line. */
+.roadmap-lane::after {
   content: "";
   position: absolute;
   top: 0;
-  left: -4px;
+  bottom: -1px;
+  left: calc(var(--today) * 100%);
+  width: 1px;
+  background: var(--accent);
+}
+.roadmap-head .roadmap-lane::before {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: calc(var(--today) * 100% - 4px);
   width: 9px;
   height: 7px;
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
+  z-index: 1;
 }
-.today {
-  text-indent: 10px;
-  line-height: 1;
-  white-space: nowrap;
+.milestone {
+  border-bottom: 1px solid var(--line);
+  transition: background-color 240ms ease-out;
+}
+.milestone:hover {
+  background: var(--surface);
+}
+.milestone-text {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  align-items: baseline;
+  gap: 4px 20px;
+  padding: 16px 0;
+}
+.milestone h3 {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.milestone p {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+.milestone-clip {
+  position: absolute;
+  top: calc(50% - 5px);
+  left: calc(var(--at) * 100%);
+  width: calc(100% / 13 - 6px);
+  height: 10px;
+  border-radius: 3px;
+  background: var(--muted);
+}
+.milestone[data-done="false"] .milestone-clip {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.milestone:hover .milestone-clip {
+  background: var(--text);
+}
+.milestone[data-done="false"]:hover .milestone-clip {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.milestone-clip i {
+  position: absolute;
+  top: 2px;
+  left: -3px;
+  width: 6px;
+  height: 6px;
+  background: var(--text);
+  transform: rotate(45deg);
+}
+.milestone[data-done="false"] .milestone-clip i {
+  background: var(--ground);
+  box-shadow: inset 0 0 0 1px var(--muted);
 }
 
 /* FAQ */
@@ -1338,7 +1239,6 @@ button {
   .sheet {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .rulebook,
   .faq {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1358,12 +1258,24 @@ button {
     position: static;
     padding-top: 0;
   }
+}
+
+/* Touch screens: no pinned scroll track. The stack opens by itself and has a toggle. */
+@media (max-width: 900px), (pointer: coarse) {
   .stack {
-    height: 150vh;
+    height: auto;
+    display: grid;
+    justify-items: center;
+    gap: 8px;
   }
   .stack-stage {
-    top: 16vh;
-    height: min(64vh, 100vw);
+    position: relative;
+    top: auto;
+    width: 100%;
+    height: clamp(300px, 78vw, 520px);
+  }
+  .stack-toggle {
+    min-height: 44px;
   }
 }
 
@@ -1388,13 +1300,21 @@ button {
   .packs {
     grid-template-columns: minmax(0, 1fr);
   }
-  .rule {
+  .roadmap > li {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "id" "says" "value" "source";
-    gap: 4px;
+  }
+  .roadmap-head > span:first-child {
+    display: none;
+  }
+  .roadmap-head .roadmap-lane {
+    min-height: 16px;
   }
   .milestone {
-    width: 210px;
+    padding-bottom: 14px;
+  }
+  .milestone-text {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px 0 10px;
   }
 }
 
@@ -1409,14 +1329,8 @@ button {
   .hero-sub,
   .hero-actions,
   .hero-stage,
-  .ticker-move {
+  [data-echoed] {
     animation: none;
-  }
-  .ticker-window {
-    overflow-x: auto;
-  }
-  .ticker ul[aria-hidden] {
-    display: none;
   }
   .btn:active,
   .copy:active,
@@ -1427,7 +1341,8 @@ button {
     height: auto;
   }
   .stack-stage {
-    position: static;
+    position: relative;
+    top: auto;
     height: clamp(320px, 60vh, 560px);
   }
 }

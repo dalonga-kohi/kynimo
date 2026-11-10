@@ -3,20 +3,22 @@
 import { useInView } from "motion/react";
 import { type RefObject, useEffect, useRef, useSyncExternalStore } from "react";
 
-const QUERY = "(prefers-reduced-motion: reduce)";
-const subscribe = (notify: () => void) => {
-  const media = window.matchMedia(QUERY);
-  media.addEventListener("change", notify);
-  return () => media.removeEventListener("change", notify);
-};
-
-/** Reduced-motion preference that hydrates cleanly: the server and first paint assume motion. */
-export function usePrefersReducedMotion(): boolean {
+/** A media query that hydrates cleanly: the server and the first paint read it as false. */
+export function useMediaQuery(query: string): boolean {
   return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(QUERY).matches,
+    (notify) => {
+      const media = window.matchMedia(query);
+      media.addEventListener("change", notify);
+      return () => media.removeEventListener("change", notify);
+    },
+    () => window.matchMedia(query).matches,
     () => false,
   );
+}
+
+/** Reduced-motion preference; the server and first paint assume motion. */
+export function usePrefersReducedMotion(): boolean {
+  return useMediaQuery("(prefers-reduced-motion: reduce)");
 }
 
 /**
