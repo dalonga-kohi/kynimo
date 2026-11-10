@@ -101,7 +101,7 @@ export interface SkippedLayer {
  */
 export interface RenderWarning {
   id: string;
-  kind: "font-fallback" | "missing-glyphs";
+  kind: "font-fallback" | "missing-glyphs" | "animator-blur";
   /** The affected characters, ascending; at most 32. */
   codepoints: number[];
   message: string;

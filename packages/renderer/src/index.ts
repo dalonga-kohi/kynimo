@@ -21,4 +21,9 @@ export * from "./images.js";
 export { contourLength, roundCorners, type TrimSettings, trimContours } from "./operators.js";
 export type * from "./raster.js";
 export { dashPattern } from "./shapes.js";
-export { applyCase, MIN_FIT_SCALE } from "./text.js";
+export {
+  applyCase,
+  MAX_ANIMATED_CLUSTERS,
+  MAX_FRAME_ANIMATED_CLUSTERS,
+  MIN_FIT_SCALE,
+} from "./text.js";

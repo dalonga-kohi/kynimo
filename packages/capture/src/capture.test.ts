@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { loadCanvasKit } from "@kynimo/renderer";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchTestCapture, testPageScript } from "./launch.test-util.js";
-import { DETERMINISM_ASSETS, DETERMINISM_SCENE } from "./scene.test-util.js";
+import { ANIMATED_TEXT_SCENE, DETERMINISM_ASSETS, DETERMINISM_SCENE } from "./scene.test-util.js";
 import {
   type CapturedFrame,
   CaptureError,
@@ -101,6 +101,26 @@ describe("captureFrames: determinism (ADR-0016)", () => {
       ]);
     }
   }, 60_000);
+});
+
+describe("captureFrames: animated text (ADR-0038)", () => {
+  const animated = (session: CaptureSession) =>
+    session.captureFrames(ANIMATED_TEXT_SCENE, [0, 8, 16, 29]);
+
+  it("draws the sweep, repeats exactly in any browser, and warns about nothing", async () => {
+    const first = await animated(capture);
+    expect(new Set(first.map((f) => f.pixelsSha256)).size).toBe(4);
+    for (const f of first) {
+      expect(f.skipped).toEqual([]);
+      expect(f.warnings).toEqual([]);
+    }
+    const fresh = await launchTestCapture();
+    try {
+      expect(hashes(await animated(fresh))).toEqual(hashes(first));
+    } finally {
+      await fresh.close();
+    }
+  }, 120_000);
 });
 
 const require = createRequire(import.meta.url);
