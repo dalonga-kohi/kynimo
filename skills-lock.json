@@ -15,6 +15,13 @@
       "computedHash": "dc19f9b4d1af690e0915b6294f390a1c30c6444148708b6b07cd64fa2e35a8db",
       "installMode": "copy"
     },
+    "pr": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/pr/SKILL.md",
+      "computedHash": "e6e63bada1f038e0b5488f8b62f77ebbd36c97669ddc5afaffcd17f974709f9a",
+      "installMode": "copy"
+    },
     "ui-ux-pro-max": {
       "source": "nextlevelbuilder/ui-ux-pro-max-skill",
       "sourceType": "github",
