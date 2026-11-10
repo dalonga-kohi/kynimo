@@ -141,6 +141,7 @@ export const textLayer = (id: string, content: string, overrides: Obj = {}) =>
     leading: prop(1.2),
     align: "left",
     textCase: "none",
+    animators: [],
     fill: prop("#ffffff"),
     ...overrides,
   });

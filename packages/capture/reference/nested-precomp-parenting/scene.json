@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 6,
   "name": "Reference: nested precomp with parenting",
   "mainCompositionId": "main",
   "style": null,
@@ -353,7 +353,8 @@
           "textCase": "none",
           "fill": {
             "value": "#c9cfe0"
-          }
+          },
+          "animators": []
         },
         {
           "id": "orbit",

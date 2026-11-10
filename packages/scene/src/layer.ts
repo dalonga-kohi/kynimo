@@ -17,6 +17,7 @@ import {
   SemverSchema,
 } from "./primitives.js";
 import { MAX_SHAPE_ITEMS, ShapeItemSchema } from "./shape.js";
+import { MAX_TEXT_ANIMATORS, TextAnimatorSchema } from "./text-animator.js";
 import { animatable, TransformSchema } from "./transform.js";
 
 /**
@@ -105,6 +106,8 @@ export const TextLayerSchema = z.strictObject({
   align: z.enum(["left", "center", "right", "justify"]),
   textCase: z.enum(["none", "upper", "lower"]),
   fill: animatable(ColorSchema),
+  /** Per-unit changes, applied in list order after layout (ADR-0038). */
+  animators: z.array(TextAnimatorSchema).max(MAX_TEXT_ANIMATORS),
 });
 
 export const ImageLayerSchema = z.strictObject({

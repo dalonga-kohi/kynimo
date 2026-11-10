@@ -21,5 +21,6 @@ export {
 } from "./selectors.js";
 export * from "./shape.js";
 export * from "./spring.js";
+export * from "./text-animator.js";
 export * from "./transform.js";
 export { SCENE_FORMAT_VERSION, type SceneFormatVersion } from "./version.js";

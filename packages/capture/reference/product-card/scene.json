@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 6,
   "name": "Reference: product card",
   "mainCompositionId": "main",
   "style": null,
@@ -90,7 +90,8 @@
           "textCase": "none",
           "fill": {
             "value": "#1b1b1f"
-          }
+          },
+          "animators": []
         },
         {
           "id": "badge",
@@ -282,7 +283,8 @@
           "textCase": "none",
           "fill": {
             "value": "#ffffff"
-          }
+          },
+          "animators": []
         },
         {
           "id": "cta",
@@ -472,7 +474,8 @@
           "textCase": "none",
           "fill": {
             "value": "#1b1b1f"
-          }
+          },
+          "animators": []
         },
         {
           "id": "meta",
@@ -555,7 +558,8 @@
           "textCase": "none",
           "fill": {
             "value": "#6b6b75"
-          }
+          },
+          "animators": []
         },
         {
           "id": "name",
@@ -657,7 +661,8 @@
           "textCase": "none",
           "fill": {
             "value": "#1b1b1f"
-          }
+          },
+          "animators": []
         },
         {
           "id": "product",

@@ -133,6 +133,7 @@ const main = {
       leading: prop(1.2),
       align: "left",
       textCase: "none",
+      animators: [],
       fill: prop("#ffffff"),
       transform: transform({ position: prop([18, 150]), opacity: track(kf(0, 0.3), kf(20, 1)) }),
       masks: [
@@ -219,3 +220,61 @@ export const DETERMINISM_SCENE = {
 export const DETERMINISM_ASSETS: ReadonlyMap<string, Uint8Array> = new Map([
   ["checker", CHECKER_PNG],
 ]);
+
+/** Kinetic type: a keyframed range sweeps characters up, tinted and rotated (ADR-0038). */
+export const ANIMATED_TEXT_SCENE = {
+  formatVersion: SCENE_FORMAT_VERSION,
+  name: "Animated text",
+  mainCompositionId: "main",
+  style: null,
+  assets: [],
+  compositions: [
+    {
+      id: "main",
+      name: "main",
+      width: 320,
+      height: 120,
+      fps: { num: 30, den: 1 },
+      durationFrames: 30,
+      background: "#0e1420",
+      markers: [],
+      layers: [
+        layer("title", "text", {
+          content: { value: "Kinetic type" },
+          box: { mode: "point" },
+          font: { family: "Inter", weight: 800, size: prop(44) },
+          tracking: prop(0),
+          leading: prop(1.2),
+          align: "left",
+          textCase: "none",
+          fill: prop("#ffffff"),
+          transform: transform({ position: prop([20, 75]) }),
+          animators: [
+            {
+              name: "rise",
+              selector: {
+                unit: "characters",
+                start: prop(0),
+                end: track(kf(0, 0), kf(20, 1)),
+                offset: prop(0),
+                shape: "ramp-up",
+                easeHigh: prop(0.3),
+                easeLow: prop(0),
+                order: "forward",
+                seed: 0,
+                amount: prop(1),
+              },
+              properties: {
+                position: prop([0, -18]),
+                rotation: prop(-15),
+                opacity: prop(0.2),
+                fill: prop("#33aaff"),
+                tracking: prop(60),
+              },
+            },
+          ],
+        }),
+      ],
+    },
+  ],
+};

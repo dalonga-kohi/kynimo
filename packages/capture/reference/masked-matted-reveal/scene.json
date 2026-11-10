@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 6,
   "name": "Reference: masked and matted reveal",
   "mainCompositionId": "main",
   "style": null,
@@ -297,7 +297,8 @@
           "textCase": "none",
           "fill": {
             "value": "#ffffff"
-          }
+          },
+          "animators": []
         },
         {
           "id": "underline",

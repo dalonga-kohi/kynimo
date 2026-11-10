@@ -57,6 +57,7 @@ const text = (family: string) => ({
   leading: { value: 1.2 },
   align: "left",
   textCase: "none",
+  animators: [],
   fill: { value: "#ffffff" },
   transform: { position: { value: [20, 60] } },
 });
