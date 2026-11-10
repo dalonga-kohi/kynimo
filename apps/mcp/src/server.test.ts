@@ -90,7 +90,7 @@ describe("MCP server", () => {
 
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
-    expect(JSON.stringify(tools).length).toBeLessThan(62_000); // 60_000 before the behavior ops
+    expect(JSON.stringify(tools).length).toBeLessThan(60_000);
   });
 
   it("describes motion with output the client validates", async () => {
@@ -229,6 +229,35 @@ describe("MCP server", () => {
       ops: [{ op: "addMask", layer: "s", mask: { name: "m", mode: "add" } }],
     });
     expect(JSON.stringify(bad.errors)).toContain('"ops",0,"mask","inverted"');
+  });
+
+  it("validates layer selectors in apply_ops on the server, though the listing declares them loosely", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    const bad = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      ops: [{ op: "updateLayer", layer: { nme: "s" }, set: { hidden: true } }],
+    });
+    expect(JSON.stringify(bad.errors)).toContain('"ops",0,"layer"');
+    const badParent = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w3",
+      ops: [{ op: "setParent", layer: "s", parent: { type: "bogus" } }],
+    });
+    expect(JSON.stringify(badParent.errors)).toContain('"ops",0,"parent"');
   });
 
   it("builds and animates a layer end to end", async () => {

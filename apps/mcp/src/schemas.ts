@@ -57,17 +57,58 @@ export const BehaviorBodySchema = z
     "A behavior without its id: { name, enabled, property, type: wiggle | oscillate | loop | inertia | link, ...parameters of that type }.",
   );
 
+/**
+ * Layer selectors in `apply_ops` ops are declared as one described id-or-selector: the full
+ * selector schema is 436 characters and every op repeated it (ADR-0030 amendment). The server still
+ * validates each op against the full `OpSchema`, so a bad selector is rejected with its exact path.
+ */
+export const CompactLayerSelectorSchema = z
+  .union([z.string(), z.looseObject({})])
+  .describe(
+    "A layer: its id, or a selector { name, type, composition } matching exactly one layer (name may use * as a wildcard).",
+  );
+
+/**
+ * Rebuilds `schema` with every `LayerSelectorSchema` inside it swapped for the compact one, found by
+ * walking objects, unions, arrays, nullable and optional wrappers, so a new op with a selector is
+ * covered without a list. Anything else passes through unchanged.
+ */
+function compactSelectors<T extends z.ZodType>(schema: T): z.ZodType {
+  const s: z.ZodType = schema;
+  if (s === (LayerSelectorSchema as z.ZodType)) return CompactLayerSelectorSchema;
+  if (s instanceof z.ZodObject) {
+    const shape: Record<string, z.ZodType> = {};
+    for (const [key, field] of Object.entries(s.shape as z.ZodRawShape))
+      shape[key] = compactSelectors(field as z.ZodType);
+    // safeExtend keeps the object's refinements; the field types change only for selectors.
+    return (s as z.ZodObject<z.ZodRawShape>).safeExtend(shape);
+  }
+  if (s instanceof z.ZodNullable) return compactSelectors(s.unwrap() as z.ZodType).nullable();
+  if (s instanceof z.ZodOptional) return compactSelectors(s.unwrap() as z.ZodType).optional();
+  if (s instanceof z.ZodArray)
+    return z
+      .array(compactSelectors(s.element as z.ZodType))
+      .check(...((s.def.checks ?? []) as never[]));
+  if (s instanceof z.ZodUnion)
+    return z.union(
+      (s.options as z.ZodType[]).map(compactSelectors) as [z.ZodType, z.ZodType, ...z.ZodType[]],
+    );
+  return s;
+}
+
 type AnyOp = (typeof OpSchema.options)[number];
 /** The op name of an option; setTransformTrack is itself a union of per-property variants. */
 const opName = (o: AnyOp): string =>
   "shape" in o ? o.shape.op.value : (o.options[0]?.shape.op.value ?? "");
-const compactOptions = OpSchema.options.map((o: AnyOp) => {
+const compactOptions = OpSchema.options.map((o: AnyOp) => compactSelectors(compactBody(o)));
+
+function compactBody(o: AnyOp) {
   const name = opName(o);
   // setTransformTrack: one variant per property, collapsed to one with a loose track.
   if (name === "setTransformTrack")
     return z.strictObject({
       op: z.literal("setTransformTrack"),
-      layer: LayerSelectorSchema,
+      layer: CompactLayerSelectorSchema,
       property: z.enum(TRANSFORM_PROPERTIES),
       track: TrackBodySchema,
     });
@@ -92,14 +133,18 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
     });
   return o;
-}) as unknown as [AnyOp, ...AnyOp[]];
+}
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set` and `addAsset.asset`,
- * which the server validates in full against `OpSchema` before anything is applied.
+ * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`
+ * and every layer selector (`layer`, `parent`, `matte.layer`, `layers[]`, `target.layer`, ...), which
+ * the server validates in full against `OpSchema` before anything is applied.
  */
-export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);
+export const CompactOpSchema = z.discriminatedUnion(
+  "op",
+  compactOptions as unknown as [AnyOp, ...AnyOp[]],
+);
 
 export const ProjectIdSchema = z
   .string()
