@@ -75,7 +75,8 @@ describe("drawStudy", () => {
     for (let f = 0; f < STUDY.frames; f++)
       if (signature(f) !== signature((f + STUDY.frames - 1) % STUDY.frames)) changes.push(f);
     for (const start of changes) {
-      const inWindow = changes.filter((f) => f >= start && f < start + STUDY.fps);
+      // Windows wrap past the end of the loop, since it plays back to back.
+      const inWindow = changes.filter((f) => (f - start + STUDY.frames) % STUDY.frames < STUDY.fps);
       expect(inWindow.length, `changes from frame ${start}: ${inWindow}`).toBeLessThanOrEqual(3);
     }
   });

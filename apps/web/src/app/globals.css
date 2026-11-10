@@ -1277,6 +1277,11 @@ button {
   .stack-toggle {
     min-height: 44px;
   }
+  .stack-toggle[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--raised);
+    color: var(--accent);
+  }
 }
 
 @media (max-width: 640px) {
