@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { PACK_LOOKS } from "@/lib/scene";
-import { drawStudy, STUDY, STUDY_POSTER, type StudyId } from "@/lib/studies";
+import { drawStudy, PACKS, STUDY, STUDY_POSTER, type StudyId } from "@/lib/studies";
 import { usePlayback } from "./usePlayback";
 
-type Pack = (typeof PACK_LOOKS)[number];
+type Pack = (typeof PACKS)[number];
 
 const LABELS: Record<StudyId, string> = {
   keynote:
@@ -19,7 +18,7 @@ const LABELS: Record<StudyId, string> = {
 };
 
 function Study({ pack }: { pack: Pack }) {
-  const id = pack.id as StudyId;
+  const { id } = pack;
   const root = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clock = useRef(0);
@@ -94,7 +93,7 @@ function Study({ pack }: { pack: Pack }) {
 export function Packs() {
   return (
     <div className="packs">
-      {PACK_LOOKS.map((pack) => (
+      {PACKS.map((pack) => (
         <Study key={pack.id} pack={pack} />
       ))}
     </div>

@@ -17,7 +17,7 @@ Status: in development. The scene format, engine, renderer and MCP server are bu
 
 ## Start here
 
-- [Landing page](${SITE_URL}/): what Kynimo is, how an assistant connects, how quality guidelines work
+- [Landing page](${SITE_URL}/): what Kynimo is, what an assistant does with it, how it connects, the style packs and the roadmap
 - [Full description for language models](${SITE_URL}/llms-full.txt): the whole page as plain text, with the tool list and FAQ
 
 ## Source and docs
@@ -56,7 +56,7 @@ It is for developers, founders and marketers who need short motion pieces (5 to 
 
 - AI video generators return pixels. Changing one word means generating again. Kynimo returns an editable scene: a word, a colour or a timing is one small operation, and every other frame stays the same.
 - Rendering is deterministic. The same document and the same frame always give the same pixels.
-- Quality is meant to be enforced by rules, not left to the model. Guideline packs encode type, colour, springs, durations, safe areas and reading time.
+- Quality is meant to be enforced by rules, not left to the model. Style packs encode type, colour, springs, durations, safe areas and reading time.
 - It is designed to be hosted: the assistant connects with one URL and OAuth, with nothing to install. The hosted endpoint is not public yet.
 
 ## How an assistant connects
@@ -71,9 +71,9 @@ Kynimo is a remote MCP server (Streamable HTTP, OAuth sign-in). ${endpoint}
 
 ${MCP_TOOLS.map((tool) => `- \`${tool}\``).join("\n")}
 
-## Quality guidelines
+## Style packs
 
-A guideline pack is a motion design system written as tokens and rules. Four draft packs (version 0.1.0) exist: Keynote, Playful SaaS, Editorial and Brutalist. Rules include \`readable-hold\`, \`safe-area\`, \`text-contrast\`, \`token-easing\`, \`concurrent-motion\`, \`min-text-size\` and \`flash-rate\`. The engine that grades a render against a pack and reports findings with suggested fixes is planned, not built.
+A style pack is a motion design system written as tokens and rules. Four draft packs (version 0.1.0) exist: Keynote, Playful SaaS, Editorial and Brutalist. Rules include \`readable-hold\`, \`safe-area\`, \`text-contrast\`, \`token-easing\`, \`concurrent-motion\`, \`min-text-size\` and \`flash-rate\`. The engine that grades a render against a pack and reports findings with suggested fixes is planned, not built.
 
 ## What runs today
 

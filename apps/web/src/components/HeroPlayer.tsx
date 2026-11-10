@@ -11,7 +11,6 @@ import {
 import {
   DEFAULT_CAPTION,
   DEFAULT_TITLE,
-  KYNIMO_LOOK,
   OUT_FRAME,
   SCENE,
   type SceneState,
@@ -20,15 +19,7 @@ import {
 import { SceneCanvas, type SceneCanvasHandle } from "./SceneCanvas";
 import { usePlayback } from "./usePlayback";
 
-const STATE: SceneState = {
-  look: KYNIMO_LOOK,
-  title: DEFAULT_TITLE,
-  caption: DEFAULT_CAPTION,
-  layers: 4,
-  animated: true,
-  fixed: true,
-  echoes: true,
-};
+const STATE: SceneState = { title: DEFAULT_TITLE, caption: DEFAULT_CAPTION };
 
 const TRACKS = [
   { name: "mark", kind: "shape", start: 6 },
@@ -37,9 +28,10 @@ const TRACKS = [
   { name: "caption", kind: "text", start: 54 },
 ] as const;
 
-const END = OUT_FRAME.fixed + 10;
+const END = OUT_FRAME + 10;
 const REST = 100;
 const pct = (frame: number) => `${(frame / SCENE.frames) * 100}%`;
+const valueText = (frame: number) => `Frame ${Math.round(frame)}, ${timecode(frame)}`;
 
 /** The hero: one finished scene, playing, with the timeline it is made of. Drawn live. */
 export function HeroPlayer() {
@@ -54,13 +46,14 @@ export function HeroPlayer() {
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
 
-  const show = useCallback((frame: number) => {
+  /** `announce` writes the slider value too; playback leaves it alone so screen readers stay quiet. */
+  const show = useCallback((frame: number, announce = false) => {
     frameNow.current = frame;
     canvas.current?.draw(frame);
     const el = track.current;
-    if (el) {
+    if (el && announce) {
       el.setAttribute("aria-valuenow", String(Math.round(frame)));
-      el.setAttribute("aria-valuetext", `Frame ${Math.round(frame)}, ${timecode(frame)}`);
+      el.setAttribute("aria-valuetext", valueText(frame));
     }
     if (playhead.current) playhead.current.style.left = pct(frame);
     if (readout.current)
@@ -70,6 +63,7 @@ export function HeroPlayer() {
   const pause = (value: boolean) => {
     pausedRef.current = value;
     setPaused(value);
+    if (value) show(frameNow.current, true);
   };
 
   const moving = usePlayback(root, (delta) => {
@@ -80,7 +74,7 @@ export function HeroPlayer() {
 
   // Without motion the finished frame is shown; the timeline still scrubs.
   useEffect(() => {
-    if (!moving) show(REST);
+    if (!moving) show(REST, true);
   }, [moving, show]);
 
   const scrubTo = (event: PointerEvent<HTMLDivElement>) => {
@@ -90,20 +84,31 @@ export function HeroPlayer() {
     const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
     const frame = Math.round(ratio * (SCENE.frames - 1));
     clock.current = (frame / SCENE.fps) * 1000;
-    show(frame);
+    show(frame, true);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const dir = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (!dir) return;
+    const now = Math.round(frameNow.current);
+    const big = event.shiftKey ? 10 : 1;
+    const last = SCENE.frames - 1;
+    const target: Record<string, number> = {
+      ArrowRight: now + big,
+      ArrowUp: now + big,
+      ArrowLeft: now - big,
+      ArrowDown: now - big,
+      PageUp: now + 10,
+      PageDown: now - 10,
+      Home: 0,
+      End: last,
+    };
+    const goal = target[event.key];
+    if (goal === undefined) return;
     event.preventDefault();
+    // Stepping by hand holds the frame until the visitor presses Play.
     pause(true);
-    const next = Math.min(
-      SCENE.frames - 1,
-      Math.max(0, Math.round(frameNow.current) + dir * (event.shiftKey ? 10 : 1)),
-    );
+    const next = Math.min(last, Math.max(0, goal));
     clock.current = (next / SCENE.fps) * 1000;
-    show(next);
+    show(next, true);
   };
 
   return (
@@ -151,6 +156,7 @@ export function HeroPlayer() {
           aria-valuemin={0}
           aria-valuemax={SCENE.frames - 1}
           aria-valuenow={REST}
+          aria-valuetext={valueText(REST)}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             e.currentTarget.setPointerCapture(e.pointerId);

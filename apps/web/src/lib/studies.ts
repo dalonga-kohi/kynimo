@@ -3,8 +3,10 @@
  * (frame) → pixels in a 1920 × 1080 scene: no clock, no Math.random. Randomness comes from a
  * seeded generator, so the same frame always draws the same picture.
  *
- * Colours are each pack's own tokens (packages/guidelines/src/packs). The studies are drawn
- * by hand for this page; they show the character of a pack, not output of the engine.
+ * Colours, springs and staggers come from each pack's tokens (packages/guidelines/src/packs,
+ * 0.1.0). Type is simplified: the packs share one family today, and the studies add the
+ * page's mono for labels. The studies are drawn by hand for this page; they show the
+ * character of a pack, not output of the engine.
  */
 
 import { type Spring, springValue } from "./scene";
@@ -49,9 +51,11 @@ const mono = (size: number) => `${size}px "Geist Mono Variable", ui-monospace, m
 
 type Ctx = CanvasRenderingContext2D;
 
+/** A rounded rectangle path; square corners where the browser has no roundRect (Firefox < 112). */
 function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, r);
+  if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
 }
 
 /* Keynote: calm, one idea at a time, springs that never bounce. */
@@ -167,7 +171,7 @@ const SHAPES = [
 
 const CONFETTI = (() => {
   const next = seeded(7);
-  const colors = [PLAYFUL.accent, PLAYFUL.alt, PLAYFUL.text, "#ffc24b"];
+  const colors = [PLAYFUL.accent, PLAYFUL.alt, PLAYFUL.text, PLAYFUL.muted];
   return Array.from({ length: 44 }, () => ({
     vx: (next() - 0.5) * 1500,
     vy: -500 - next() * 900,
@@ -181,7 +185,7 @@ const CONFETTI = (() => {
 function shape(ctx: Ctx, kind: string, size: number) {
   ctx.beginPath();
   if (kind === "circle") ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
-  else if (kind === "pill") ctx.roundRect(-size / 2, -size / 5, size, (size * 2) / 5, size / 5);
+  else if (kind === "pill") roundRect(ctx, -size / 2, -size / 5, size, (size * 2) / 5, size / 5);
   else if (kind === "triangle") {
     ctx.moveTo(0, -size / 2);
     ctx.lineTo(size / 2, size / 2.4);
@@ -368,7 +372,7 @@ function editorial(ctx: Ctx, f: number) {
   // Masthead and its rule.
   ctx.globalAlpha = fade(f, 14) * out;
   ctx.fillStyle = EDITORIAL.text;
-  ctx.font = mono(22);
+  ctx.font = mono(24);
   ctx.fillText("NO. 04 — THE MOTION ISSUE", 120, 96);
   ctx.textAlign = "right";
   ctx.fillText("KYNIMO / EDITORIAL", 1800, 96);
@@ -421,7 +425,7 @@ function editorial(ctx: Ctx, f: number) {
   // A folio at the foot of the page.
   ctx.globalAlpha = fade(f, 170) * out;
   ctx.fillStyle = EDITORIAL.accent;
-  ctx.font = mono(22);
+  ctx.font = mono(24);
   ctx.fillText("p. 27", 820, 960);
   ctx.globalAlpha = 1;
 }
@@ -452,21 +456,18 @@ function brutalist(ctx: Ctx, f: number) {
     ctx.fillStyle = BRUTAL.accent;
     ctx.fillRect(160, 860, 1600, 40);
   } else if (f < 120) {
-    // A black slab slams in from the left: linear, six frames, no ease.
-    const slab = 960 * progress(f, 40, 6);
+    // A black slab, cut in on the same frame LOUD cuts out: one change, not two.
     ctx.fillStyle = BRUTAL.text;
-    ctx.fillRect(0, 0, slab, STUDY.height);
-    if (f >= 46) {
-      ctx.fillStyle = BRUTAL.bg;
-      ctx.font = sans(900, 300, true);
-      ctx.fillText("NO", 480, 470);
-      ctx.fillStyle = BRUTAL.accent;
-      ctx.font = sans(900, 120, true);
-      ctx.fillText("EASE", 480, 720);
-    }
+    ctx.fillRect(0, 0, 960, STUDY.height);
+    ctx.fillStyle = BRUTAL.bg;
+    ctx.font = sans(900, 300, true);
+    ctx.fillText("NO", 480, 470);
+    ctx.fillStyle = BRUTAL.accent;
+    ctx.font = sans(900, 120, true);
+    ctx.fillText("EASE", 480, 720);
     // A grid of red squares, one more every two frames.
     for (let k = 0; k < 16; k++) {
-      if (f < 52 + k * 2) break;
+      if (f < 44 + k * 2) break;
       const col = k % 4;
       const row = Math.floor(k / 4);
       ctx.fillStyle = k === 9 ? BRUTAL.alt : BRUTAL.accent;
@@ -484,7 +485,7 @@ function brutalist(ctx: Ctx, f: number) {
     ctx.fillStyle = BRUTAL.bg;
     ctx.font = mono(34);
     ctx.textAlign = "left";
-    ctx.fillText("LINEAR 200 MS · STAGGER 67 MS · NO SPRINGS", 40, 860);
+    ctx.fillText("LINEAR 200 MS · STAGGER 67 MS", 40, 860);
   } else if (f < 264) {
     // Split frame.
     ctx.fillStyle = BRUTAL.text;
@@ -509,6 +510,44 @@ function brutalist(ctx: Ctx, f: number) {
     ctx.fillText(counter, 48, 60);
   }
 }
+
+/** The four draft packs as the page shows them. Accents are the studies' own palettes. */
+export const PACKS: readonly {
+  id: StudyId;
+  name: string;
+  accent: string;
+  summary: string;
+  tokens: string;
+}[] = [
+  {
+    id: "keynote",
+    name: "Keynote",
+    accent: KEYNOTE.accent,
+    summary: "Calm and confident. One idea at a time, long holds, springs that never bounce.",
+    tokens: "spring 1.0 / 0.7 s · stagger 100 ms",
+  },
+  {
+    id: "playful-saas",
+    name: "Playful SaaS",
+    accent: PLAYFUL.accent,
+    summary: "Friendly and quick. Bright accents, tight staggers, springs that bounce once.",
+    tokens: "spring 0.5 / 0.45 s · stagger 65 ms",
+  },
+  {
+    id: "editorial",
+    name: "Editorial",
+    accent: EDITORIAL.accent,
+    summary: "Measured, like a magazine spread in motion. Light type, slow fades, a strict grid.",
+    tokens: "fade 800 ms · stagger 140 ms",
+  },
+  {
+    id: "brutalist",
+    name: "Brutalist",
+    accent: BRUTAL.accent,
+    summary: "Loud and blunt. Nothing eases in. Things appear and stop.",
+    tokens: "linear 200 ms · stagger 67 ms",
+  },
+];
 
 const DRAW: Record<StudyId, (ctx: Ctx, frame: number) => void> = {
   keynote,

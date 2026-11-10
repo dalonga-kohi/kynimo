@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KYNIMO_LOOK, OUT_FRAME, PACK_LOOKS, poseAt, springValue, timecode } from "./scene";
+import { LOOK, OUT_FRAME, poseAt, springValue, timecode } from "./scene";
 
 describe("springValue", () => {
   it("starts at 0 and settles at 1", () => {
@@ -23,30 +23,19 @@ describe("springValue", () => {
 
 describe("poseAt", () => {
   it("is a pure function of the frame", () => {
-    const a = poseAt(20, 6, OUT_FRAME.fixed, KYNIMO_LOOK, "x");
-    const b = poseAt(20, 6, OUT_FRAME.fixed, KYNIMO_LOOK, "x");
-    expect(a).toEqual(b);
+    expect(poseAt(20, 6, OUT_FRAME, "x")).toEqual(poseAt(20, 6, OUT_FRAME, "x"));
   });
 
   it("is hidden before its start, at rest once settled, gone after the out frame", () => {
-    const before = poseAt(0, 6, OUT_FRAME.fixed, KYNIMO_LOOK, "x");
+    const before = poseAt(0, 6, OUT_FRAME, "x");
     expect(before.opacity).toBe(0);
-    expect(before.dx).toBe(KYNIMO_LOOK.travel);
+    expect(before.dx).toBe(LOOK.travel);
 
-    const rest = poseAt(100, 6, OUT_FRAME.fixed, KYNIMO_LOOK, "x");
+    const rest = poseAt(100, 6, OUT_FRAME, "x");
     expect(rest.opacity).toBe(1);
     expect(Math.abs(rest.dx)).toBeLessThan(0.5);
 
-    const gone = poseAt(OUT_FRAME.fixed + 10, 6, OUT_FRAME.fixed, KYNIMO_LOOK, "x");
-    expect(gone.opacity).toBe(0);
-  });
-
-  it("cuts instead of easing in the brutalist pack", () => {
-    const brutalist = PACK_LOOKS.find((p) => p.id === "brutalist");
-    if (!brutalist) throw new Error("brutalist pack missing");
-    expect(poseAt(5, 6, 132, brutalist, "x").opacity).toBe(0);
-    expect(poseAt(6, 6, 132, brutalist, "x").opacity).toBe(1);
-    expect(poseAt(133, 6, 132, brutalist, "x").opacity).toBe(0);
+    expect(poseAt(OUT_FRAME + 10, 6, OUT_FRAME, "x").opacity).toBe(0);
   });
 });
 

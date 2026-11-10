@@ -27,14 +27,12 @@ const TOUCH = "(max-width: 900px), (pointer: coarse)";
 /**
  * One frame, flat, that comes apart into the layers it is made of. With a mouse the page's
  * scroll drives it. On touch screens a long pinned scroll fights the finger, so it opens by
- * itself once it is in view and a button flattens or opens it again.
+ * itself once it is in view, and a toggle button flattens or opens it again.
  */
 export function LayerStack() {
   const ref = useRef<HTMLDivElement>(null);
   const reduced = usePrefersReducedMotion();
   const touch = useMediaQuery(TOUCH);
-  const touchRef = useRef(touch);
-  touchRef.current = touch;
 
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.3", "end end"] });
   const opened = useMotionValue(0);
@@ -56,7 +54,7 @@ export function LayerStack() {
   }, [touch, open, reduced, opened]);
 
   const p = useTransform([scrollYProgress, opened], ([scroll, tapped]) => {
-    if (touchRef.current) return tapped as number;
+    if (touch) return tapped as number;
     if (reduced) return 1;
     // Ease the scroll into a settle: fast at first, slow as the layers land.
     return 1 - (1 - Math.min(1, Math.max(0, (scroll as number) / 0.85))) ** 3;
@@ -88,7 +86,7 @@ export function LayerStack() {
         <div className="stack-readout" aria-hidden="true">
           <motion.span style={{ opacity: flatLabel }}>launch-teaser.mp4 · 1 flat file</motion.span>
           <motion.span style={{ opacity: openLabel }}>
-            launch-teaser · 5 layers, all editable
+            launch-teaser · 4 layers on a background, all editable
           </motion.span>
         </div>
       </motion.div>
@@ -99,7 +97,7 @@ export function LayerStack() {
           aria-pressed={open}
           onClick={() => setOpen(!open)}
         >
-          {open ? "Flatten the frame" : "Show the layers"}
+          Show the layers
         </button>
       )}
       <ul className="sr-only">

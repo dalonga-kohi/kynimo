@@ -11,7 +11,7 @@ export const SITE_URL = trimSlash(process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SI
 
 /**
  * The hosted MCP endpoint. Unset until the server is deployed: the page then shows a
- * reserved `.example` host and no copy button, so nobody pastes a URL we don't control.
+ * reserved `.example` host, which can never resolve, with a note that it is a placeholder.
  */
 export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL
   ? trimSlash(process.env.NEXT_PUBLIC_MCP_URL)

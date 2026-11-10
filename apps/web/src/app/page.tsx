@@ -191,8 +191,8 @@ export default function Home() {
                 Four styles. Four different films.
               </h2>
               <p className="lede">
-                A style pack is a motion design system: typeface, palette, springs and timing. Same
-                engine, same ten seconds, and each pack moves like nothing else on the list.
+                A style pack is a motion design system: palette, springs, staggers and timing. Each
+                one gets a ten-second study here, drawn to show how differently the packs move.
               </p>
             </header>
             <Packs />
@@ -209,9 +209,12 @@ export default function Home() {
                 No launch countdown. Here is what runs today and what comes next, in order.
               </p>
             </header>
-            <ol className="roadmap" style={{ "--today": TODAY } as React.CSSProperties}>
+            <ol
+              className="roadmap"
+              style={{ "--today": TODAY, "--n": ROADMAP.length } as React.CSSProperties}
+            >
               <li className="roadmap-head" aria-hidden="true">
-                <span>Runs today</span>
+                <span>Milestone</span>
                 <span className="roadmap-lane">
                   <b>Today</b>
                   <span>Next</span>

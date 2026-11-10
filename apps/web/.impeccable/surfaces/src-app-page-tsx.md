@@ -7,7 +7,7 @@ related_targets: []
 
 Scope: Kynimo landing (Persuade). Redesigned on 2026-11-10 at the user's request: fewer pseudo-demos, one coherent composition, direct copy. The palette, Mona Sans / Geist Mono, the K mark and the dither field are kept. The scroll-as-playhead concept was offered and declined; its 3D layer stack and roadmap-as-track ideas were kept.
 
-Audience: developers, indie founders and marketers who already work with an AI assistant. Action: follow the public repo (no app or sign-up yet). Proof: one scene drawn live, the layers it is made of, real MCP tool names, real pack rules with sources, the roadmap.
+Audience: developers, indie founders and marketers who already work with an AI assistant. Action: follow the public repo (no app or sign-up yet). Proof: one scene drawn live, the layers it is made of, real MCP tool names, one study per real draft pack, the roadmap.
 
 ## Direction contract
 
