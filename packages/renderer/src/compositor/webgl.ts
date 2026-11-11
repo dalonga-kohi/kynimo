@@ -1,4 +1,17 @@
-import type { FramePlan, PlannedLayer, RasterImage } from "../raster.js";
+import type { ResolvedEffect, Rgba } from "@kynimo/engine";
+import type {
+  CoverageImage,
+  FramePlan,
+  PlannedAdjustmentLayer,
+  PlannedLayer,
+  RasterImage,
+} from "../raster.js";
+import {
+  effectPadding,
+  effectSamples,
+  gaussianWeights,
+  MAX_FRAME_EFFECT_SAMPLES,
+} from "./effects.js";
 import {
   BLEND_MODE_IDS,
   invert,
@@ -9,7 +22,7 @@ import {
   placement,
   precompUses,
 } from "./pipeline.js";
-import { BLEND, DOWNSAMPLE, FINAL, PLACE, PREPARE, VERTEX } from "./shaders.js";
+import { BLEND, DOWNSAMPLE, EFFECT, FINAL, GAUSSIAN, PLACE, PREPARE, VERTEX } from "./shaders.js";
 
 /** Thrown when the WebGL2 context cannot run the compositor (missing float render targets, sizes). */
 export class CompositorError extends Error {
@@ -56,10 +69,15 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     built.push(p);
     return p;
   };
-  let programs: Record<"prepare" | "downsample" | "place" | "blend" | "final", Program>;
+  let programs: Record<
+    "prepare" | "gaussian" | "effect" | "downsample" | "place" | "blend" | "final",
+    Program
+  >;
   try {
     programs = {
       prepare: program(PREPARE),
+      gaussian: program(GAUSSIAN),
+      effect: program(EFFECT),
       downsample: program(DOWNSAMPLE),
       place: program(PLACE),
       blend: program(BLEND),
@@ -136,9 +154,122 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
 
     const nested = new Map<FramePlan, Target>();
     const uses = precompUses(plan);
+    let remainingEffectSamples = MAX_FRAME_EFFECT_SAMPLES;
+    const chargeEffects = (
+      width: number,
+      height: number,
+      effects: readonly ResolvedEffect[],
+      id: string,
+    ) => {
+      const samples = effects.reduce((sum, effect) => sum + effectSamples(effect), 0);
+      remainingEffectSamples -= width * height * samples;
+      if (remainingEffectSamples < 0)
+        throw new CompositorError(
+          `layer '${id}' exceeds the frame budget of ${MAX_FRAME_EFFECT_SAMPLES} effect samples; reduce the radius, layer size or number of effects`,
+        );
+    };
 
-    /** The layer's raster (or composited precomp) times its mask, RGBA16F at raster size. */
-    const prepare = (layer: PlannedLayer): Target => {
+    const uploadMask = (mask: CoverageImage | null): Target | null =>
+      mask === null
+        ? null
+        : track(
+            makeTexture(
+              gl,
+              mask.width,
+              mask.height,
+              gl.R8,
+              gl.RED,
+              gl.UNSIGNED_BYTE,
+              mask.coverage,
+            ),
+            mask.width,
+            mask.height,
+          );
+
+    const gaussian = (src: Target, radius: number): Target => {
+      if (radius === 0) return src;
+      const weights = new Float32Array(gaussianWeights(radius));
+      const tmp = target(src.width, src.height);
+      const out = target(src.width, src.height);
+      const blur = (from: Target, into: Target, x: number, y: number) =>
+        pass(programs.gaussian, into, [["u_src", from.texture]], (u) => {
+          gl.uniform2i(u("u_axis"), x, y);
+          gl.uniform1i(u("u_radius"), weights.length - 1);
+          gl.uniform1fv(u("u_weights[0]"), weights);
+        });
+      blur(src, tmp, 1, 0);
+      blur(tmp, out, 0, 1);
+      free(tmp);
+      return out;
+    };
+
+    const applyEffect = (src: Target, effect: ResolvedEffect): Target => {
+      if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
+      const blurred = "radius" in effect ? gaussian(src, effect.radius) : src;
+      const out = target(src.width, src.height);
+      pass(
+        programs.effect,
+        out,
+        [
+          ["u_src", src.texture],
+          ["u_blur", blurred.texture],
+        ],
+        (u) => {
+          const mode = (id: number) => gl.uniform1i(u("u_mode"), id);
+          const params = (x: number, y: number) => gl.uniform2f(u("u_params"), x, y);
+          const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
+          const amount = (value: number) => gl.uniform1f(u("u_amount"), value);
+          switch (effect.type) {
+            case "drop-shadow":
+              mode(1);
+              params(...effect.offset);
+              color("u_color", effect.color);
+              amount(effect.opacity);
+              break;
+            case "glow":
+              mode(2);
+              color("u_color", effect.color);
+              amount(effect.intensity);
+              break;
+            case "brightness-contrast":
+              mode(3);
+              params(effect.brightness, effect.contrast);
+              break;
+            case "hue-saturation":
+              mode(4);
+              params(effect.hue, effect.saturation);
+              break;
+            case "tint":
+              mode(5);
+              color("u_color", effect.black);
+              color("u_white", effect.white);
+              amount(effect.amount);
+              break;
+            case "fill":
+              mode(6);
+              color("u_color", effect.color);
+              amount(effect.amount);
+              break;
+          }
+        },
+      );
+      if (blurred !== src) free(blurred);
+      return out;
+    };
+
+    /** The original target belongs to the caller. Intermediates are freed after their last read. */
+    const filter = (src: Target, effects: readonly ResolvedEffect[]): Target => {
+      let out = src;
+      for (const effect of effects) {
+        const next = applyEffect(out, effect);
+        if (out !== src && out !== next) free(out);
+        out = next;
+      }
+      return out;
+    };
+
+    /** The masked raster or precomp, with room for effects before placement. */
+    const prepare = (layer: PlannedLayer, padding: [number, number]): Target => {
       let src: Target;
       let owned = false;
       if (layer.type === "precomp") {
@@ -153,23 +284,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         src = upload(layer.raster);
         owned = true;
       }
-      const out = target(src.width, src.height);
-      const mask =
-        layer.mask === null
-          ? null
-          : track(
-              makeTexture(
-                gl,
-                layer.mask.width,
-                layer.mask.height,
-                gl.R8,
-                gl.RED,
-                gl.UNSIGNED_BYTE,
-                layer.mask.coverage,
-              ),
-              layer.mask.width,
-              layer.mask.height,
-            );
+      const [x, y] = padding;
+      const width = src.width + 2 * x;
+      const height = src.height + 2 * y;
+      const effects = layer.effects ?? [];
+      chargeEffects(width, height, effects, layer.id);
+      const out = target(width, height);
+      const mask = uploadMask(layer.mask);
       pass(
         programs.prepare,
         out,
@@ -177,11 +298,16 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           ["u_src", src.texture],
           ["u_mask", mask?.texture ?? empty],
         ],
-        (u) => gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1),
+        (u) => {
+          gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
+          gl.uniform2i(u("u_pad"), x, y);
+        },
       );
       if (mask !== null) free(mask);
       if (owned) free(src);
-      return out;
+      const effected = filter(out, effects);
+      if (effected !== out) free(out);
+      return effected;
     };
 
     /** The layer placed in composition space with matte and opacity, before blending. */
@@ -190,8 +316,9 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       let below: Target | null = null;
       for (let i = chain.length - 1; i >= 0; i--) {
         const current = chain[i] as PlannedLayer;
-        const src = prepare(current);
-        const inv = invert(placement(current));
+        const padding = effectPadding(current.effects ?? []);
+        const src = prepare(current, padding);
+        const inv = invert(placement(current, padding));
         const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
         const k = Math.floor(lod);
         const top = Math.min(k + 1, maxLevel(src.width, src.height));
@@ -235,6 +362,38 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return below as Target;
     };
 
+    const adjust = (layer: PlannedAdjustmentLayer, acc: Target): Target => {
+      const { width, height } = acc;
+      chargeEffects(width, height, layer.effects, layer.id);
+      const src = filter(acc, layer.effects);
+      const source = layer.matte?.source;
+      const matte = source == null ? null : placed(source, width, height);
+      const mask = uploadMask(layer.mask);
+      const out = target(width, height);
+      pass(
+        programs.blend,
+        out,
+        [
+          ["u_backdrop", acc.texture],
+          ["u_source", src.texture],
+          ["u_mask", mask?.texture ?? empty],
+          ["u_matte", matte?.texture ?? empty],
+        ],
+        (u) => {
+          gl.uniform1i(u("u_adjustment"), 1);
+          gl.uniform1i(u("u_mode"), BLEND_MODE_IDS[layer.blendMode]);
+          gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
+          gl.uniform1i(u("u_matteMode"), layer.matte === null ? 0 : MATTE_MODES[layer.matte.mode]);
+          gl.uniform1i(u("u_matteEmpty"), matte === null ? 1 : 0);
+          gl.uniform1f(u("u_opacity"), layer.opacity);
+        },
+      );
+      if (src !== acc) free(src);
+      if (matte !== null) free(matte);
+      if (mask !== null) free(mask);
+      return out;
+    };
+
     /** Composites a plan into a fresh RGBA16F target of its size (no background). */
     const compositeFloat = (frame: FramePlan): Target => {
       let acc = target(frame.width, frame.height);
@@ -242,6 +401,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       for (let i = frame.layers.length - 1; i >= 0; i--) {
         const layer = frame.layers[i];
         if (layer === undefined) continue;
+        if (layer.type === "adjustment") {
+          if (layer.effects.length === 0) continue;
+          const next = adjust(layer, acc);
+          free(acc);
+          acc = next;
+          continue;
+        }
         const src = placed(layer, frame.width, frame.height);
         const next = target(frame.width, frame.height);
         pass(
@@ -250,8 +416,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           [
             ["u_backdrop", acc.texture],
             ["u_source", src.texture],
+            ["u_mask", empty],
+            ["u_matte", empty],
           ],
-          (u) => gl.uniform1i(u("u_mode"), BLEND_MODE_IDS[layer.blendMode]),
+          (u) => {
+            gl.uniform1i(u("u_adjustment"), 0);
+            gl.uniform1i(u("u_mode"), BLEND_MODE_IDS[layer.blendMode]);
+          },
         );
         free(src);
         free(acc);

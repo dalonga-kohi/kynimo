@@ -34,10 +34,15 @@ export const union = (a: Rect, b: Rect): Rect => [
  * Whole-pixel `[x0, y0, x1, y1]` covering composition-space `bounds` plus anti-aliasing room,
  * clipped to the `width × height` composition; `null` when nothing is left.
  */
-export function cropToComposition(bounds: Rect, width: number, height: number): Rect | null {
-  const x0 = Math.max(0, Math.floor(bounds[0] - AA_PAD));
-  const y0 = Math.max(0, Math.floor(bounds[1] - AA_PAD));
-  const x1 = Math.min(width, Math.ceil(bounds[2] + AA_PAD));
-  const y1 = Math.min(height, Math.ceil(bounds[3] + AA_PAD));
+export function cropToComposition(
+  bounds: Rect,
+  width: number,
+  height: number,
+  [padX, padY] = [0, 0],
+): Rect | null {
+  const x0 = Math.max(-padX, Math.floor(bounds[0] - AA_PAD));
+  const y0 = Math.max(-padY, Math.floor(bounds[1] - AA_PAD));
+  const x1 = Math.min(width + padX, Math.ceil(bounds[2] + AA_PAD));
+  const y1 = Math.min(height + padY, Math.ceil(bounds[3] + AA_PAD));
   return x1 <= x0 || y1 <= y0 ? null : [x0, y0, x1, y1];
 }

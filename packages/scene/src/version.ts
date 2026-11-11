@@ -26,10 +26,12 @@
  * 7: behaviors on transform properties (ADR-0039). The step from 6 adds an empty `behaviors` list
  *    to every layer with a transform, which evaluates exactly as version 6 did.
  *
+ * 8: built-in effects. The step from 7 adds an empty effect stack to drawn layers.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 7 as const;
+export const SCENE_FORMAT_VERSION = 8 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;

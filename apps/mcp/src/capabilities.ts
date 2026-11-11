@@ -2,6 +2,8 @@ import {
   BEHAVIOR_LIMITS,
   BEHAVIOR_SUPPORT,
   BLEND_MODE_SUPPORT,
+  EFFECT_LIMITS,
+  EFFECT_SUPPORT,
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
@@ -60,9 +62,6 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  effects: unavailable(
-    "blur, drop shadow, glow, color effects and adjustment layers that use them arrive in M4",
-  ),
   svg_import: unavailable("SVG import arrives in M4; draw with shape layers"),
   shaders: unavailable("built-in shader effects arrive in M4; custom GLSL in M6"),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
@@ -100,8 +99,13 @@ export function capabilityManifest(server: { name: string; version: string }) {
       track_matte_modes: MATTE_MODE_SUPPORT,
       text_animator_properties: TEXT_ANIMATOR_SUPPORT,
       behaviors: BEHAVIOR_SUPPORT,
+      effects: EFFECT_SUPPORT,
     },
-    limits: { text_animators: TEXT_ANIMATOR_LIMITS, behaviors: BEHAVIOR_LIMITS },
+    limits: {
+      text_animators: TEXT_ANIMATOR_LIMITS,
+      behaviors: BEHAVIOR_LIMITS,
+      effects: EFFECT_LIMITS,
+    },
     assets: ASSET_SUPPORT,
     render: {
       tools: ["render_frames", "render_contact_sheet"],

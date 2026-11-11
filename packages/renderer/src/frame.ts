@@ -8,12 +8,14 @@ import {
 import type { CanvasKit } from "canvaskit-wasm";
 import { FrameShapeWork, MAX_FRAME_SHAPE_WORK } from "./binding.js";
 import { LAYER_SUPPORT } from "./capabilities.js";
+import { activeEffect } from "./compositor/effects.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary, VideoFrameLibrary } from "./images.js";
 import { rasterizeMasks } from "./masks.js";
 import type {
   FramePlan,
+  PlannedFrameLayer,
   PlannedLayer,
   RasterImage,
   RenderWarning,
@@ -32,7 +34,7 @@ import {
 export { RenderError };
 
 /** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
-function notYet(type: "adjustment" | "component"): string {
+function notYet(type: "component"): string {
   const support = LAYER_SUPPORT[type];
   if (support.status !== "accepted")
     throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
@@ -114,9 +116,17 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const warnings: RenderWarning[] = [];
 
   /** The layer's pixels without masks or matte; `null` when it draws nothing. */
-  const planContent = (layer: ResolvedLayer): PlannedLayer | null => {
+  const planContent = (layer: ResolvedLayer): PlannedFrameLayer | null => {
     const { id, blendMode } = layer;
-    const base = { id, opacity: layer.transform.opacity, blendMode, mask: null, matte: null };
+    const effects = layer.effects.filter(activeEffect);
+    const base = {
+      id,
+      opacity: layer.transform.opacity,
+      blendMode,
+      mask: null,
+      matte: null,
+      ...(effects.length > 0 ? { effects } : {}),
+    };
     switch (layer.type) {
       case "shape": {
         const drawn = rasterizeShapeLayer(
@@ -179,6 +189,9 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         return { ...base, type: "precomp", space: "layer", matrix: layer.matrix, frame };
       }
       case "adjustment":
+        return effects.length > 0 && base.opacity > 0
+          ? { ...base, type: "adjustment", effects }
+          : null;
       case "component":
         skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
         return null;
@@ -186,8 +199,8 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   };
 
   /** Planned once per layer: a layer that is both drawn and a matte source is one object. */
-  const planned = new Map<string, PlannedLayer | null>();
-  const plan = (layer: ResolvedLayer): PlannedLayer | null => {
+  const planned = new Map<string, PlannedFrameLayer | null>();
+  const plan = (layer: ResolvedLayer): PlannedFrameLayer | null => {
     if (planned.has(layer.id)) return planned.get(layer.id) ?? null;
     const blocker = undrawableMatteSource(layer);
     if (blocker !== null) {
@@ -202,7 +215,10 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     }
     let result = planContent(layer);
     if (result !== null && layer.masks.length > 0) {
-      const { width, height, toRaster } = rasterSpace(result, layer.matrix);
+      const { width, height, toRaster } =
+        result.type === "adjustment"
+          ? { width: comp.width, height: comp.height, toRaster: layer.matrix }
+          : rasterSpace(result, layer.matrix);
       const mask = rasterizeMasks(ck, layer.masks, toRaster, width, height, reserve);
       if (mask === "empty") result = null;
       else result.mask = mask;
@@ -211,8 +227,8 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     return result;
   };
 
-  const layers: PlannedLayer[] = [];
-  const pending: { resolved: ResolvedLayer; planned: PlannedLayer }[] = [];
+  const layers: PlannedFrameLayer[] = [];
+  const pending: { resolved: ResolvedLayer; planned: PlannedFrameLayer }[] = [];
   for (const layer of comp.layers) {
     const result = plan(layer);
     if (result === null) continue;
@@ -226,7 +242,8 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     let source: PlannedLayer | null = null;
     if (matte.source !== null) {
       const known = planned.has(matte.source.id);
-      source = plan(matte.source);
+      const result = plan(matte.source);
+      source = result?.type === "adjustment" ? null : result;
       if (!known && source !== null) pending.push({ resolved: matte.source, planned: source });
     }
     next.planned.matte = { layerId: matte.layerId, mode: matte.mode, source };
@@ -248,7 +265,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
  */
 function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
   for (let s = layer.matte?.source ?? null; s !== null; s = s.matte?.source ?? null)
-    if (s.type === "adjustment" || s.type === "component") return s;
+    if (s.type === "component") return s;
   return null;
 }
 

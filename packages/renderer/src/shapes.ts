@@ -1,6 +1,7 @@
 import { type Affine, multiply, type ResolvedPaint, type ResolvedShapeLayer } from "@kynimo/engine";
 import type { CanvasKit, Paint, Path } from "canvaskit-wasm";
 import { bindPaints, FrameShapeWork, type PaintItem, type PaintOp } from "./binding.js";
+import { effectPadding } from "./compositor/effects.js";
 import type { RasterImage } from "./raster.js";
 import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
 import { buildPath, type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
@@ -37,7 +38,7 @@ export function rasterizeShapeLayer(
       bounds = bounds === null ? box : union(bounds, box);
     }
     if (bounds === null) return null;
-    const crop = cropToComposition(bounds, width, height);
+    const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);

@@ -1,4 +1,4 @@
-import { sampleNumber } from "@kynimo/engine";
+import { evaluateFrame, sampleNumber } from "@kynimo/engine";
 import { keynote } from "@kynimo/guidelines";
 import type { Animatable } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
@@ -81,6 +81,7 @@ const FIXTURE_TYPES_BY_PRESET = (p: (typeof PRESETS)[number]) =>
 describe("preset catalog", () => {
   it("has stable ids in order", () => {
     expect(presetCatalog().map((p) => p.id)).toEqual([
+      "blur-in",
       "fade-in",
       "fade-up",
       "scale-in",
@@ -195,6 +196,32 @@ describe("enter and exit timing", () => {
       start_frames: [20],
       duration_frames: [15],
       easing: { type: "linear" },
+    });
+  });
+
+  it("samples the blur-in radius and opacity in layer time", () => {
+    const source = project([solid("a", { startFrame: 8, inFrame: 10 })]);
+    const { ops } = applyPreset(source, {
+      layers: lid("a"),
+      preset: "blur-in",
+      params: { start: 20, duration: 400, radius: 24, easing: { type: "linear" } },
+    });
+    const result = applied(source, ops);
+    const layerAt = (frame: number) => evaluateFrame(result, frame).layers[0];
+    expect(layerAt(19)).toMatchObject({
+      effects: [{ type: "gaussian-blur", radius: 0 }],
+    });
+    expect(layerAt(20)).toMatchObject({
+      effects: [{ type: "gaussian-blur", radius: 24 }],
+      transform: { opacity: 0 },
+    });
+    expect(layerAt(26)).toMatchObject({
+      effects: [{ type: "gaussian-blur", radius: 12 }],
+      transform: { opacity: 0.5 },
+    });
+    expect(layerAt(32)).toMatchObject({
+      effects: [{ type: "gaussian-blur", radius: 0 }],
+      transform: { opacity: 1 },
     });
   });
 

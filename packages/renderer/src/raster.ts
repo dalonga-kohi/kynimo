@@ -1,4 +1,4 @@
-import type { Affine, ResolvedLayer, Rgba } from "@kynimo/engine";
+import type { Affine, ResolvedEffect, ResolvedLayer, Rgba } from "@kynimo/engine";
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
 
 /**
@@ -35,6 +35,8 @@ interface PlannedBase {
    */
   mask: CoverageImage | null;
   matte: PlannedMatte | null;
+  /** Parameters already sampled in layer time. Omitted means no effects. */
+  effects?: readonly ResolvedEffect[];
 }
 
 /**
@@ -51,9 +53,9 @@ export interface PlannedMatte {
 
 /**
  * Vector layers (shapes and text) are rasterized in composition space with their transform
- * applied, so they stay sharp at any scale (ADR-0016). The raster covers only the layer's bounds
- * within the composition, with its top-left corner at the whole-pixel offset (`x`, `y`): placing
- * it needs no resampling.
+ * applied, so they stay sharp at any scale (ADR-0016). The raster covers the layer's bounds
+ * within the composition plus the effect stack's reach. Its whole-pixel offset (`x`, `y`)
+ * needs no resampling during placement.
  */
 export interface PlannedVectorLayer extends PlannedBase {
   type: "shape" | "text";
@@ -84,9 +86,16 @@ export interface PlannedPrecompLayer extends PlannedBase {
 
 export type PlannedLayer = PlannedVectorLayer | PlannedLayerSpaceLayer | PlannedPrecompLayer;
 
+export interface PlannedAdjustmentLayer extends PlannedBase {
+  type: "adjustment";
+  effects: readonly ResolvedEffect[];
+}
+
+export type PlannedFrameLayer = PlannedLayer | PlannedAdjustmentLayer;
+
 /**
- * A layer the renderer cannot draw yet. It is left out of the frame, never drawn wrong. Besides
- * adjustment and component layers, that is any layer whose track matte chain reaches one.
+ * A layer the renderer cannot draw yet. It is left out of the frame. That includes a component
+ * layer and any layer whose track matte chain reaches one.
  */
 export interface SkippedLayer {
   id: string;
@@ -114,7 +123,7 @@ export interface FramePlan {
   /** Straight-alpha sRGB; `null` renders transparent (nested compositions). */
   background: Rgba | null;
   /** Top-first, like the resolved layers. Layers that cover no pixels (masks included) are left out. */
-  layers: PlannedLayer[];
+  layers: PlannedFrameLayer[];
   skipped: SkippedLayer[];
   /** Per composition, like `skipped`: nested plans hold their own. */
   warnings: RenderWarning[];

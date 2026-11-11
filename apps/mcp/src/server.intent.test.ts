@@ -72,6 +72,34 @@ describe("intent tools", () => {
   const version = async () =>
     ((await call(client, "get_project", { project_id })) as { version: number }).version;
 
+  it("previews, inserts, and undoes an effect with the normal write contract", async () => {
+    const args = {
+      ...meta(3, "effect"),
+      layer: "a",
+      effect: { type: "gaussian-blur", radius: { value: 12 } },
+    };
+    const dry = await call(client, "add_effect", { ...args, dry_run: true });
+    expect(dry).toMatchObject({
+      version: 3,
+      resolved: { layer: "a", effect_id: "effect-1", index: 0 },
+      ops: [{ op: "setEffects", layer: "a", effects: [{ id: "effect-1", type: "gaussian-blur" }] }],
+    });
+    const written = await call(client, "add_effect", args);
+    expect(written).toMatchObject({ version: 4, ops: dry.ops });
+    expect(await call(client, "add_effect", args)).toMatchObject({ version: 4, replayed: true });
+    const invalid = await callError(client, "add_effect", {
+      ...args,
+      ...meta(4, "invalid"),
+      effect: { ...args.effect, radius: { value: 999 } },
+    });
+    expect(invalid).toMatchObject({ error: "invalid" });
+    expect(await version()).toBe(4);
+    await call(client, "undo", meta(4, "undo-effect"));
+    expect(await call(client, "get_layer", { project_id, layer: "a" })).toMatchObject({
+      layer: { effects: [] },
+    });
+  });
+
   it("animate writes keyframes and returns the ops and what the tokens resolved to", async () => {
     const r = await call(client, "animate", {
       ...meta(3, "k1"),

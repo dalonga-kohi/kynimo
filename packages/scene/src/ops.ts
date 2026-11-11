@@ -9,6 +9,7 @@ import {
   OscillateBehaviorSchema,
 } from "./behavior.js";
 import { MaskSchema, TrackMatteSchema } from "./compositing.js";
+import { EffectStackSchema } from "./effect.js";
 import {
   AssetIdSchema,
   BehaviorIdSchema,
@@ -161,6 +162,12 @@ const removeMask = z.strictObject({
   mask: MaskIdSchema,
 });
 
+const setEffects = z.strictObject({
+  op: z.literal("setEffects"),
+  layer: LayerSelectorSchema,
+  effects: EffectStackSchema,
+});
+
 /** A behavior without its id: the id is supplied by the op or generated from the seeded counter. */
 export type BehaviorInput = Behavior extends infer B
   ? B extends Behavior
@@ -262,8 +269,8 @@ const setMatte = z.strictObject({
  * Moves layers of one composition into a new composition and puts a precomp layer of it where
  * the topmost of them was (After Effects "move all attributes"). The new composition copies the
  * source's size, frame rate and duration with a transparent background; the precomp layer spans
- * the whole duration with an identity transform, so the frame looks the same as long as the moved
- * layers blend normally: other blend modes then blend inside the new composition (as in After Effects).
+ * the whole duration with an identity transform. Blend modes and adjustment layers that move
+ * see only the backdrop inside the new composition.
  */
 const precompose = z.strictObject({
   op: z.literal("precompose"),
@@ -309,6 +316,7 @@ export const OpSchema = z.discriminatedUnion("op", [
   addMask,
   updateMask,
   removeMask,
+  setEffects,
   addBehavior,
   updateBehavior,
   removeBehavior,

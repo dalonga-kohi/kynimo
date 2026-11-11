@@ -517,6 +517,15 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       if (hasTransform(layer)) checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
 
       if (isDrawn(layer)) {
+        const seenEffects = new Set<string>();
+        layer.effects.forEach((effect, ei) => {
+          if (seenEffects.has(effect.id))
+            issue(
+              at("effects", ei, "id"),
+              `duplicate effect id '${effect.id}'; rename one in layer '${layer.id}'`,
+            );
+          seenEffects.add(effect.id);
+        });
         const seenMasks = new Set<string>();
         layer.masks.forEach((mask, mi) => {
           if (seenMasks.has(mask.id))

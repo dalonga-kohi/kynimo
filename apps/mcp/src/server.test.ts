@@ -53,6 +53,7 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "add_behavior",
+      "add_effect",
       "add_layer",
       "add_mask",
       "animate",
@@ -91,6 +92,7 @@ describe("MCP server", () => {
       "retime",
       "run_script",
       "add_behavior",
+      "add_effect",
       "upload_asset",
       "add_layer",
       "add_mask",
@@ -461,7 +463,7 @@ describe("MCP server", () => {
   it("reports capabilities as a tool and as the same resource", async () => {
     const tool = await call(client, "get_capabilities", {});
     const layerTypes = tool.layer_types as Record<string, { status: string; reason?: string }>;
-    expect(layerTypes.adjustment).toMatchObject({ status: "accepted" });
+    expect(layerTypes.adjustment).toMatchObject({ status: "renders" });
     expect(layerTypes.shape).toEqual({ status: "renders" });
     const read = await client.readResource({ uri: "kynimo://capabilities" });
     const first = read.contents[0];

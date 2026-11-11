@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BehaviorSchema, MAX_BEHAVIORS } from "./behavior.js";
 import { BlendModeSchema, MAX_MASKS, MaskSchema, TrackMatteSchema } from "./compositing.js";
+import { EffectStackSchema } from "./effect.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
 import { MAX_COMPOSITION_SIZE } from "./limits.js";
@@ -64,7 +65,7 @@ const visual = {
 
 /**
  * Layers that put pixels in the frame: everything visual but null layers. Order of operations
- * follows After Effects (ADR-0020): masks, then (M4) effects, then the transform, the track matte,
+ * follows After Effects (ADR-0020): masks, then effects, then the transform, the track matte,
  * opacity and finally the blend mode against the layers below.
  */
 const drawn = {
@@ -72,6 +73,8 @@ const drawn = {
   blendMode: BlendModeSchema,
   matte: TrackMatteSchema.nullable(),
   masks: z.array(MaskSchema).max(MAX_MASKS),
+  /** Absent means an empty stack, including in addLayer operations written for older versions. */
+  effects: EffectStackSchema.default([]),
 };
 
 export const ShapeLayerSchema = z.strictObject({
@@ -147,7 +150,7 @@ export const PrecompLayerSchema = z.strictObject({
   compositionId: CompositionIdSchema,
 });
 
-/** Effects on an adjustment layer apply to everything below it (effects arrive in M4). */
+/** Effects on an adjustment layer apply to the composite below it. */
 export const AdjustmentLayerSchema = z.strictObject({ ...drawn, type: z.literal("adjustment") });
 
 /** Instance of a component. `props` are validated against the component's own schema (M6). */

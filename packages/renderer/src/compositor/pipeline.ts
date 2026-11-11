@@ -1,5 +1,5 @@
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
-import type { FramePlan, PlannedLayer } from "../raster.js";
+import type { FramePlan, PlannedFrameLayer, PlannedLayer } from "../raster.js";
 
 /**
  * Pipeline pieces shared by the reference and WebGL2 compositors, so both read the plan the same
@@ -16,8 +16,14 @@ export function invert([a, b, c, d, e, f]: Affine): Affine | null {
 }
 
 /** Layer raster → composition: whole-pixel offset for vector layers, the layer matrix otherwise. */
-export const placement = (layer: PlannedLayer): Affine =>
-  layer.space === "composition" ? [1, 0, 0, 1, layer.x, layer.y] : layer.matrix;
+export function placement(layer: PlannedLayer, [x, y] = [0, 0]): Affine {
+  if (layer.space === "composition") return [1, 0, 0, 1, layer.x - x, layer.y - y];
+  const [a, b, c, d, e, f] = layer.matrix;
+  return [a, b, c, d, e - a * x - c * y, f - b * x - d * y];
+}
+
+const matteTarget = (layer: PlannedFrameLayer): PlannedLayer | null =>
+  layer.type === "adjustment" ? (layer.matte?.source ?? null) : layer;
 
 /** Mip levels of a `width × height` source: level n is ⌈size / 2ⁿ⌉, down to 1×1. */
 export const maxLevel = (width: number, height: number) =>
@@ -96,12 +102,15 @@ export function precompUses(plan: FramePlan): Map<FramePlan, number> {
   const uses = new Map<FramePlan, number>();
   const stack = [plan];
   for (let p = stack.pop(); p !== undefined; p = stack.pop())
-    for (const layer of p.layers)
-      for (const el of matteChain(layer).chain) {
+    for (const layer of p.layers) {
+      const source = matteTarget(layer);
+      if (source === null) continue;
+      for (const el of matteChain(source).chain) {
         if (el.type !== "precomp") continue;
         const seen = uses.get(el.frame);
         uses.set(el.frame, (seen ?? 0) + 1);
         if (seen === undefined) stack.push(el.frame);
       }
+    }
   return uses;
 }

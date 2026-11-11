@@ -1,9 +1,11 @@
 import {
   AssetSchema,
   BEHAVIOR_TYPES,
+  EffectInputSchema,
   LayerSchema,
   MAX_BATCH_OPS,
   MAX_BEHAVIORS,
+  MAX_EFFECTS,
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
@@ -69,6 +71,17 @@ describe("capability manifest", () => {
       linkStepsPerFrame: 100_000,
     });
     expect(manifest.unavailable).not.toHaveProperty("behaviors");
+  });
+
+  it("lists the effect stack's exact supported types and limits", () => {
+    expect(sorted(Object.keys(manifest.features.effects))).toEqual(
+      sorted(EffectInputSchema.options.map((option) => option.shape.type.value)),
+    );
+    expect(
+      Object.values(manifest.features.effects).every((effect) => effect.status === "renders"),
+    ).toBe(true);
+    expect(manifest.limits.effects.effectsPerLayer).toBe(MAX_EFFECTS);
+    expect(manifest.unavailable).not.toHaveProperty("effects");
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {

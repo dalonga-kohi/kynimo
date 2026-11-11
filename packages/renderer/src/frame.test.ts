@@ -119,6 +119,21 @@ describe("shape layers", () => {
     ).toEqual([]);
   });
 
+  it("rasterizes offscreen vector pixels when a blur can spread them into view", () => {
+    const source = shapeLayer("outside", [rect([-4, 40], [4, 24]), fill()]);
+    expect(pixel(render([source]), 0, 40)).toEqual(CLEAR);
+    const blurred = render([
+      {
+        ...source,
+        effects: [{ type: "gaussian-blur", id: "blur", radius: prop(12) }],
+      },
+    ]);
+    const edge = pixel(blurred, 0, 40);
+    expect(edge[3]).toBeGreaterThan(0);
+    expect(edge[0]).toBe(edge[3]);
+    expect(pixel(blurred, 15, 40)).toEqual(CLEAR);
+  });
+
   it("honors the fill rule across the paths of one fill", () => {
     const rings = (rule: string) => [
       shapeLayer("s", [
@@ -543,7 +558,9 @@ describe("raster budget", () => {
       video: layer("video", "video", { assetId: "clip" }),
       solid: layer("solid", "solid", { width: 10, height: 10, color: "#ff0000" }),
       precomp: layer("precomp", "precomp", { compositionId: "inner" }),
-      adjustment: layer("adjustment", "adjustment"),
+      adjustment: layer("adjustment", "adjustment", {
+        effects: [{ id: "fill", type: "fill", color: prop("#ff0000"), amount: prop(1) }],
+      }),
       component: layer("component", "component", {
         componentId: "badge",
         componentVersion: "1.0.0",

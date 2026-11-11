@@ -5,6 +5,7 @@ export type { Change, MarkerOwner } from "./changes.js";
 export * from "./compositing.js";
 export * from "./composition.js";
 export { withLayerDefaults } from "./defaults.js";
+export * from "./effect.js";
 export * from "./fonts.js";
 export * from "./history.js";
 export * from "./ids.js";

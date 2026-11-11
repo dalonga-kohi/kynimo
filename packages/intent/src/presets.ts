@@ -6,6 +6,7 @@ import {
   type Interpolation,
   type Layer,
   type LayerType,
+  MAX_EFFECT_RADIUS,
   MAX_MASKS,
   MAX_SHAPE_ITEMS,
   MAX_TEXT_ANIMATORS,
@@ -17,6 +18,7 @@ import {
 } from "@kynimo/scene";
 import { z } from "zod";
 import { type Endpoints, expandTransformTrack, windowFrames } from "./animate.js";
+import { insertEffect } from "./effects.js";
 import { type InputPath, IntentError, scoped } from "./errors.js";
 import { StaggerTiming, staggerDelays } from "./stagger.js";
 import {
@@ -284,6 +286,36 @@ const TOKEN_DISTANCE = (params: Params, def: "small" | "base" | "large", ctx: Pr
   distancePx((params.distance as DistanceInput | undefined) ?? def, ctx.pack, ctx.composition);
 
 export const PRESETS: readonly Preset[] = [
+  {
+    id: "blur-in",
+    title: "Blur in",
+    description: "Fades the layer in as it sharpens from a soft Gaussian blur.",
+    kind: "enter",
+    layerTypes: ["shape", "text", "image", "video", "solid", "precomp"],
+    params: z.strictObject({
+      ...common,
+      radius: z
+        .number()
+        .positive()
+        .max(MAX_EFFECT_RADIUS)
+        .optional()
+        .describe("Initial blur radius in raster pixels; default 16."),
+    }),
+    defaults: { duration: "base", easing: "enter" },
+    expand(ctx, layer, params, timing) {
+      const radius = sweep(layer, timing, (params.radius as number | undefined) ?? 16, 0);
+      if (timing.start > layer.inFrame)
+        radius.keyframes.unshift({
+          frame: timing.start - layer.startFrame - 1,
+          value: 0,
+          interpolation: { type: "hold" },
+        });
+      return [
+        insertEffect(layer, { type: "gaussian-blur", radius }).op,
+        transformPart(ctx, layer, timing, "opacity", { value: 0 }, {}),
+      ];
+    },
+  },
   {
     id: "fade-in",
     title: "Fade in",

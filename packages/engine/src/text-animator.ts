@@ -302,7 +302,7 @@ export interface GlyphEffect {
   opacity: number;
   /** Replaces the layer fill. */
   fill: Rgba;
-  /** Layer units; the renderer reports it as not drawn until effects land. */
+  /** Layer units; the renderer reports per-glyph blur as not drawn. */
   blur: number;
   /** Thousandths of an em added after the cluster. */
   tracking: number;
