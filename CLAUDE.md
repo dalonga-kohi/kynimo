@@ -16,4 +16,10 @@ Everything shared with other agents lives in `AGENTS.md` (imported above). Only 
 - **PR bodies:** invoke the **`pr`** skill (`.claude/skills/pr/SKILL.md`, from mattpocock/skills) before every `gh pr create`, and add the Review section AGENTS.md step 6 asks for.
 - **Models:** orchestrator on Opus; implementer on Sonnet; reviewer on Opus.
 - **Skills:** `apple-design`, `impeccable`, `ui-ux-pro-max` and `pr` in `.claude/skills/` load natively via the Skill tool.
+- **Workflow skills (ours, not in `skills-lock.json`):**
+  - `kynimo-next-item`: sync, find and shape the next roadmap item.
+  - `kynimo-spec`: the implementer spec template, the step split, and the checklists for a new package, an MCP tool, untrusted-input hardening, reference scenes and docs.
+  - `kynimo-ship`: one review pass, one fix pass, push, PR.
+
+  Load them at those points instead of re-deriving the workflow.
 - **Shell:** Windows 11 + PowerShell.
