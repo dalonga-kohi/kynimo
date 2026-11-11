@@ -1242,6 +1242,9 @@ describe("limits and hostile input", () => {
 
   describe("linear-time attribute parsing", () => {
     const BIG = 400_000;
+    // The backtracking regressions these guard took 14-59 s; a generous bound keeps them caught
+    // without failing on a loaded CI runner (1.2 s observed for cases that take ~0.1 s locally).
+    const BUDGET_MS = 5000;
     /** Imports, returning the elapsed milliseconds; refusals count as completing. */
     const timed = (source: string): { ms: number; result: SvgImportResult | undefined } => {
       const t0 = clock.now();
@@ -1261,7 +1264,7 @@ describe("limits and hostile input", () => {
         `url(${"( ".repeat(BIG / 2)}`,
       ]) {
         const { ms, result } = timed(svg(`<rect width="1" height="1" fill="${fill}"/>`));
-        expect(ms).toBeLessThan(1000);
+        expect(ms).toBeLessThan(BUDGET_MS);
         expect(result && entry(result, "missing-reference")).toBeDefined();
       }
     });
@@ -1273,7 +1276,7 @@ describe("limits and hostile input", () => {
         `hsl(${"1 ".repeat(BIG / 2)}`,
       ]) {
         const { ms, result } = timed(svg(`<rect width="1" height="1" fill="${fill}"/>`));
-        expect(ms).toBeLessThan(1000);
+        expect(ms).toBeLessThan(BUDGET_MS);
         expect(result && entry(result, "invalid-color")).toBeDefined();
       }
     });
@@ -1288,7 +1291,7 @@ describe("limits and hostile input", () => {
         svg(`<path d="M0 0 L${"0.".repeat(BIG / 2)}"/>`),
         svg(`<rect width="1" height="1"/>`, `viewBox="${digits}x 0 1 1"`),
       ];
-      for (const source of cases) expect(timed(source).ms).toBeLessThan(1000);
+      for (const source of cases) expect(timed(source).ms).toBeLessThan(BUDGET_MS);
     });
 
     it("transform lists with endless separators", () => {
@@ -1299,17 +1302,19 @@ describe("limits and hostile input", () => {
         `translate(${" ".repeat(BIG)}`,
       ]) {
         const { ms, result } = timed(svg(`<rect width="1" height="1" transform="${t}"/>`));
-        expect(ms).toBeLessThan(1000);
+        expect(ms).toBeLessThan(BUDGET_MS);
         expect(result && entry(result, "transform-error")).toBeDefined();
       }
     });
 
     it("style attributes and long ids", () => {
       const style = `fill:red${"!important ".repeat(BIG / 11)}x`;
-      expect(timed(svg(`<rect width="1" height="1" style="${style}"/>`)).ms).toBeLessThan(1000);
+      expect(timed(svg(`<rect width="1" height="1" style="${style}"/>`)).ms).toBeLessThan(
+        BUDGET_MS,
+      );
       const id = "a".repeat(BIG);
       const { ms, result } = timed(svg(`<rect id="${id}" width="1" height="1" filter="url(#f)"/>`));
-      expect(ms).toBeLessThan(1000);
+      expect(ms).toBeLessThan(BUDGET_MS);
       const label = (result && entry(result, "filter"))?.elements[0] ?? "";
       expect(label.length).toBeLessThanOrEqual(70);
     });
@@ -1326,7 +1331,7 @@ describe("limits and hostile input", () => {
       const source = svg(body);
       expect(utf8Bytes(source)).toBeGreaterThan(440_000);
       expect(utf8Bytes(source)).toBeLessThan(SVG_LIMITS.sourceBytes);
-      expect(timed(source).ms).toBeLessThan(2000);
+      expect(timed(source).ms).toBeLessThan(BUDGET_MS);
     });
 
     it("a use fan-out near the limits finishes quickly with short labels", () => {
@@ -1334,7 +1339,7 @@ describe("limits and hostile input", () => {
       const { ms, result } = timed(
         svg(`<g id="a"><rect width="1" height="1" filter="url(#f)"/></g>${uses}`),
       );
-      expect(ms).toBeLessThan(1000);
+      expect(ms).toBeLessThan(BUDGET_MS);
       expect(entry(result as SvgImportResult, "filter")?.elements.length).toBeLessThanOrEqual(5);
     });
   });
