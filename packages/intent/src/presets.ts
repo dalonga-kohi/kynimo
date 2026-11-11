@@ -1,4 +1,4 @@
-import { sampleNumber } from "@kynimo/engine";
+import { sampleNumber, textClusters } from "@kynimo/engine";
 import type { DurationToken, GuidelinePack } from "@kynimo/guidelines";
 import {
   type Composition,
@@ -192,11 +192,12 @@ function revealSelector(unit: "characters" | "words", layer: Layer, timing: Pres
   };
 }
 
-/** Code points that are not whitespace: what a typewriter types. */
+/**
+ * Units a typewriter types: the clusters the characters selector counts (a ZWJ emoji or a letter
+ * with its combining marks is one), leaving out whitespace.
+ */
 export function typedCharacters(content: string): number {
-  let n = 0;
-  for (const ch of content) if (!/\s/u.test(ch)) n++;
-  return n;
+  return textClusters(content).filter((c) => !/^\s*$/u.test(content.slice(c.start, c.end))).length;
 }
 
 function shapeItemIds(items: readonly ShapeItem[], into = new Set<string>()): Set<string> {

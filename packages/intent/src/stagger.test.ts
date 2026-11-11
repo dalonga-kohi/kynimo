@@ -80,6 +80,17 @@ describe("stagger", () => {
     expect(first("c")).toBe(12);
   });
 
+  it("refuses when every delay is 0, since nothing would move", () => {
+    const track = { opacity: keyed(kf(0, 0), kf(10, 1)) };
+    const d = doc([solid("a", { transform: track }), solid("b", { transform: track })]);
+    expect(() => stagger(d, { layers: [lid("a"), lid("b")], offset: 0 })).toThrow(
+      expect.objectContaining({
+        path: ["offset"],
+        message: expect.stringContaining("every delay is 0"),
+      }),
+    );
+  });
+
   it("needs two layers and refuses one with nothing animated, at its target", () => {
     expect(() => stagger(d, { layers: lid("a") })).toThrow(
       expect.objectContaining({ path: ["layers"] }),

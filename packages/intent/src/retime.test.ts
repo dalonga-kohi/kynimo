@@ -102,6 +102,24 @@ describe("retime", () => {
     applied(d, retime(d, { layers: lid("a"), scale: 2 }).ops);
   });
 
+  it("with a window, doesn't suggest a scale (it would move the spring's own key too)", () => {
+    const spring = {
+      frame: 0,
+      value: 0,
+      interpolation: { type: "spring", damping: 1, response: 0.7 },
+    };
+    const settle = springSettleFrames(keynote.motion.springs.gentle, { num: 30, den: 1 });
+    const d = doc([solid("a", { transform: { opacity: keyed(spring, kf(settle + 10, 1)) } })]);
+    const attempt = () =>
+      retime(d, {
+        layers: lid("a"),
+        shift: -15,
+        window: { from: settle + 5, to: settle + 50 },
+      });
+    expect(attempt).toThrow(/move the window or the pivot so both keyframes move together/);
+    expect(attempt).not.toThrow(/scale of at least/);
+  });
+
   it("refuses layers with keyframes it can't write back, at the layer's path", () => {
     const d = doc([
       text("t", { font: { family: "Inter", weight: 400, size: keyed(kf(0, 40), kf(9, 60)) } }),

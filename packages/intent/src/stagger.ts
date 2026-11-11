@@ -91,6 +91,8 @@ export function stagger(
     throw new IntentError(["layers"], "stagger needs at least 2 layers; this selection has 1");
   const fps = (targets[0] as (typeof targets)[number]).composition.fps;
   const delays = staggerDelays(targets.length, input, pack, fps);
+  if (delays.every((d) => d === 0))
+    throw new IntentError(["offset"], "every delay is 0; nothing would move; use a larger offset");
   const ops: Op[] = [];
   targets.forEach(({ layer, path }, i) => {
     const delay = delays[i] as number;

@@ -365,6 +365,11 @@ describe("typewriter and word-by-word", () => {
   it("counts code points without whitespace", () => {
     expect(typedCharacters("a b\nc")).toBe(3);
     expect(typedCharacters("😀 😀")).toBe(2);
+    // The way the characters selector counts: one cluster per ZWJ emoji, letter + marks and flag.
+    expect(typedCharacters("👨‍👩‍👧 x")).toBe(2);
+    expect(typedCharacters("e\u0301 a\u0308\u0323")).toBe(2);
+    expect(typedCharacters("🇵🇱🇩🇪")).toBe(2);
+    expect(typedCharacters("a\r\n b")).toBe(2);
   });
 
   it("derives its duration from cps", () => {

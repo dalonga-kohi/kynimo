@@ -97,7 +97,11 @@ export function retime(doc: Project, input: RetimeInput): { ops: Op[]; resolved:
           const needed = Math.ceil((settle / original) * 100) / 100;
           throw new IntentError(
             path,
-            `${name}: the spring at frame ${cur.frame + layer.startFrame} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; use a scale of at least ${needed}, or switch that segment to a bezier easing`,
+            `${name}: the spring at frame ${cur.frame + layer.startFrame} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; ${
+              window === undefined
+                ? `use a scale of at least ${needed}, or switch that segment to a bezier easing`
+                : "move the window or the pivot so both keyframes move together, or switch that segment to a bezier easing"
+            }`,
           );
         }
       });
