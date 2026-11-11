@@ -1,7 +1,11 @@
 import type { ShapeItem } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { entry, flatten, ICON, INKSCAPE, importValid, LOGO, svg } from "./fixtures.test-util.js";
-import { importSvg, SVG_LIMITS, SvgImportError } from "./index.js";
+import { importSvg, SVG_LIMITS, SvgImportError, type SvgImportResult } from "./index.js";
+import { utf8Length as utf8Bytes } from "./xml.js";
+
+// Timing is measured in the test only; the importer itself never reads a clock.
+const clock = (globalThis as unknown as { performance: { now(): number } }).performance;
 
 type Group = Extract<ShapeItem, { type: "group" }>;
 const asGroup = (i: ShapeItem | undefined): Group => {
@@ -1110,6 +1114,165 @@ describe("limits and hostile input", () => {
     const path = `M0 0 ${Array.from({ length: 900 }, (_, i) => `L${i} ${i % 7}`).join(" ")}`;
     const many = Array.from({ length: 60 }, () => `<path d="${path}"/>`).join("");
     expect(code(() => importSvg(svg(many)))).toMatch(/^limit:.*50 000/);
+  });
+
+  describe("linear-time attribute parsing", () => {
+    const BIG = 400_000;
+    /** Imports, returning the elapsed milliseconds; refusals count as completing. */
+    const timed = (source: string): { ms: number; result: SvgImportResult | undefined } => {
+      const t0 = clock.now();
+      let result: SvgImportResult | undefined;
+      try {
+        result = importSvg(source);
+      } catch (e) {
+        if (!(e instanceof SvgImportError)) throw e;
+      }
+      return { ms: clock.now() - t0, result };
+    };
+
+    it("url() paints with a huge unterminated body", () => {
+      for (const fill of [
+        `url(${" ".repeat(BIG)}`,
+        `url(#a${" ".repeat(BIG)}x`,
+        `url(${"( ".repeat(BIG / 2)}`,
+      ]) {
+        const { ms, result } = timed(svg(`<rect width="1" height="1" fill="${fill}"/>`));
+        expect(ms).toBeLessThan(1000);
+        expect(result && entry(result, "missing-reference")).toBeDefined();
+      }
+    });
+
+    it("rgb()/hsl() colors with a huge body", () => {
+      for (const fill of [
+        `rgb(${" ".repeat(BIG)}`,
+        `rgb(${" ".repeat(BIG)}1 2 3 x)`,
+        `hsl(${"1 ".repeat(BIG / 2)}`,
+      ]) {
+        const { ms, result } = timed(svg(`<rect width="1" height="1" fill="${fill}"/>`));
+        expect(ms).toBeLessThan(1000);
+        expect(result && entry(result, "invalid-color")).toBeDefined();
+      }
+    });
+
+    it("number lists and lengths made of digits", () => {
+      const digits = "1".repeat(BIG);
+      const cases = [
+        svg(`<polygon points="${digits}x"/>`),
+        svg(`<polyline points="${"1.".repeat(BIG / 2)}x" stroke="red"/>`),
+        svg(`<rect width="${digits}x" height="1"/>`),
+        svg(`<path d="M${digits}e"/>`),
+        svg(`<path d="M0 0 L${"0.".repeat(BIG / 2)}"/>`),
+        svg(`<rect width="1" height="1"/>`, `viewBox="${digits}x 0 1 1"`),
+      ];
+      for (const source of cases) expect(timed(source).ms).toBeLessThan(1000);
+    });
+
+    it("transform lists with endless separators", () => {
+      for (const t of [
+        `${" ".repeat(BIG)}x`,
+        `${", ".repeat(BIG / 2)}x`,
+        `translate(1)${" ".repeat(BIG)}x`,
+        `translate(${" ".repeat(BIG)}`,
+      ]) {
+        const { ms, result } = timed(svg(`<rect width="1" height="1" transform="${t}"/>`));
+        expect(ms).toBeLessThan(1000);
+        expect(result && entry(result, "transform-error")).toBeDefined();
+      }
+    });
+
+    it("style attributes and long ids", () => {
+      const style = `fill:red${"!important ".repeat(BIG / 11)}x`;
+      expect(timed(svg(`<rect width="1" height="1" style="${style}"/>`)).ms).toBeLessThan(1000);
+      const id = "a".repeat(BIG);
+      const { ms, result } = timed(svg(`<rect id="${id}" width="1" height="1" filter="url(#f)"/>`));
+      expect(ms).toBeLessThan(1000);
+      const label = (result && entry(result, "filter"))?.elements[0] ?? "";
+      expect(label.length).toBeLessThanOrEqual(70);
+    });
+
+    it("a 500 KB SVG of mixed hostile attributes", () => {
+      const part = 90_000;
+      const body = [
+        `<rect width="1" height="1" fill="url(${" ".repeat(part)}"/>`,
+        `<rect width="1" height="1" fill="rgb(${" ".repeat(part)}"/>`,
+        `<rect width="1" height="1" transform="${", ".repeat(part / 2)}x"/>`,
+        `<polygon points="${"1.".repeat(part / 2)}x"/>`,
+        `<path d="M${"0".repeat(part)}e"/>`,
+      ].join("");
+      const source = svg(body);
+      expect(utf8Bytes(source)).toBeGreaterThan(440_000);
+      expect(utf8Bytes(source)).toBeLessThan(SVG_LIMITS.sourceBytes);
+      expect(timed(source).ms).toBeLessThan(2000);
+    });
+
+    it("a use fan-out near the limits finishes quickly with short labels", () => {
+      const uses = Array.from({ length: 1500 }, () => `<use href="#a" filter="url(#f)"/>`).join("");
+      const { ms, result } = timed(
+        svg(`<g id="a"><rect width="1" height="1" filter="url(#f)"/></g>${uses}`),
+      );
+      expect(ms).toBeLessThan(1000);
+      expect(entry(result as SvgImportResult, "filter")?.elements.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe("non-finite output", () => {
+    const refused = (source: string): string => {
+      try {
+        importSvg(source);
+      } catch (e) {
+        if (e instanceof SvgImportError) return `${e.code}: ${e.message}`;
+        throw e;
+      }
+      return "no error";
+    };
+
+    it("refuses transforms whose result overflows", () => {
+      const m = "matrix(1e200 0 0 1e200 0 0)";
+      expect(refused(svg(`<g transform="${m}"><path d="M0 0 L1e200 1e200 L5 1z"/></g>`))).toMatch(
+        /^limit:.*±1e15/,
+      );
+      expect(refused(svg(`<path transform="${m}" d="M0 0 L1e200 1e200 L5 1z"/>`))).toMatch(
+        /^limit:/,
+      );
+      // finite after baking: still imports
+      expect(refused(svg(`<g transform="${m}"><rect width="1" height="1"/></g>`))).toBe("no error");
+    });
+
+    it("refuses path data that overflows", () => {
+      expect(refused(svg(`<path d="M1e308 0 l1e308 0 l0 1z"/>`))).toMatch(/^limit:/);
+    });
+
+    it("refuses absurd viewBox and size values", () => {
+      expect(refused(svg(`<rect width="1" height="1"/>`, `viewBox="0 0 1e-320 1e-320"`))).toMatch(
+        /^limit:.*1e-6/,
+      );
+      expect(
+        refused(svg(`<rect width="1" height="1"/>`, `viewBox="0 0 1 1e-300" height="1e300"`)),
+      ).toMatch(/^limit:/);
+      expect(refused(svg(`<circle r="100%" cx="1" cy="1"/>`, `viewBox="0 0 1e308 1e308"`))).toMatch(
+        /^limit:/,
+      );
+    });
+  });
+
+  describe("XML depth", () => {
+    const nest = (n: number): string =>
+      svg(`${"<g>".repeat(n)}<rect width="1" height="1"/>${"</g>".repeat(n)}`);
+
+    it("imports just under the depth limit", () => {
+      const r = importSvg(nest(SVG_LIMITS.xmlDepth - 2));
+      expect(flatten(r.contents).some((i) => i.type === "rect")).toBe(true);
+    });
+
+    it("refuses past the limit and names it", () => {
+      let msg = "";
+      try {
+        importSvg(nest(SVG_LIMITS.xmlDepth + 1));
+      } catch (e) {
+        msg = e instanceof SvgImportError ? `${e.code}: ${e.message}` : String(e);
+      }
+      expect(msg).toMatch(/^limit:.*256/);
+    });
   });
 
   it("is deterministic", () => {

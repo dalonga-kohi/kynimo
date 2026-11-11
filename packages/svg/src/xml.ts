@@ -51,16 +51,25 @@ const parser = new XMLParser({
   htmlEntities: { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" } as unknown as boolean,
   removeNSPrefix: false,
   allowBooleanAttributes: true,
+  // The parser's own nesting guard; keeps its recursion-free stack bounded at our limit.
+  maxNestedTags: SVG_LIMITS.xmlDepth,
 });
 
-/** Label for the report: `tag#id`, else the tag with its 1-based index path (`g[2] > path[1]`). */
+const MAX_LABEL_PART = 60;
+const clip = (s: string): string =>
+  s.length > MAX_LABEL_PART ? `${s.slice(0, MAX_LABEL_PART)}…` : s;
+
+/**
+ * Label for the report: `tag#id`, else the tag with its 1-based index path (`g[2] > path[1]`).
+ * Ids and tags are cut at 60 characters; the index path is at most 256 parts deep.
+ */
 export function labelOf(node: XNode): string {
   const id = node.attrs.id;
-  if (id !== undefined && id !== "") return `${node.tag}#${id}`;
-  if (node.parent === null) return node.tag;
+  if (id !== undefined && id !== "") return `${clip(node.tag)}#${clip(id)}`;
+  if (node.parent === null) return clip(node.tag);
   const parts: string[] = [];
   for (let n: XNode | null = node; n !== null && n.parent !== null; n = n.parent) {
-    parts.push(`${n.tag}[${n.index}]`);
+    parts.push(`${clip(n.tag)}[${n.index}]`);
   }
   return parts.reverse().join(" > ");
 }
@@ -102,7 +111,7 @@ export function parseSvg(source: string): ParsedSvg {
     if (/nested/i.test(message)) {
       throw new SvgImportError(
         "limit",
-        `SVG elements nest deeper than the limit of ${SVG_LIMITS.xmlDepth} — flatten the groups`,
+        `SVG elements nest deeper than the limit of ${SVG_LIMITS.xmlDepth} levels — flatten the groups`,
       );
     }
     throw new SvgImportError("malformed", `The SVG could not be parsed: ${message}`);
@@ -182,7 +191,7 @@ export function parseSvg(source: string): ParsedSvg {
     if (stack.length >= SVG_LIMITS.xmlDepth) {
       throw new SvgImportError(
         "limit",
-        `SVG elements nest deeper than the limit of ${SVG_LIMITS.xmlDepth} — flatten the groups`,
+        `SVG elements nest deeper than the limit of ${SVG_LIMITS.xmlDepth} levels — flatten the groups`,
       );
     }
     const child = make(rec, key, frame.node);

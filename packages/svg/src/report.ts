@@ -7,6 +7,7 @@ const MAX_EXAMPLES = 5;
 export class ReportCollector {
   private readonly entries = new Map<string, FidelityEntry>();
 
+  /** The label is only built while the entry still has room for examples. */
   add(kind: FidelityKind, feature: string, node: XNode | undefined, detail: string): void {
     const key = `${kind}\u0000${feature}`;
     let entry = this.entries.get(key);
@@ -15,11 +16,9 @@ export class ReportCollector {
       this.entries.set(key, entry);
     }
     entry.count++;
-    if (node !== undefined) {
+    if (node !== undefined && entry.elements.length < MAX_EXAMPLES) {
       const label = labelOf(node);
-      if (entry.elements.length < MAX_EXAMPLES && !entry.elements.includes(label)) {
-        entry.elements.push(label);
-      }
+      if (!entry.elements.includes(label)) entry.elements.push(label);
     }
   }
 

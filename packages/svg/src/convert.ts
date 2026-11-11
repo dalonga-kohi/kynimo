@@ -28,7 +28,7 @@ import {
   transformContour,
 } from "./geometry.js";
 import { buildGradient } from "./gradient.js";
-import { parseNumber, round6 } from "./numbers.js";
+import { NUMBER_SOURCE, parseNumber, round6 } from "./numbers.js";
 import { parsePathData } from "./path-data.js";
 import { ReportCollector } from "./report.js";
 import {
@@ -75,6 +75,51 @@ interface Ctx {
   /** Nesting depth the next group item would have (1 = directly in the layer contents). */
   depth: number;
   useDepth: number;
+}
+
+/** Splits `url(#id) fallback` by hand (linear time). `ref` is empty when the syntax is invalid. */
+function parseUrlPaint(value: string): { ref: string; rest: string } {
+  let i = 4;
+  const skip = (): void => {
+    while (i < value.length && /\s/.test(value[i] ?? "")) i++;
+  };
+  skip();
+  const q = value[i];
+  let ref: string;
+  if (q === '"' || q === "'") {
+    const end = value.indexOf(q, i + 1);
+    if (end < 0) return { ref: "", rest: "" };
+    ref = value.slice(i + 1, end);
+    i = end + 1;
+  } else {
+    const start = i;
+    while (i < value.length && value[i] !== ")" && !/\s/.test(value[i] ?? "")) i++;
+    ref = value.slice(start, i);
+  }
+  skip();
+  if (value[i] !== ")") return { ref: "", rest: "" };
+  return { ref: ref.trim(), rest: value.slice(i + 1).trim() };
+}
+
+const MIN_SIZE = 1e-6;
+const MAX_MAGNITUDE = 1e15;
+const NON_FINITE_MESSAGE =
+  "SVG coordinates are too large or too small to represent; keep numbers within ±1e15 and sizes above 1e-6";
+
+/** Every number reachable from `root` is finite (iterative; the value is plain JSON-like data). */
+function allFinite(root: unknown): boolean {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (typeof v === "number") {
+      if (!Number.isFinite(v)) return false;
+    } else if (Array.isArray(v)) {
+      for (const x of v) stack.push(x);
+    } else if (typeof v === "object" && v !== null) {
+      for (const x of Object.values(v)) stack.push(x);
+    }
+  }
+  return true;
 }
 
 const constant = <T>(value: T): { value: T } => ({ value });
@@ -247,6 +292,17 @@ export class Converter {
           ? [Math.max(sx0, sy0), Math.max(sx0, sy0)]
           : [Math.min(sx0, sy0), Math.min(sx0, sy0)];
 
+    const tooSmall = (n: number): boolean => !(n >= MIN_SIZE && n <= MAX_MAGNITUDE);
+    if (
+      tooSmall(viewBox.width) ||
+      tooSmall(viewBox.height) ||
+      tooSmall(size.width) ||
+      tooSmall(size.height) ||
+      !scale.every((v) => Number.isFinite(v) && v > 0)
+    ) {
+      throw new SvgImportError("limit", NON_FINITE_MESSAGE);
+    }
+
     this.active.add(root);
     const rootDecl = declared(root);
     const inh = computeInherited(root, {});
@@ -275,6 +331,12 @@ export class Converter {
       report: { entries: this.report.sorted(), summary: this.summarize(contents) },
     };
     if (title !== undefined && title !== "") result.title = title;
+    if (
+      !allFinite(result.contents) ||
+      !allFinite([result.scale, result.size, result.anchorPoint, result.viewBox])
+    ) {
+      throw new SvgImportError("limit", NON_FINITE_MESSAGE);
+    }
     return result;
   }
 
@@ -779,12 +841,8 @@ export class Converter {
       default: {
         // polyline, polygon
         const raw = a.points ?? "";
-        const numbers = [...raw.matchAll(/[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g)].map((m) =>
-          Number(m[0]),
-        );
-        const leftover = raw
-          .replace(/[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g, "")
-          .replace(/[\s,]/g, "");
+        const numbers = [...raw.matchAll(new RegExp(NUMBER_SOURCE, "g"))].map((m) => Number(m[0]));
+        const leftover = raw.replace(new RegExp(NUMBER_SOURCE, "g"), "").replace(/[\s,]/g, "");
         if (
           leftover !== "" ||
           numbers.length % 2 !== 0 ||
@@ -823,9 +881,9 @@ export class Converter {
     const value = raw.trim();
     const current = currentColorOf(inh);
     if (/^url\(/i.test(value)) {
-      const m = /^url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)\s*(.*)$/is.exec(value);
-      const ref = (m?.[1] ?? m?.[2] ?? m?.[3] ?? "").trim();
-      const fallbackRaw = (m?.[4] ?? "").trim();
+      const u = parseUrlPaint(value);
+      const ref = u.ref;
+      const fallbackRaw = u.rest;
       const fallback = fallbackRaw === "" ? undefined : parseColor(fallbackRaw, current);
       const fallbackPaint = (): Paint | null =>
         fallback === undefined || fallback === "none"

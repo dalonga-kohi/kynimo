@@ -67,7 +67,7 @@ const rotation = (deg: number): Matrix => {
 
 /** Parses an SVG `transform` list. `undefined` when any part is invalid (SVG then ignores it). */
 export function parseTransform(source: string): Matrix | undefined {
-  const re = /\s*,?\s*([a-zA-Z]+)\s*\(([^()]*)\)/y;
+  const re = /\s*(?:,\s*)?([a-zA-Z]+)\s*\(([^()]*)\)/y;
   const num = numberPattern();
   let m: Matrix = IDENTITY;
   let i = 0;
@@ -159,11 +159,13 @@ export function decompose(m: Matrix): DecomposedTransform | null {
   const [a, b, c, d, e, f] = m;
   const sx = Math.hypot(a, b);
   const det = a * d - b * c;
+  if (!Number.isFinite(sx) || !Number.isFinite(det)) return null;
   if (!(sx > 1e-9) || !(Math.abs(det) > 1e-12)) return null;
   const sy = det / sx;
   const k = (a * c + b * d) / (sx * sy);
   const skew = (-Math.atan(k) * 180) / Math.PI;
   if (Math.abs(skew) > MAX_SKEW) return null;
   const rot = (Math.atan2(b, a) * 180) / Math.PI;
+  if (![e, f, rot, skew, sy].every(Number.isFinite)) return null;
   return { position: [e, f], rotation: rot, skew, scale: [sx, sy] };
 }

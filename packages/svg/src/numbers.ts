@@ -4,7 +4,11 @@ export function round6(n: number): number {
   return r === 0 ? 0 : r;
 }
 
-const NUMBER_SOURCE = "[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?";
+/**
+ * One SVG number. Unambiguous (each character can only be matched one way), so it never
+ * backtracks catastrophically on hostile input. Every number regex in this package derives from it.
+ */
+export const NUMBER_SOURCE = "[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?";
 
 /** Sticky pattern for one SVG number; set `lastIndex` before use. */
 export function numberPattern(): RegExp {
