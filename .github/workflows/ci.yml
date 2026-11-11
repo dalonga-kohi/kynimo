@@ -52,8 +52,12 @@ jobs:
 
       # The compositor tests run in the pinned Chromium on SwiftShader (ADR-0016, ADR-0021).
       # The browser is cached per Playwright version; its system libraries come from apt each run.
+      # @kynimo/capture launches the same browser, so its `playwright` pin must match renderer's.
       - id: playwright
-        run: echo "version=$(pnpm --filter @kynimo/renderer exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        run: |
+          v=$(pnpm --filter @kynimo/renderer exec playwright --version | awk '{print $2}')
+          test -n "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@v4
         id: playwright-cache
@@ -66,7 +70,8 @@ jobs:
 
       # Chromium's libraries and the system FFmpeg (ADR-0032, for the media tests), with a whole-step
       # retry for mirror outages longer than apt's own retries.
-      - run: |
+      - timeout-minutes: 6
+        run: |
           for attempt in 1 2 3; do
             pnpm --filter @kynimo/renderer exec playwright install-deps chromium &&
               sudo apt-get install -y --no-install-recommends ffmpeg && exit 0
