@@ -6,6 +6,7 @@ import {
 } from "@kynimo/intent";
 import {
   ColorSchema,
+  EffectIdSchema,
   LayerPatchSchema,
   LayerSchema,
   LayerSelectorSchema,
@@ -13,6 +14,7 @@ import {
   MAX_BATCH_OPS,
   MAX_COMPOSITION_SIZE,
   MAX_DURATION_FRAMES,
+  MAX_EFFECTS,
   MAX_LAYERS,
   MAX_SHAPE_ITEMS,
   MAX_TEXT_ANIMATORS,
@@ -150,6 +152,15 @@ function compactBody(o: AnyOp) {
   const obj = o as z.ZodObject<z.ZodRawShape>;
   if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
   if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "setEffects")
+    return obj.extend({
+      effects: z
+        .array(z.looseObject({}))
+        .max(MAX_EFFECTS)
+        .describe(
+          "Replaces the ordered effect stack. Items include id and type; see get_layer_schema for fields.",
+        ),
+    });
   if (name === "addBehavior") return obj.extend({ behavior: BehaviorBodySchema });
   if (name === "updateBehavior")
     return obj.extend({
@@ -415,6 +426,18 @@ export const AddBehaviorInput = z.object({
     .nonnegative()
     .optional()
     .describe("Position in the layer's behaviors. Default: last."),
+});
+
+export const AddEffectInput = z.object({
+  ...intentMeta,
+  layer: CompactLayerSelectorSchema,
+  effect: z
+    .looseObject({ type: z.string() })
+    .describe(
+      "Effect without id. Types: gaussian-blur, drop-shadow, glow, brightness-contrast, hue-saturation, tint, fill. Parameters are { value } or { keyframes } in layer time. See get_layer_schema (effects).",
+    ),
+  id: EffectIdSchema.optional(),
+  index: z.number().int().nonnegative().optional().describe("Stack position; default appends."),
 });
 
 export const CreateProjectInput = z.object({

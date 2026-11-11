@@ -1,6 +1,8 @@
 import {
+  AddEffectInputSchema,
   AnimateInputSchema,
   ApplyPresetInputSchema,
+  addEffect,
   animate,
   applyPreset,
   presetCatalog,
@@ -26,6 +28,7 @@ import { compactToolListing } from "./listing.js";
 import {
   AddBehaviorInput,
   AddBehaviorRequest,
+  AddEffectInput,
   AddLayerInput,
   AddMaskInput,
   AnimateToolInput,
@@ -82,7 +85,8 @@ Every write needs base_version (the version you last read) and a fresh idempoten
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
 Text layers take animators (like After Effects): each has a range selector (unit characters/words/lines, start/end/offset as fractions of the text, shape, ease, order incl. seeded random) that weights each unit (0..1, times amount), and properties (position, scale, rotation, opacity, fill, tracking; blur is accepted but not drawn yet) applied at that weight. Selected units get the properties, so to reveal text set opacity 0 and sweep start from 0 to 1 (the unrevealed part stays selected); units the window cuts are selected partly.
-Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).`;
+Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).
+Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adjustment layer filters the composite below it. Edit or remove effects with the setEffects operation.`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(structured) }],
@@ -370,7 +374,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Apply operations",
       description:
-        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, addBehavior, updateBehavior, removeBehavior, setTextAnimators, setShapeContents, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
+        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, setEffects, addBehavior, updateBehavior, removeBehavior, setTextAnimators, setShapeContents, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
       annotations: DESTRUCTIVE,
@@ -490,7 +494,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Precompose",
       description:
-        "Moves layers of one composition into a new composition (same size, frame rate and duration, transparent) and replaces them with one precomp layer at the topmost one's position. The frame looks the same when the moved layers use the normal blend mode (others then blend inside the new composition, not with the layers below); the new layer can then be animated, masked or matted as a group. Returns the new composition in compositions_added.",
+        "Moves layers into a new transparent composition of the same size and timing. Replaces them with one precomp at the topmost layer's position. Blend modes and adjustments inside it only see layers in the new composition. Animate, mask or matte the precomp as a group. Returns compositions_added.",
       inputSchema: PrecomposeInput,
       outputSchema: WriteOutput,
       annotations: WRITE,
@@ -568,6 +572,15 @@ export function createServer(service: KynimoService): McpServer {
     RetimeToolInput,
     RetimeInputSchema,
     retime,
+  );
+
+  intentTool(
+    "add_effect",
+    "Add effect",
+    "Inserts an effect on a drawing or adjustment layer. Returns the setEffects operation and effect id. See get_capabilities for limits.",
+    AddEffectInput,
+    AddEffectInputSchema,
+    addEffect,
   );
 
   intentTool(

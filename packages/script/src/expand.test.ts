@@ -456,6 +456,9 @@ kynimo.op({ op: "removeMarker", marker: "m1" });`,
 kynimo.op({ op: "updateMask", layer: "bg", mask: "mk", set: { inverted: true } });`,
   removeMask: `kynimo.op({ op: "addMask", layer: "bg", id: "mk", mask: ${MASK} });
 kynimo.op({ op: "removeMask", layer: "bg", mask: "mk" });`,
+  setEffects: `kynimo.op({ op: "setEffects", layer: "bg", effects: [
+  { type: "gaussian-blur", id: "blur", radius: prop(12) },
+] });`,
   addBehavior: `kynimo.layer("bg").behavior(${WIGGLE}, { id: "w" });`,
   updateBehavior: `kynimo.layer("bg").behavior(${WIGGLE}, { id: "w" });
 kynimo.op({ op: "updateBehavior", layer: "bg", behavior: "w", set: { octaves: 3 } });`,

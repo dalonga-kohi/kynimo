@@ -83,6 +83,18 @@ function addBehaviors(doc: Json): Json {
   return doc;
 }
 
+/** 7 → 8: drawn layers gain an empty effect stack, preserving their existing pixels. */
+function addEffects(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers)
+      if (isJson(layer) && layer.type !== "audio" && layer.type !== "null" && !("effects" in layer))
+        layer.effects = [];
+  }
+  return doc;
+}
+
 /**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
@@ -96,6 +108,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 4, migrate: (doc) => doc },
   { from: 5, migrate: addTextAnimators },
   { from: 6, migrate: addBehaviors },
+  { from: 7, migrate: addEffects },
 ];
 
 export interface MigrationError {

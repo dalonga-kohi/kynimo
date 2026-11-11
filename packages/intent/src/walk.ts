@@ -15,8 +15,8 @@ const isObject = (v: unknown): v is Obj => typeof v === "object" && v !== null &
 /** Layer fields that hold no animatable tracks (free-form data or metadata). */
 const SKIPPED = new Set(["props", "markers", "editor"]);
 
-/** Layer fields whose tracks an op can write back: transform, masks, behaviors, animators, contents. */
-const WRITABLE = new Set(["transform", "masks", "behaviors", "animators", "contents"]);
+/** Layer fields whose tracks an op can write back. */
+const WRITABLE = new Set(["transform", "masks", "effects", "behaviors", "animators", "contents"]);
 
 export interface KeyframeTrack {
   /** Path from the layer to the `keyframes` list, e.g. `["transform", "position", "keyframes"]`. */
@@ -73,7 +73,7 @@ export function listKeyframeTracks(layer: Layer): KeyframeTrack[] {
 /**
  * Rewrites the `frame` of every keyframe of the layer's animatable fields: transform tracks
  * (including separate X/Y), mask paths, feather, opacity and expansion, text animator selectors
- * and properties, shape contents (recursively) and behavior tracks. Times stay in layer time.
+ * and properties, shape contents (recursively), effects and behavior tracks. Times stay in layer time.
  * Throws `IntentError` (no path) if a keyframed field exists that no operation can write back
  * (a text layer's font size, an audio layer's volume, ...), instead of skipping it.
  */
@@ -105,7 +105,7 @@ function changedFields(before: Obj, after: Obj, keys: readonly string[]): Obj {
 
 /**
  * The operations that turn `before` into `after`, two versions of one layer whose keyframes (and
- * only those) differ. Order: transform tracks, masks, behaviors, text animators, shape contents.
+ * only those) differ.
  */
 export function diffLayerOps(before: Layer, after: Layer): Op[] {
   const ops: Op[] = [];
@@ -140,6 +140,8 @@ export function diffLayerOps(before: Layer, after: Layer): Op[] {
         ops.push({ op: "updateBehavior", layer, behavior: behavior.id, set } as Op);
     });
   }
+  if ("effects" in before && "effects" in after && !deepEqual(before.effects, after.effects))
+    ops.push({ op: "setEffects", layer, effects: after.effects });
   if (before.type === "text" && after.type === "text") {
     if (!deepEqual(before.animators, after.animators))
       ops.push({ op: "setTextAnimators", layer, animators: after.animators });

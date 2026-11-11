@@ -367,6 +367,16 @@ function run(ctx: Ctx, op: Op, i: number): void {
       setLayerValue(ctx, i, layer, ["masks"], layer.masks.filter((_, k) => k !== index) as Json);
       return;
     }
+    case "setEffects": {
+      const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if (!isDrawn(layer))
+        fail(
+          [i, "layer"],
+          `layer '${layer.id}' is a ${layer.type} layer; use a drawing or adjustment layer`,
+        );
+      setLayerValue(ctx, i, layer, ["effects"], op.effects as Json);
+      return;
+    }
     case "addBehavior": {
       const { composition, layer } = resolveTransformed(ctx, op.layer, [i, "layer"]);
       const index = op.index ?? layer.behaviors.length;
@@ -657,6 +667,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     matte: null,
     masks: [],
     behaviors: [],
+    effects: [],
     compositionId: compId,
   };
   emit(ctx, {

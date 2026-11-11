@@ -56,14 +56,20 @@ beforeAll(async () => {
     base_version: 3,
     idempotency_key: "fx",
     composition: "main",
-    layer: { type: "adjustment", name: "Grade" },
-    id: "grade",
+    layer: {
+      type: "component",
+      name: "Badge",
+      componentId: "badge",
+      componentVersion: "1.0.0",
+      props: {},
+    },
+    id: "badge",
   });
 }, 60_000);
 
 afterAll(async () => {
   await renderer?.close();
-});
+}, 60_000);
 
 async function call(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
   const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
@@ -81,6 +87,60 @@ function pngSize(base64: string): [number, number] {
 const images = (r: CallToolResult) => r.content.flatMap((c) => (c.type === "image" ? [c] : []));
 
 describe("render tools with the capture renderer", () => {
+  it("renders an adjustment and the blur-in preset end to end", async () => {
+    const created = await call("create_project", {
+      name: "Effects",
+      idempotency_key: "effects",
+      width: 96,
+      height: 64,
+      duration_frames: 48,
+      background: null,
+    });
+    const project_id = created.structuredContent?.id as string;
+    const meta = (base_version: number, idempotency_key: string) => ({
+      project_id,
+      base_version,
+      idempotency_key,
+    });
+    const render = async (...frames: number[]) => {
+      const result = await call("render_frames", { project_id, frames });
+      expect(result.structuredContent?.skipped).toEqual([]);
+      return images(result).map((image) => image.data);
+    };
+    const [empty] = await render(30);
+    await call("add_layer", {
+      ...meta(1, "source"),
+      id: "square",
+      composition: "main",
+      layer: { type: "solid", name: "Square", width: 24, height: 24, color: "#ff0000" },
+    });
+    const [plain] = await render(30);
+    await call("add_layer", {
+      ...meta(2, "grade"),
+      id: "grade",
+      composition: "main",
+      layer: { type: "adjustment", name: "Grade" },
+    });
+    await call("add_effect", {
+      ...meta(3, "hue"),
+      layer: "grade",
+      effect: { type: "hue-saturation", hue: { value: 120 }, saturation: { value: 0 } },
+    });
+    const [graded] = await render(30);
+    expect(graded).not.toBe(plain);
+    await call("apply_preset", {
+      ...meta(4, "entrance"),
+      layers: "square",
+      preset: "blur-in",
+      params: { radius: 24, duration: 1000, easing: { type: "linear" } },
+    });
+    const [start, middle, end] = await render(0, 15, 30);
+    expect(start).toBe(empty);
+    expect(middle).not.toBe(empty);
+    expect(middle).not.toBe(graded);
+    expect(end).toBe(graded);
+  }, 60_000);
+
   it("returns downscaled PNG frames, lists skipped layers, and caches by document", async () => {
     const r = await call("render_frames", { project_id: project, frames: [0, 29], max_size: 160 });
     const imgs = images(r);
@@ -100,9 +160,9 @@ describe("render tools with the capture renderer", () => {
     expect(s.frames[0]?.pixels_sha256).not.toBe(s.frames[1]?.pixels_sha256);
     expect(s.skipped).toEqual([
       {
-        layer: "grade",
-        type: "adjustment",
-        reason: "adjustment layers apply effects, which arrive in M4",
+        layer: "badge",
+        type: "component",
+        reason: "component evaluation arrives in M6",
         frames: [0, 29],
       },
     ]);

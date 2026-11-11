@@ -13,6 +13,7 @@ import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
+import { resolveEffects } from "./effect.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
   ResolvedAudio,
@@ -33,7 +34,7 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
 
 /**
  * Most work one `evaluateFrame` call may do inside precomps, in units: 1 per layer, plus 1 per
- * shape item, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
+ * shape item, effect, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
  * a precomp evaluates. The root composition is not charged: its work is linear in the document, except
  * that link behaviors with delays (ADR-0039) can make a chain of N links touch N² (layer, frame) pairs
  * (see {@link MAX_FRAME_LINK_STEPS}, which caps it). Other behaviors are not charged: each costs
@@ -60,6 +61,7 @@ function compositionCost(comp: Composition): number {
   for (const layer of comp.layers) {
     units += 1;
     if (layer.type === "audio" || layer.type === "null") continue;
+    units += layer.effects.length;
     for (const mask of layer.masks) units += 1 + vertexCount(mask.path);
     if (layer.type !== "shape") continue;
     const stack: ShapeItem[] = [...layer.contents];
@@ -197,6 +199,7 @@ function evaluateComposition(
         matrix: worldOf(layer),
         blendMode: layer.blendMode,
         masks: resolveMasks(layer.masks, layerFrame, fps),
+        effects: resolveEffects(layer.effects, layerFrame, fps),
         matte: null,
       });
       resolvedById.set(layer.id, resolved);
@@ -263,7 +266,7 @@ function charge(ctx: Context, comp: Composition): void {
   ctx.budget -= cost;
   if (ctx.budget < 0)
     throw new RangeError(
-      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, masks, path and mask vertices, gradient stops); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
+      `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, effects, masks, path and mask vertices, gradient stops); it ran out in composition '${comp.id}' via precomp layers ${ctx.chain.join(" > ")}. Precomps placed at many different start frames multiply: place fewer copies, or give copies the same startFrame`,
     );
 }
 
@@ -278,7 +281,15 @@ function withChain<T>(ctx: Context, layerId: string, run: () => T): T {
 
 type Base = Pick<
   ResolvedLayer,
-  "id" | "name" | "layerFrame" | "transform" | "matrix" | "blendMode" | "masks" | "matte"
+  | "id"
+  | "name"
+  | "layerFrame"
+  | "transform"
+  | "matrix"
+  | "blendMode"
+  | "masks"
+  | "effects"
+  | "matte"
 >;
 
 /** Keeps eased overshoot inside the schema's range, so the renderer never strokes absurd widths. */

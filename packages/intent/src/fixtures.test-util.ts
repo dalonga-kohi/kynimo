@@ -5,6 +5,7 @@ import {
   type Op,
   type Project,
   ProjectSchema,
+  SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { expect } from "vitest";
 
@@ -140,7 +141,7 @@ export const wiggle = (id: string, over: Obj = {}): Obj => ({
 
 export const doc = (layers: Obj[], over: Obj = {}, comp: Obj = {}): Project =>
   ProjectSchema.parse({
-    formatVersion: 7,
+    formatVersion: SCENE_FORMAT_VERSION,
     name: "Demo",
     mainCompositionId: "main",
     style: null,

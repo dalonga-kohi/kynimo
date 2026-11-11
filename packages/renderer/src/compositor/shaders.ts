@@ -1,3 +1,5 @@
+import { MAX_EFFECT_RADIUS } from "@kynimo/scene";
+
 /**
  * GLSL ES 3.00 for the WebGL2 compositor (ADR-0021). Every function mirrors `blend.ts` and
  * `reference.ts`; change them together. Images are indexed by texel with `texelFetch`, never
@@ -20,17 +22,121 @@ precision highp sampler2D;
 out vec4 outColor;
 `;
 
-/** Raster (RGBA8 or RGBA16F) times mask coverage (R8), into RGBA16F at raster size. */
+/** Raster (RGBA8 or RGBA16F) times mask coverage (R8), with transparent padding for effects. */
 export const PREPARE = `${HEADER}
 uniform sampler2D u_src;
 uniform sampler2D u_mask;
 uniform bool u_hasMask;
+uniform ivec2 u_pad;
 void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 p = ivec2(gl_FragCoord.xy) - u_pad;
+  ivec2 size = textureSize(u_src, 0);
+  if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size))) {
+    outColor = vec4(0.0);
+    return;
+  }
   vec4 c = texelFetch(u_src, p, 0);
   if (u_hasMask) c *= texelFetch(u_mask, p, 0).r;
   outColor = c;
 }`;
+
+const TRANSPARENT_FETCH = `
+vec4 at(sampler2D s, ivec2 p) {
+  ivec2 size = textureSize(s, 0);
+  return any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size))
+    ? vec4(0.0) : texelFetch(s, p, 0);
+}
+`;
+
+export const GAUSSIAN = `${HEADER}
+uniform sampler2D u_src;
+uniform ivec2 u_axis;
+uniform int u_radius;
+uniform float u_weights[${MAX_EFFECT_RADIUS + 1}];
+${TRANSPARENT_FETCH}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = at(u_src, p) * u_weights[0];
+  for (int i = 1; i <= u_radius; i++) {
+    ivec2 d = i * u_axis;
+    c += (at(u_src, p - d) + at(u_src, p + d)) * u_weights[i];
+  }
+  outColor = c;
+}`;
+
+/** Straight-color corrections preserve the source's coverage. Shadow and glow sit under it. */
+export const EFFECT = `${HEADER}
+uniform sampler2D u_src;
+uniform sampler2D u_blur;
+uniform int u_mode;
+uniform vec2 u_params;
+uniform vec4 u_color;
+uniform vec4 u_white;
+uniform float u_amount;
+${TRANSPARENT_FETCH}
+
+float shiftedAlpha(vec2 p) {
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  float top = mix(at(u_blur, i).a, at(u_blur, i + ivec2(1, 0)).a, f.x);
+  float bottom = mix(at(u_blur, i + ivec2(0, 1)).a, at(u_blur, i + ivec2(1, 1)).a, f.x);
+  return mix(top, bottom, f.y);
+}
+
+vec3 hueSaturation(vec3 c, float hue, float saturation) {
+  float hi = max(c.r, max(c.g, c.b));
+  float lo = min(c.r, min(c.g, c.b));
+  float d = hi - lo;
+  if (d <= 0.0) return c;
+  float h = hi == c.r ? (c.g - c.b) / d
+    : hi == c.g ? 2.0 + (c.b - c.r) / d : 4.0 + (c.r - c.g) / d;
+  h += hue / 60.0;
+  vec3 wheel = clamp(abs(mod(h + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return hi - min(hi, d * (1.0 + saturation)) * (1.0 - wheel);
+}
+
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(u_src, p, 0);
+  if (u_mode <= 2) {
+    float a = u_mode == 1 ? shiftedAlpha(vec2(p) - u_params) : texelFetch(u_blur, p, 0).a;
+    vec4 under = vec4(u_color.rgb, 1.0) * (a * u_color.a * u_amount);
+    outColor = c + under * (1.0 - c.a);
+    return;
+  }
+  if (c.a <= 0.0) {
+    outColor = vec4(0.0);
+    return;
+  }
+  vec3 rgb = clamp(c.rgb / c.a, 0.0, 1.0);
+  switch (u_mode) {
+    case 3:
+      rgb = (rgb - 0.5) * (1.0 + u_params.y) + 0.5 + u_params.x;
+      break;
+    case 4:
+      rgb = hueSaturation(rgb, u_params.x, u_params.y);
+      break;
+    case 5: {
+      float l = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+      vec4 tint = mix(u_color, u_white, l);
+      rgb = mix(rgb, tint.rgb, tint.a * u_amount);
+      break;
+    }
+    case 6:
+      rgb = mix(rgb, u_color.rgb, u_color.a * u_amount);
+      break;
+  }
+  outColor = vec4(clamp(rgb, 0.0, 1.0) * c.a, c.a);
+}`;
+
+const MATTE_COVERAGE = `
+float matteCoverage(sampler2D matte, ivec2 p, int mode, bool empty) {
+  if (mode == 0) return 1.0;
+  vec4 m = empty ? vec4(0.0) : texelFetch(matte, p, 0);
+  float v = mode <= 2 ? m.a : dot(m.rgb, vec3(0.2126, 0.7152, 0.0722));
+  return mode == 2 || mode == 4 ? 1.0 - v : v;
+}
+`;
 
 /** Next mip level: the mean of a 2×2 block, texels past the edge transparent. */
 export const DOWNSAMPLE = `${HEADER}
@@ -63,6 +169,7 @@ uniform sampler2D u_matte;
 uniform int u_matteMode;
 uniform bool u_matteEmpty;
 uniform float u_opacity;
+${MATTE_COVERAGE}
 
 vec4 texel(sampler2D s, ivec2 p, ivec2 size) {
   return (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) ? vec4(0.0) : texelFetch(s, p, 0);
@@ -87,12 +194,7 @@ void main() {
     c = bilinear(u_lo, q * u_scale.x);
     if (u_t > 0.0) c = mix(c, bilinear(u_hi, q * u_scale.y), u_t);
   }
-  float factor = u_opacity;
-  if (u_matteMode != 0) {
-    vec4 m = u_matteEmpty ? vec4(0.0) : texelFetch(u_matte, ivec2(gl_FragCoord.xy), 0);
-    float v = u_matteMode <= 2 ? m.a : dot(m.rgb, vec3(0.2126, 0.7152, 0.0722));
-    factor *= (u_matteMode == 2 || u_matteMode == 4) ? 1.0 - v : v;
-  }
+  float factor = u_opacity * matteCoverage(u_matte, ivec2(gl_FragCoord.xy), u_matteMode, u_matteEmpty);
   outColor = c * factor;
 }`;
 
@@ -101,6 +203,14 @@ export const BLEND = `${HEADER}
 uniform sampler2D u_backdrop;
 uniform sampler2D u_source;
 uniform int u_mode;
+uniform bool u_adjustment;
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+uniform sampler2D u_matte;
+uniform int u_matteMode;
+uniform bool u_matteEmpty;
+uniform float u_opacity;
+${MATTE_COVERAGE}
 
 float multiply(float b, float s) { return b * s; }
 float screen(float b, float s) { return b + s - b * s; }
@@ -178,6 +288,17 @@ void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 b = texelFetch(u_backdrop, p, 0);
   vec4 s = texelFetch(u_source, p, 0);
+  if (u_adjustment) {
+    float coverage = u_hasMask ? texelFetch(u_mask, p, 0).r : 1.0;
+    float factor = u_opacity * coverage * matteCoverage(u_matte, p, u_matteMode, u_matteEmpty);
+    if (u_mode != 0 && b.a > 0.0 && s.a > 0.0) {
+      vec3 cb = clamp(b.rgb / b.a, 0.0, 1.0);
+      vec3 cs = clamp(s.rgb / s.a, 0.0, 1.0);
+      s.rgb = mix(s.rgb, s.a * blendColor(u_mode, cb, cs), b.a);
+    }
+    outColor = mix(b, s, factor);
+    return;
+  }
   if (u_mode == 0 || b.a <= 0.0 || s.a <= 0.0) {
     outColor = s + b * (1.0 - s.a);
     return;

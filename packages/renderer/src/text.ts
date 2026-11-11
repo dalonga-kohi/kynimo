@@ -7,6 +7,7 @@ import {
 } from "@kynimo/engine";
 import { FALLBACK_FONT_FAMILY } from "@kynimo/scene";
 import type { CanvasKit, LineMetrics, Paragraph } from "canvaskit-wasm";
+import { effectPadding } from "./compositor/effects.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary, LoadedFont } from "./fonts.js";
 import type { RasterImage, RenderWarning } from "./raster.js";
@@ -430,7 +431,7 @@ function rasterizeAnimated(
     if (box !== null) bounds = bounds === null ? box : union(bounds, box);
   }
   if (bounds === null) return null;
-  const crop = cropToComposition(bounds, width, height);
+  const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
   if (crop === null) return null;
   const [x0, y0, x1, y1] = crop;
   reserve(x1 - x0, y1 - y0);
@@ -488,8 +489,7 @@ function rasterizeAnimated(
 }
 
 /**
- * Animated properties this renderer accepts but does not draw yet (ADR-0038). Blur needs the
- * effect path (M4); until then it is reported, so an agent does not wait for a blur that never shows.
+ * Per-glyph blur is a text animator property. The built-in Gaussian blur applies to a whole layer.
  */
 export function textAnimatorWarnings(layer: ResolvedTextLayer): RenderWarning[] {
   const blurred = layer.animators.some((a) => a.blur !== null && a.blur > 0);
@@ -500,7 +500,7 @@ export function textAnimatorWarnings(layer: ResolvedTextLayer): RenderWarning[] 
           kind: "animator-blur",
           codepoints: [],
           message:
-            "a text animator sets blur, which is accepted but not drawn yet: blur arrives with effects",
+            "a text animator sets per-glyph blur, which is not drawn yet; use gaussian-blur to blur the whole text layer",
         },
       ]
     : [];
@@ -547,7 +547,7 @@ export function rasterizeTextLayer(
     const local = layoutBounds(layout);
     const bounds = local === null ? null : transformRect(layer.matrix, local);
     if (bounds === null) return null;
-    const crop = cropToComposition(bounds, width, height);
+    const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);

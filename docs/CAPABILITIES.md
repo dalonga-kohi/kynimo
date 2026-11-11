@@ -134,7 +134,9 @@ Spring note: a spring segment runs from its keyframe toward the next keyframe's 
 
 ## 7. Effects
 
-Effects stack per layer and on adjustment layers. They render deterministically under the conditions in [Determinism](#determinism).
+Effects stack per layer and on adjustment layers (ADR-0042). Use `add_effect` to insert an effect, `get_layer` to inspect the stack, and `setEffects` via `apply_ops` to edit, reorder or remove effects. Parameters use `{ value }` or `{ keyframes }` in layer time. Look up the fields in `get_layer_schema`.
+
+Adjustment layers filter the composite below them in the same composition. Their masks, track mattes and opacity control where and how strongly the finished filter appears. `blur-in` animates a layer from blurred and transparent to sharp at its original opacity.
 
 | Capability                                                                       | AE equivalent               | Status |
 | -------------------------------------------------------------------------------- | --------------------------- | ------ |

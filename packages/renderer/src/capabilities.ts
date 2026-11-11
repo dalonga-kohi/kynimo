@@ -3,14 +3,19 @@ import {
   type AnimatorProperties,
   type BehaviorType,
   type BlendMode,
+  type Effect,
   type LayerType,
   MAX_BEHAVIORS,
+  MAX_EFFECT_RADIUS,
+  MAX_EFFECTS,
+  MAX_SHADOW_OFFSET,
   type MaskMode,
   type Paint,
   type ShapeItem,
   type TrackMatte,
 } from "@kynimo/scene";
 import { MAX_FRAME_SHAPE_WORK, MAX_SHAPE_LAYER_WORK } from "./binding.js";
+import { MAX_FRAME_EFFECT_SAMPLES } from "./compositor/effects.js";
 import { BLEND_MODE_IDS } from "./compositor/pipeline.js";
 import { BUNDLED_FONTS, FONT_FORMATS } from "./fonts.js";
 import { IMAGE_FORMATS } from "./images.js";
@@ -39,10 +44,7 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   solid: RENDERS,
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },
-  adjustment: {
-    status: "accepted",
-    reason: "adjustment layers apply effects, which arrive in M4",
-  },
+  adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
   component: { status: "accepted", reason: "component evaluation arrives in M6" },
   audio: {
     status: "accepted",
@@ -90,7 +92,7 @@ export const TEXT_ANIMATOR_SUPPORT: Readonly<Record<keyof AnimatorProperties, Su
   blur: {
     status: "accepted",
     reason:
-      "blur arrives with effects (M4); the animator is kept, and renders carry an 'animator-blur' warning",
+      "per-glyph blur is kept and reported as an 'animator-blur' warning; use gaussian-blur for the whole layer",
   },
   tracking: {
     status: "renders",
@@ -120,6 +122,23 @@ export const BEHAVIOR_SUPPORT: Readonly<Record<BehaviorType, Support>> = {
 export const BEHAVIOR_LIMITS = {
   behaviorsPerLayer: MAX_BEHAVIORS,
   linkStepsPerFrame: MAX_FRAME_LINK_STEPS,
+} as const;
+
+export const EFFECT_SUPPORT: Readonly<Record<Effect["type"], Support>> = {
+  "gaussian-blur": RENDERS,
+  "drop-shadow": RENDERS,
+  glow: RENDERS,
+  "brightness-contrast": RENDERS,
+  "hue-saturation": RENDERS,
+  tint: RENDERS,
+  fill: RENDERS,
+};
+
+export const EFFECT_LIMITS = {
+  effectsPerLayer: MAX_EFFECTS,
+  radius: MAX_EFFECT_RADIUS,
+  absoluteShadowOffset: MAX_SHADOW_OFFSET,
+  samplesPerFrame: MAX_FRAME_EFFECT_SAMPLES,
 } as const;
 
 export const PAINT_SUPPORT: Readonly<Record<Paint["type"], Support>> = {

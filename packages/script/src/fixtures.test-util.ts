@@ -1,4 +1,4 @@
-import { type Project, ProjectSchema } from "@kynimo/scene";
+import { type Project, ProjectSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 
 type Obj = Record<string, unknown>;
 
@@ -65,7 +65,7 @@ export const kf = (frame: number, value: unknown): Obj => ({
  */
 export const baseDoc = (over: Obj = {}, bgId = "bg"): Project =>
   ProjectSchema.parse({
-    formatVersion: 7,
+    formatVersion: SCENE_FORMAT_VERSION,
     name: "Demo",
     mainCompositionId: "main",
     style: null,

@@ -1,6 +1,14 @@
+import type { ResolvedEffect } from "@kynimo/engine";
 import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { CoverageImage, FramePlan, PlannedLayer, RasterImage } from "../raster.js";
+import type {
+  CoverageImage,
+  FramePlan,
+  PlannedAdjustmentLayer,
+  PlannedFrameLayer,
+  PlannedLayer,
+  RasterImage,
+} from "../raster.js";
 import { blendColor } from "./blend.js";
 import { type GpuSession, launchGpu } from "./browser.test-util.js";
 import { precompUses } from "./pipeline.js";
@@ -12,7 +20,7 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => {
   await gpu?.close();
-});
+}, 60_000);
 
 const W = 64;
 const H = 48;
@@ -60,7 +68,7 @@ const solid = (
     ...overrides,
   }) as PlannedLayer;
 
-const plan = (layers: PlannedLayer[], overrides: Partial<FramePlan> = {}): FramePlan => ({
+const plan = (layers: PlannedFrameLayer[], overrides: Partial<FramePlan> = {}): FramePlan => ({
   width: W,
   height: H,
   background: null,
@@ -130,6 +138,125 @@ async function expectMatches(p: FramePlan, allowed: (pixel: number) => boolean =
 describe("WebGL2 compositor on SwiftShader", () => {
   it("runs on SwiftShader", () => {
     expect(gpu.renderer).toMatch(/SwiftShader/);
+  });
+
+  const color = { r: 0.15, g: 0.75, b: 0.4, a: 0.8 };
+  const effects: ResolvedEffect[] = [
+    { type: "gaussian-blur", radius: 5.5 },
+    { type: "drop-shadow", radius: 3.25, offset: [-4.5, 3.25], color, opacity: 0.8 },
+    { type: "glow", radius: 7, color, intensity: 0.7 },
+    { type: "brightness-contrast", brightness: 0.2, contrast: -0.3 },
+    { type: "hue-saturation", hue: -87, saturation: 0.2 },
+    { type: "tint", black: color, white: { r: 1, g: 1, b: 0.2, a: 1 }, amount: 0.6 },
+    { type: "fill", color, amount: 0.4 },
+  ];
+
+  for (const effect of effects) {
+    it(`matches the reference for ${effect.type} on a translucent, masked, transformed layer`, async () => {
+      const layer = solid("source", gradient(13, 11, 5), {
+        effects: [effect],
+        mask: coverage(13, 11),
+        matrix: [1.3, 0.2, -0.2, 1.3, 17, 13],
+      });
+      const p = plan([layer]);
+      const plain = plan([{ ...layer, effects: [] }]);
+      await expectMatches(p);
+      expect((await gpu.composite(p)).pixels).not.toEqual((await gpu.composite(plain)).pixels);
+    });
+  }
+
+  it("keeps the padded shadow in source space and applies effects in order", async () => {
+    const src = solid(
+      "pixel",
+      { width: 1, height: 1, pixels: Uint8Array.of(255, 0, 0, 255) },
+      {
+        matrix: [2, 0, 0, 2, 20, 20],
+        effects: [
+          { type: "drop-shadow", radius: 0, offset: [-5, 0], color, opacity: 1 },
+          { type: "fill", color: { r: 0, g: 1, b: 0, a: 1 }, amount: 1 },
+        ],
+      },
+    );
+    const p = plan([src]);
+    const first = await gpu.composite(p);
+    const pixel = (img: RasterImage, x: number, y: number) => [
+      ...img.pixels.subarray((y * W + x) * 4, (y * W + x) * 4 + 4),
+    ];
+    const shadow = pixel(first, 10, 20);
+    expect(shadow[0]).toBe(0);
+    expect(shadow[1]).toBeGreaterThan(0);
+    expect(shadow[1]).toBe(shadow[3]);
+    const reversed = await gpu.composite(
+      plan([{ ...src, effects: [...(src.effects ?? [])].reverse() }]),
+    );
+    expect(pixel(reversed, 10, 20)[0]).toBeGreaterThan(0);
+    await expectMatches(p);
+    expect((await gpu.composite(p)).pixels).toEqual(first.pixels);
+  });
+
+  it("rejects a stack over the frame sample budget and keeps the compositor usable", async () => {
+    const adjustment: PlannedAdjustmentLayer = {
+      type: "adjustment",
+      id: "large-grade",
+      blendMode: "normal",
+      opacity: 1,
+      effects: Array.from({ length: 8 }, () => ({ type: "gaussian-blur", radius: 48 })),
+      mask: null,
+      matte: null,
+    };
+    const p = plan([adjustment], { width: 640, height: 640 });
+    expect(() => compositeReference(p)).toThrow(/large-grade.*frame budget/);
+    await expect(gpu.composite(p)).rejects.toThrow(/large-grade.*frame budget/);
+    await expectMatches(plan([]));
+  });
+
+  it("uses masks and matte coverage to gate an adjustment without painting over layers above it", async () => {
+    const width = 5;
+    const height = 1;
+    const row = (...values: number[]): RasterImage => ({
+      width,
+      height,
+      pixels: Uint8Array.from(values),
+    });
+    const back = solid(
+      "below",
+      row(0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    );
+    const top = solid("above", row(0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+    const matte = solid(
+      "matte",
+      row(0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 255),
+    );
+    const adjustment: PlannedAdjustmentLayer = {
+      type: "adjustment",
+      id: "grade",
+      blendMode: "normal",
+      opacity: 0.75,
+      effects: [{ type: "gaussian-blur", radius: 6 }],
+      mask: { width, height, coverage: Uint8Array.of(255, 0, 255, 255, 0) },
+      matte: { layerId: "matte", mode: "alpha", source: matte },
+    };
+    const p = plan([top, adjustment, back], { width, height });
+    await expectMatches(p);
+    const { pixels } = await gpu.composite(p);
+    expect([...pixels.subarray(0, 8)]).toEqual([0, 0, 255, 255, 255, 0, 0, 255]);
+    expect(pixels[11]).toBeGreaterThan(0); // the blur sees the red pixel outside the adjustment mask
+    expect([...pixels.subarray(12)]).toEqual(new Array(8).fill(0));
+    const multiply = plan(
+      [
+        {
+          ...adjustment,
+          blendMode: "multiply",
+          mask: null,
+          matte: null,
+          effects: [{ type: "fill", color: { r: 0.5, g: 1, b: 0, a: 1 }, amount: 1 }],
+        },
+        back,
+      ],
+      { width, height },
+    );
+    await expectMatches(multiply);
+    expect([...(await gpu.composite(multiply)).pixels.subarray(4, 8)]).toEqual([159, 0, 0, 255]);
   });
 
   it.each(BLEND_MODES)("matches the reference for %s", async (mode) => {

@@ -1,6 +1,10 @@
 import type { BlendMode, Json, MaskMode, TrackMatte } from "@kynimo/scene";
 import type { Affine } from "./affine.js";
 import type { Rgba } from "./color.js";
+import type { ResolvedEffect } from "./effect.js";
+
+export type { ResolvedEffect } from "./effect.js";
+
 import type { ResolvedTextAnimator } from "./text-animator.js";
 
 /**
@@ -50,6 +54,8 @@ interface LayerBase {
   blendMode: BlendMode;
   /** Active masks in document order (`none` masks are left out). Empty: the layer is unmasked. */
   masks: ResolvedMask[];
+  /** Active effects in document order, with parameters sampled in layer time. */
+  effects: ResolvedEffect[];
   matte: ResolvedMatte | null;
 }
 
@@ -127,7 +133,7 @@ export interface ResolvedPrecompLayer extends LayerBase {
   composition: ResolvedComposition | null;
 }
 
-/** Effects arrive in M4; until then an adjustment layer changes nothing. */
+/** Filters the accumulated pixels below it in the same composition. */
 export interface ResolvedAdjustmentLayer extends LayerBase {
   type: "adjustment";
 }

@@ -4,6 +4,7 @@ export {
   type AnimateResolved,
   animate,
 } from "./animate.js";
+export { AddEffectInputSchema, addEffect } from "./effects.js";
 export { type InputPath, IntentError } from "./errors.js";
 export {
   ApplyPresetInput,

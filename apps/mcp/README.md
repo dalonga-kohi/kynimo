@@ -24,7 +24,9 @@ To connect an MCP client (e.g. Claude Desktop or Claude Code), point it at the b
 }
 ```
 
-Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `add_behavior`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
+Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
+
+`add_effect` accepts a layer selector and a typed effect body, for example `{ "type": "gaussian-blur", "radius": { "value": 12 } }`. Use `dry_run: true` to preview its `setEffects` operation. Inspect the full parameter schema under `effects` in `get_layer_schema`, or use `apply_preset` with `blur-in` for a blur-to-sharp entrance.
 
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
 

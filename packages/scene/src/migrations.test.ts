@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { project, visual } from "./fixtures.test-util.js";
+import { composition, nullLayer, project, visual } from "./fixtures.test-util.js";
 import {
   checkMigrations,
   MIGRATIONS,
@@ -225,14 +225,14 @@ describe("migrateProject", () => {
   it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 7 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 8 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 7 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 8 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +255,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 7 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 8 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -347,7 +347,7 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v6);
-    expect(r).toMatchObject({ ok: true, from: 6, to: 7 });
+    expect(r).toMatchObject({ ok: true, from: 6, to: 8 });
     if (!r.ok) return;
     const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ behaviors: [] });
@@ -375,6 +375,26 @@ describe("migrateProject", () => {
     expect(again.ok && again.doc.compositions[0]?.layers[0]).toMatchObject({
       behaviors: [{ id: "w" }],
     });
+  });
+
+  it("7 → 8 adds empty stacks to drawable layers and leaves null layers alone", () => {
+    const v7 = project({
+      formatVersion: 7,
+      compositions: [
+        composition("main", [
+          { ...visual("solid"), type: "solid", width: 16, height: 16, color: "#ff0000" },
+          { ...visual("adjustment"), type: "adjustment" },
+          nullLayer("null"),
+        ]),
+      ],
+    });
+    const r = migrateProject(v7);
+    expect(r).toMatchObject({ ok: true, from: 7, to: 8 });
+    if (!r.ok) return;
+    const [solid, adjustment, nul] = r.doc.compositions[0]?.layers ?? [];
+    expect(solid).toMatchObject({ effects: [] });
+    expect(adjustment).toMatchObject({ effects: [] });
+    expect(nul).not.toHaveProperty("effects");
   });
 
   it("rejects unknown and future versions", () => {
