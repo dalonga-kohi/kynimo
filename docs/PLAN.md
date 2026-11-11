@@ -26,17 +26,6 @@ Animated text draws each cluster as its own paragraph: about 0.25 ms per glyph, 
    - Reuse shaped clusters across frames in the render cache (M7).
 3. Constraint: a layer with an active animator must stay pixel-identical to the plain layer when the animator changes nothing visible; the parity tests in `packages/renderer/src/text-animator.test.ts` and the `text-animators` reference frames are the gate. Raise the budgets only with the measured numbers.
 
-## Intent tools (M4)
-
-The tools agents should reach for first. Each expands to one `apply_ops` batch and returns the ops it produced, so the agent can inspect and adjust.
-
-1. `animate`: layer selector, property, from/to or a named move, duration in seconds, easing or spring by name. Places spring keyframes at settle frames (CAPABILITIES.md, spring note).
-2. `apply_preset`: presets are data (name, parameters, op template) in a catalog that is also an MCP resource. Start with about twelve that cover the brief suite: fade-up, scale-in, slide, mask-reveal, typewriter, word-by-word, blur-in, pop, draw-on (trim), count-up, exit pairs.
-3. `stagger`: offset, order (index, reverse, center-out, seeded random) and rhythm; works over layers and, through animators, glyphs.
-4. `retime`: scale or shift a selection's keyframes; refuses results that break spring settle rules and suggests the fix.
-5. Token names come from `@kynimo/guidelines` (ADR-0037): the pinned pack's, or Keynote's when the document pins none.
-6. Listing budget: move per-tool detail into `get_layer_schema`-style lookups so `tools/list` stays under 60 KB. Rewrite the server instructions to lead with intent tools.
-
 ## `run_script` (M4, ADR-0036)
 
 1. `packages/script` (new): the sandbox runner from `spikes/script-sandbox` as a library. One WebAssembly instance per run in a worker thread with a wall-clock deadline, the prelude that removes `Date`, `Math.random`, `WeakRef` and `FinalizationRegistry`, counted limits, errors mapped back to source line and column. The seed and the document snapshot are passed in as values, never pasted into source. A run with pending promise work is an error.

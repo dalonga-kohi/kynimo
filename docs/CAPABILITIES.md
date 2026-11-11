@@ -128,7 +128,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 
 Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant). Motion that really needs code goes into a custom component or shader (§8).
 
-Behaviors today (ADR-0039, format v7): up to 16 per transform layer, on `anchorPoint`, `position`, `scale`, `rotation`, `skew` and `opacity`. Types: `wiggle` (seeded value noise, octaves, `linked` axes), `oscillate` (sine, triangle, square, sawtooth), `loop` (in or out; cycle, pingpong, offset, continue), `inertia` (overshoot and settle after a keyframe lands) and `link` (another layer's property × multiply + offset, optionally `delay` frames later; cycles refused). Ops `addBehavior`, `updateBehavior`, `removeBehavior` through `apply_ops`; `describe_motion` lists each behavior as a line and the manifest states the limits, including a per-frame budget of 100 000 link steps. The `add_behavior` intent tool and behavior presets are still M4-later.
+Behaviors today (ADR-0039, format v7): up to 16 per transform layer, on `anchorPoint`, `position`, `scale`, `rotation`, `skew` and `opacity`. Types: `wiggle` (seeded value noise, octaves, `linked` axes), `oscillate` (sine, triangle, square, sawtooth), `loop` (in or out; cycle, pingpong, offset, continue), `inertia` (overshoot and settle after a keyframe lands) and `link` (another layer's property × multiply + offset, optionally `delay` frames later; cycles refused). Ops `addBehavior`, `updateBehavior`, `removeBehavior` through `apply_ops`; `describe_motion` lists each behavior as a line and the manifest states the limits, including a per-frame budget of 100 000 link steps. `add_behavior` is a tool (ADR-0040); behavior presets are later.
 
 Spring note: a spring segment runs from its keyframe toward the next keyframe's value, and its length is set by the spring's settle time. The next keyframe must sit at or after that settle frame. Placing it earlier is a validation error, and the error suggests a fix op: move the keyframe to the settle frame, or switch the segment to bezier. Every stored keyframe value is therefore the value rendered at its frame, and no velocity carries into the next segment. `animate` places keyframes at settle frames automatically.
 
@@ -202,7 +202,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 12. **Retry-safe writes.** Every mutating tool takes an idempotency key: a retry after a dropped connection returns the original result instead of applying twice, and `get_write_outcome` tells the agent whether a write landed (ADR-0018).
 13. **Bounded renders.** Render tools declare their limits in their schemas and reject oversized requests with values that fit. Deterministic results are cached; long renders are cancellable jobs with progress (ADR-0018).
 14. **Fidelity reports.** Imports and exports report missing assets and fonts, dropped, flattened and approximated features. Imports support a dry run (ADR-0018).
-15. **A bounded listing.** `tools/list` stays under 60 KB as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
+15. **A bounded listing.** `tools/list` stays under a byte budget (60 KB, raised to 70 KB for the intent tools in ADR-0040) as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
 
 ### Tool groups (target)
 
@@ -211,8 +211,8 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                                      | M3        |
 | Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome`, `get_layer_schema` | M3        |
 | Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
-| Precise  | `add_effect`, `add_behavior`                                                                                                                                         | M4        |
-| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                                       | M4        |
+| Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4        |
+| Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4        |
 | Code     | `run_script` (TypeScript → one validated batch of operations, ADR-0036)                                                                                              | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
