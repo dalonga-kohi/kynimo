@@ -88,9 +88,15 @@ interface Comparison {
 }
 
 /** Runs in the page: decodes our PNG, rasterizes the SVG natively, and compares the RGBA pixels. */
-async function compareInPage(page: Page, ours: string, svg: string, size: number, delta: number) {
+async function compareInPage(
+  page: Page,
+  ours: string,
+  svgBase64: string,
+  size: number,
+  delta: number,
+) {
   return page.evaluate(
-    async ({ ours, svg, size, delta }) => {
+    async ({ ours, svgBase64, size, delta }) => {
       const load = (src: string) =>
         new Promise<HTMLImageElement>((resolve, reject) => {
           const img = new Image();
@@ -112,7 +118,7 @@ async function compareInPage(page: Page, ours: string, svg: string, size: number
         return ctx.getImageData(0, 0, size, size).data;
       };
       const a = pixels(await load(`data:image/png;base64,${ours}`), false);
-      const nativeImage = await load(`data:image/svg+xml;base64,${btoa(svg)}`);
+      const nativeImage = await load(`data:image/svg+xml;base64,${svgBase64}`);
       const b = pixels(nativeImage, true);
       const diff = document.createElement("canvas");
       diff.width = size;
@@ -158,7 +164,7 @@ async function compareInPage(page: Page, ours: string, svg: string, size: number
         diff: strip(diff.toDataURL("image/png")),
       };
     },
-    { ours, svg, size, delta },
+    { ours, svgBase64, size, delta },
   ) as Promise<Comparison>;
 }
 
@@ -188,7 +194,13 @@ describe("SVG import against Chromium's own rasterizer (ADR-0043)", () => {
       expect(frame.skipped).toEqual([]);
       expect(frame.warnings).toEqual([]);
       const ours = Buffer.from(frame.png).toString("base64");
-      const result = await compareInPage(page, ours, svg, SIZE, PIXEL_DELTA);
+      const result = await compareInPage(
+        page,
+        ours,
+        Buffer.from(svg, "utf8").toString("base64"),
+        SIZE,
+        PIXEL_DELTA,
+      );
       console.warn(
         `svg-fidelity ${name}: ${(result.fraction * 100).toFixed(3)}% of pixels differ by more than ${PIXEL_DELTA}, mean channel difference ${result.mean.toFixed(3)}`,
       );

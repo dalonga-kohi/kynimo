@@ -113,3 +113,103 @@ export function parseOpacity(value: string | undefined): number | undefined {
   if (n === undefined) return undefined;
   return Math.max(0, Math.min(1, s.endsWith("%") ? n / 100 : n));
 }
+
+/** Properties the converter reads or reports itself (`filter`, `clip-path`, ...): never "unsupported". */
+const CARRIED = new Set<string>([...PRESENTATION]);
+
+/** Properties that only matter for text (reported as dropped) or rendering hints with no shape output. */
+const HARMLESS = new Set<string>([
+  "letter-spacing",
+  "word-spacing",
+  "line-height",
+  "white-space",
+  "direction",
+  "unicode-bidi",
+  "writing-mode",
+  "dominant-baseline",
+  "alignment-baseline",
+  "baseline-shift",
+  "kerning",
+  "color-interpolation",
+  "color-interpolation-filters",
+  "color-rendering",
+  "shape-rendering",
+  "image-rendering",
+  "pointer-events",
+  "cursor",
+  "overflow",
+  "enable-background",
+  "flood-color",
+  "flood-opacity",
+  "lighting-color",
+  "clip-rule",
+  "user-select",
+  "touch-action",
+]);
+
+/** Presentation attributes (not only style declarations) whose effect is not carried. */
+const UNSUPPORTED_ATTRIBUTES = [
+  "paint-order",
+  "mix-blend-mode",
+  "isolation",
+  "transform-origin",
+  "transform-box",
+] as const;
+
+const isHarmlessName = (name: string): boolean =>
+  HARMLESS.has(name) ||
+  name.startsWith("font") ||
+  name.startsWith("text-") ||
+  name.startsWith("glyph-orientation") ||
+  // Vendor-prefixed (`-inkscape-font-specification`, `-webkit-...`) and custom (`--x`) properties.
+  name.startsWith("-");
+
+/** Declarations whose value equals the property's initial value. */
+function isDefaultValue(name: string, value: string): boolean {
+  const v = value.trim().toLowerCase();
+  switch (name) {
+    case "isolation":
+      return v === "auto";
+    case "mix-blend-mode":
+      return v === "normal";
+    case "paint-order":
+      return v === "normal" || v === "fill";
+    default:
+      return false;
+  }
+}
+
+const unsupportedCache = new WeakMap<XNode, string[]>();
+
+/**
+ * Names of the style declarations and presentation attributes on `node` that the importer does not
+ * apply and that are not harmless, e.g. `paint-order: stroke`, `mix-blend-mode: multiply`, a CSS
+ * `transform` in `style`. Each name once, in source order.
+ */
+export function unsupportedProperties(node: XNode): string[] {
+  const hit = unsupportedCache.get(node);
+  if (hit !== undefined) return hit;
+  const out: string[] = [];
+  const consider = (name: string, value: string): void => {
+    if (CARRIED.has(name) || isHarmlessName(name) || isDefaultValue(name, value)) return;
+    if (!out.includes(name)) out.push(name);
+  };
+  for (const name of UNSUPPORTED_ATTRIBUTES) {
+    const v = node.attrs[name];
+    if (v !== undefined) consider(name, v);
+  }
+  const style = node.attrs.style;
+  if (style !== undefined) for (const [k, v] of parseStyleAttribute(style)) consider(k, v);
+  // A root that explicitly shows its overflow is not clipped by browsers' viewport rules the way
+  // the importer assumes.
+  if (node.parent === null) {
+    const overflow = (
+      parseStyleAttribute(style ?? "").find(([k]) => k === "overflow")?.[1] ?? node.attrs.overflow
+    )
+      ?.trim()
+      .toLowerCase();
+    if (overflow === "visible" && !out.includes("overflow")) out.push("overflow");
+  }
+  unsupportedCache.set(node, out);
+  return out;
+}

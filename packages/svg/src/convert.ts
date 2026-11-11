@@ -20,6 +20,7 @@ import {
 import { parseColor } from "./color.js";
 import {
   type Bbox,
+  bboxOfContours,
   type Contour,
   contoursOf,
   type Geometry,
@@ -37,6 +38,7 @@ import {
   declared,
   type Inherited,
   parseOpacity,
+  unsupportedProperties,
 } from "./style.js";
 import { formatCount, SVG_LIMITS, SvgImportError, type SvgImportResult } from "./types.js";
 import { type Axis, parseLength, type Viewport } from "./units.js";
@@ -60,6 +62,7 @@ const SILENT = new Set([
 ]);
 const EDITOR_PREFIXES = new Set(["sodipodi", "inkscape", "rdf", "cc", "dc", "dcterms", "xlink"]);
 const ANIMATION = new Set(["animate", "animateTransform", "animateMotion", "animateColor", "set"]);
+const CONDITIONAL = ["systemLanguage", "requiredExtensions", "requiredFeatures"] as const;
 const TEXT = new Set(["text", "tspan", "textPath"]);
 const MAX_VERTICES_PER_PATH = 1000;
 /** Groups beyond this depth are dissolved into their parent. */
@@ -75,6 +78,8 @@ interface Ctx {
   /** Nesting depth the next group item would have (1 = directly in the layer contents). */
   depth: number;
   useDepth: number;
+  /** Matrix from the current element's parent coordinates to the root's user space. */
+  ctm: Matrix;
 }
 
 /** Splits `url(#id) fallback` by hand (linear time). `ref` is empty when the syntax is invalid. */
@@ -149,6 +154,8 @@ export class Converter {
   private visited = 0;
   private vertexTotal = 0;
   private paintedCount = 0;
+  /** `[minX, minY, maxX, maxY]` of painted shapes in root user space. */
+  private contentBox: [number, number, number, number] | null = null;
 
   constructor(private readonly doc: ParsedSvg) {}
 
@@ -243,6 +250,7 @@ export class Converter {
         "A mask is not applied, so the content draws unmasked; use add_mask to mask a layer.",
       );
     }
+    for (const name of unsupportedProperties(node)) this.report.addProperty(node, name);
     if (set("marker") || set("marker-start") || set("marker-mid") || set("marker-end")) {
       this.report.add(
         "dropped",
@@ -306,7 +314,7 @@ export class Converter {
     this.active.add(root);
     const rootDecl = declared(root);
     const inh = computeInherited(root, {});
-    const ctx: Ctx = { inh, pre: null, depth: 1, useDepth: 0 };
+    const ctx: Ctx = { inh, pre: null, depth: 1, useDepth: 0, ctm: IDENTITY };
     this.reportEffects(root, rootDecl);
     const top: ShapeItem[] =
       rootDecl.display === "none"
@@ -317,6 +325,7 @@ export class Converter {
     // `group` returns items in document order; the layer lists them top-first.
     const contents = this.chunk(top.reverse());
     this.checkDepth(contents);
+    this.checkViewportClip(root, viewBox, size, scale);
 
     const title = root.children
       .find((c) => c.tag === "title")
@@ -432,7 +441,18 @@ export class Converter {
   }
 
   private walkChildren(node: XNode, ctx: Ctx): ShapeItem[] {
-    const children = node.tag === "switch" ? node.children.slice(0, 1) : node.children;
+    let children = node.children;
+    if (node.tag === "switch") {
+      if (children.some((c) => CONDITIONAL.some((a) => c.attrs[a] !== undefined))) {
+        this.report.add(
+          "approximated",
+          "switch",
+          node,
+          "A <switch> with systemLanguage, requiredFeatures or requiredExtensions tests is not evaluated: its first child is used, which may differ from the branch a browser picks. Keep only the child you want.",
+        );
+      }
+      children = children.slice(0, 1);
+    }
     const out: ShapeItem[] = [];
     for (const child of children)
       for (const item of this.walkNode(child, ctx, false)) out.push(item);
@@ -550,7 +570,7 @@ export class Converter {
   ): ShapeItem[] {
     const decl = declared(node);
     const inh = computeInherited(node, ctx.inh);
-    let own = node.tag === "svg" && node === this.doc.root ? IDENTITY : this.transformOf(node);
+    let own = this.transformOf(node);
     if (opts.extra !== null) own = multiply(own, opts.extra);
     const local = ctx.pre === null ? own : multiply(ctx.pre, own);
     const opacity = parseOpacity(decl.opacity) ?? 1;
@@ -570,6 +590,7 @@ export class Converter {
       pre: dec !== null ? null : bakedMatrix,
       depth: canGroup ? ctx.depth + 1 : ctx.depth,
       useDepth: ctx.useDepth,
+      ctm: multiply(ctx.ctm, own),
     };
     const before = this.paintedCount;
     this.active.add(node);
@@ -667,6 +688,7 @@ export class Converter {
     const local = ctx.pre === null ? own : multiply(ctx.pre, own);
     const dec = decompose(local);
     const bake = dec === null ? local : null;
+    const elementCtm = multiply(ctx.ctm, own);
 
     const fillPaint = isOpenShape
       ? null
@@ -687,6 +709,20 @@ export class Converter {
       }
     } else if (geometry.kind === "paths") contours = geometry.contours;
 
+    const capRaw = inh["stroke-linecap"]?.trim();
+    if (
+      strokePaint !== null &&
+      (capRaw === "round" || capRaw === "square") &&
+      contours !== null &&
+      contours.some(isZeroLength)
+    ) {
+      this.report.add(
+        "dropped",
+        "zero-length-cap",
+        node,
+        "A zero-length subpath with a round or square cap draws a dot in SVG but is not drawn here; use a small circle or a very short line instead.",
+      );
+    }
     const geomItems: ShapeItem[] = [];
     if (contours !== null) {
       for (const c of contours) {
@@ -763,6 +799,7 @@ export class Converter {
       );
     }
     this.paintedCount++;
+    this.extendContentBox(geometry, elementCtm);
     return [
       {
         type: "group",
@@ -772,6 +809,52 @@ export class Converter {
         items,
       },
     ];
+  }
+
+  /** Grows the content box (root user space) by the shape's exact outline, strokes excluded. */
+  private extendContentBox(geometry: Geometry, ctm: Matrix): void {
+    const box = bboxOfContours(contoursOf(geometry).map((c) => transformContour(c, ctm)));
+    if (box === null) return;
+    const b = this.contentBox;
+    this.contentBox =
+      b === null
+        ? [box.x, box.y, box.x + box.width, box.y + box.height]
+        : [
+            Math.min(b[0], box.x),
+            Math.min(b[1], box.y),
+            Math.max(b[2], box.x + box.width),
+            Math.max(b[3], box.y + box.height),
+          ];
+  }
+
+  /** Reports content outside the visible viewport region, which browsers clip and we do not. */
+  private checkViewportClip(
+    root: XNode,
+    viewBox: SvgImportResult["viewBox"],
+    size: SvgImportResult["size"],
+    scale: [number, number],
+  ): void {
+    const b = this.contentBox;
+    if (b === null) return;
+    const cx = viewBox.x + viewBox.width / 2;
+    const cy = viewBox.y + viewBox.height / 2;
+    const halfW = size.width / (2 * scale[0]);
+    const halfH = size.height / (2 * scale[1]);
+    const tolX = 1e-4 * halfW;
+    const tolY = 1e-4 * halfH;
+    if (
+      b[0] < cx - halfW - tolX ||
+      b[2] > cx + halfW + tolX ||
+      b[1] < cy - halfH - tolY ||
+      b[3] > cy + halfH + tolY
+    ) {
+      this.report.add(
+        "approximated",
+        "viewport-clip",
+        root,
+        "Some content lies outside the SVG's visible area, which browsers clip but Kynimo draws; add_mask can clip the layer, or move or delete the overflowing shapes.",
+      );
+    }
   }
 
   private geometryOf(node: XNode): Geometry | null {
@@ -1112,6 +1195,21 @@ export class Converter {
     }
     return summary;
   }
+}
+
+/** A contour that draws a dot under round or square caps: every point and tangent coincides. */
+function isZeroLength(c: Contour): boolean {
+  const first = c.vertices[0];
+  if (first === undefined || (c.vertices.length < 2 && !c.closed)) return false;
+  return c.vertices.every(
+    (v) =>
+      v.point[0] === first.point[0] &&
+      v.point[1] === first.point[1] &&
+      v.inTangent[0] === 0 &&
+      v.inTangent[1] === 0 &&
+      v.outTangent[0] === 0 &&
+      v.outTangent[1] === 0,
+  );
 }
 
 function transformValues(

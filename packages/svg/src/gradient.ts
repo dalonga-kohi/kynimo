@@ -219,12 +219,21 @@ export function buildGradient(gradient: XNode, env: GradientEnv): Paint | null {
   const fyAttr = attr("fy", true);
   const fx = fxAttr === undefined ? cx : (resolveCoord(fxAttr, "x") ?? cx);
   const fy = fyAttr === undefined ? cy : (resolveCoord(fyAttr, "y") ?? cy);
+  const frAttr = attr("fr", true);
+  const fr = frAttr === undefined ? 0 : (resolveCoord(frAttr, "r") ?? 0);
   if (Math.abs(fx - cx) > 1e-9 || Math.abs(fy - cy) > 1e-9) {
     env.report.add(
       "approximated",
       "gradient-focal",
       env.element,
       "A radial gradient has a focal point (fx, fy) away from its center, which Kynimo ignores; the gradient is centered instead.",
+    );
+  } else if (Math.abs(fr) > 1e-9) {
+    env.report.add(
+      "approximated",
+      "gradient-focal",
+      env.element,
+      "A radial gradient has a focal radius (fr) above zero, which Kynimo ignores; the gradient starts at its center instead.",
     );
   }
   if (!(r > 0)) return solid(lastStop.color);

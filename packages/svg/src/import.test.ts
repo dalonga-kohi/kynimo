@@ -1010,6 +1010,121 @@ describe("fixtures", () => {
   });
 });
 
+describe("reports for approximations and silent drops", () => {
+  const rect = `<rect width="10" height="10"/>`;
+
+  it("applies a transform on the root svg", () => {
+    const r = importValid(svg(rect, `viewBox="0 0 100 100" transform="translate(10 20)"`));
+    expect(r.contents).toHaveLength(1);
+    const g = asGroup(r.contents[0]);
+    expect(val(g.transform.position)).toEqual([10, 20]);
+    expect(g.items).toHaveLength(1);
+    expect(r.report.entries).toEqual([]);
+  });
+
+  it("reports unsupported properties by name, once per property", () => {
+    const r = importValid(
+      svg(
+        `<rect width="10" height="10" style="paint-order:stroke;mix-blend-mode:multiply" /><circle r="3" style="transform:rotate(5deg);cx:5;r:9" paint-order="stroke"/>`,
+      ),
+    );
+    const e = entry(r, "unsupported-property");
+    expect(e).toMatchObject({ kind: "dropped", count: 6 });
+    for (const name of ["paint-order", "mix-blend-mode", "transform", "cx"]) {
+      expect(e?.detail).toContain(name);
+    }
+  });
+
+  it("lists at most ten distinct property names", () => {
+    const style = Array.from({ length: 15 }, (_, i) => `prop-${i}:1`).join(";");
+    const e = entry(
+      importValid(svg(`<rect width="1" height="1" style="${style}"/>`)),
+      "unsupported-property",
+    );
+    expect(e?.detail).toContain("prop-9");
+    expect(e?.detail).not.toContain("prop-10");
+    expect(e?.detail).toContain("5 more");
+  });
+
+  it("stays quiet for carried, harmless and default-valued properties", () => {
+    const r = importValid(
+      svg(
+        `<rect width="10" height="10" shape-rendering="crispEdges" style="fill:red;stroke:blue;font-size:12px;text-anchor:middle;-inkscape-font-specification:Sans;isolation:auto;mix-blend-mode:normal;paint-order:normal;pointer-events:none;cursor:pointer;overflow:hidden;color-interpolation:sRGB;display:inline;vector-effect:none"/>`,
+      ),
+    );
+    expect(entry(r, "unsupported-property")).toBeUndefined();
+    expect(r.report.entries).toEqual([]);
+  });
+
+  it("reports a switch with conditional children", () => {
+    const r = importValid(
+      svg(`<switch><rect systemLanguage="de" width="1" height="1"/><circle r="2"/></switch>`),
+    );
+    expect(entry(r, "switch")).toMatchObject({ kind: "approximated" });
+    const plain = importValid(svg(`<switch><rect width="1" height="1"/><circle r="2"/></switch>`));
+    expect(entry(plain, "switch")).toBeUndefined();
+  });
+
+  it("reports content outside the visible area", () => {
+    const out = importValid(svg(`<rect x="90" y="0" width="30" height="10"/>`));
+    expect(entry(out, "viewport-clip")).toMatchObject({ kind: "approximated" });
+    const inside = importValid(
+      svg(`<rect x="90" y="0" width="10" height="10" stroke="red" stroke-width="4"/>`),
+    );
+    expect(entry(inside, "viewport-clip")).toBeUndefined();
+    // a transformed shape is measured in root space
+    const moved = importValid(
+      svg(`<g transform="translate(95 0)"><rect width="10" height="10"/></g>`),
+    );
+    expect(entry(moved, "viewport-clip")).toBeDefined();
+    // hidden content does not count
+    const hidden = importValid(svg(`<rect x="500" width="9" height="9" display="none"/>`));
+    expect(entry(hidden, "viewport-clip")).toBeUndefined();
+  });
+
+  it("measures the visible area by the viewport, with meet and slice", () => {
+    const wide = `viewBox="0 0 100 100" width="200" height="100"`;
+    // meet: the viewport shows x from -50 to 150
+    expect(
+      entry(importValid(svg(`<rect x="110" width="30" height="10"/>`, wide)), "viewport-clip"),
+    ).toBeUndefined();
+    expect(
+      entry(importValid(svg(`<rect x="110" width="50" height="10"/>`, wide)), "viewport-clip"),
+    ).toBeDefined();
+    // slice: the viewport crops the viewBox to y 25..75
+    const sliced = `${wide} preserveAspectRatio="xMidYMid slice"`;
+    expect(
+      entry(importValid(svg(`<rect y="0" width="10" height="10"/>`, sliced)), "viewport-clip"),
+    ).toBeDefined();
+    expect(
+      entry(importValid(svg(`<rect y="30" width="10" height="10"/>`, sliced)), "viewport-clip"),
+    ).toBeUndefined();
+  });
+
+  it("reports zero-length subpaths that need round or square caps", () => {
+    const dot = (cap: string) =>
+      importValid(svg(`<path d="M5 5 z" stroke="red" stroke-linecap="${cap}" fill="none"/>`));
+    expect(entry(dot("round"), "zero-length-cap")).toMatchObject({ kind: "dropped" });
+    expect(entry(dot("square"), "zero-length-cap")).toBeDefined();
+    expect(entry(dot("butt"), "zero-length-cap")).toBeUndefined();
+    const line = importValid(
+      svg(`<line x1="3" y1="3" x2="3" y2="3" stroke="red" stroke-linecap="round"/>`),
+    );
+    expect(entry(line, "zero-length-cap")).toBeDefined();
+  });
+
+  it("reports a radial gradient focal radius", () => {
+    const grad = (extra: string) =>
+      importValid(
+        svg(
+          `<defs><radialGradient id="g" ${extra}><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></radialGradient></defs><rect width="10" height="10" fill="url(#g)"/>`,
+        ),
+      );
+    expect(entry(grad('fr="0.2"'), "gradient-focal")).toMatchObject({ kind: "approximated" });
+    expect(entry(grad('fr="0"'), "gradient-focal")).toBeUndefined();
+  });
+});
+
 describe("limits and hostile input", () => {
   const code = (fn: () => unknown): string => {
     try {
