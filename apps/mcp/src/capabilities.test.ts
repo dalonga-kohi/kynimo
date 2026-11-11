@@ -2,9 +2,11 @@ import {
   AssetSchema,
   BEHAVIOR_TYPES,
   LayerSchema,
+  MAX_BATCH_OPS,
   MAX_BEHAVIORS,
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
+import { SCRIPT_LIMITS } from "@kynimo/script";
 import { describe, expect, it } from "vitest";
 import { capabilityManifest } from "./capabilities.js";
 
@@ -45,6 +47,16 @@ describe("capability manifest", () => {
     // Shipped features leave the unavailable list.
     expect(manifest.unavailable).not.toHaveProperty("text_animators");
     expect(manifest.unavailable).not.toHaveProperty("shape_operators");
+  });
+
+  it("declares the script tool, its SDK resource and its limits", () => {
+    expect(manifest.scripts).toMatchObject({
+      tool: "run_script",
+      resource: "kynimo://sdk",
+      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS },
+    });
+    expect(manifest.resources.sdk).toBe("kynimo://sdk");
+    expect(manifest.unavailable).not.toHaveProperty("scripts");
   });
 
   it("lists every behavior type as supported and states its limits", () => {

@@ -16,6 +16,7 @@ import {
   SCENE_FORMAT_VERSION,
   withLayerDefaults,
 } from "@kynimo/scene";
+import { sdkDeclarations } from "@kynimo/script";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -53,6 +54,9 @@ import {
   RenderFramesInput,
   RenderFramesOutput,
   RetimeToolInput,
+  RunScriptInput,
+  RunScriptOutput,
+  RunScriptRequest,
   SetKeyframesInput,
   SetMatteInput,
   StaggerToolInput,
@@ -70,6 +74,7 @@ export const SERVER_VERSION = "0.1.0";
 const SERVER = { name: SERVER_NAME, version: SERVER_VERSION };
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
+For anything beyond a few edits, write a script: run_script runs TypeScript against the kynimo SDK (kynimo://sdk) and applies the result as one batch; dry_run previews it.
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
@@ -589,6 +594,30 @@ export function createServer(service: KynimoService): McpServer {
   );
 
   server.registerTool(
+    "run_script",
+    {
+      title: "Run script",
+      description:
+        "Runs a TypeScript program once against the `kynimo` SDK (types: kynimo://sdk) and applies the operations it records as one undoable batch. No clock, randomness (use kynimo.random(), seeded), network or imports; limits in get_capabilities.",
+      inputSchema: RunScriptInput,
+      outputSchema: RunScriptOutput,
+      annotations: WRITE,
+    },
+    guard(async (a: Record<string, unknown>) => {
+      const { project_id, base_version, idempotency_key, dry_run, ...body } = a;
+      const reply = await service.runScript(
+        meta(a as unknown as WriteMeta),
+        body,
+        dry_run === true,
+        RunScriptRequest,
+      );
+      const { ops, ...rest } = reply;
+      // The operations are only worth their size when nothing was written.
+      return { ...rest, ...(dry_run === true && ops !== undefined ? { ops } : {}) };
+    }),
+  );
+
+  server.registerTool(
     "list_presets",
     {
       title: "List presets",
@@ -657,6 +686,17 @@ function registerResources(server: McpServer): void {
       mimeType: "application/json",
     },
     (uri) => json(uri, { presets: presetCatalog() }),
+  );
+  server.registerResource(
+    "sdk",
+    RESOURCES.sdk,
+    {
+      title: "Script SDK",
+      description:
+        "TypeScript declarations of the global `kynimo` a run_script program uses: layers, compositions, tokens, intents and every scene operation.",
+      mimeType: "text/plain",
+    },
+    (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/plain", text: sdkDeclarations() }] }),
   );
   server.registerResource(
     "scene-schema",

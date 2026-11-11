@@ -45,6 +45,8 @@ export type ExpandError =
       line?: number;
       /** Paths start with `["entries", entry, ...]`. */
       errors: { path: (string | number)[]; message: string }[];
+      /** The operations the failing entry expanded to, when it got that far (what the paths index). */
+      ops?: Op[];
     }
   | { kind: "too_many_ops"; message: string };
 
@@ -77,7 +79,13 @@ const INTENTS = {
   retime: { schema: RetimeInputSchema, run: retime },
 } as const;
 
-const invalid = (entry: number, line: number | undefined, errors: Path[], messages: string[]) => {
+const invalid = (
+  entry: number,
+  line: number | undefined,
+  errors: Path[],
+  messages: string[],
+  ops?: Op[],
+) => {
   const first = errors[0] ?? [];
   const where = first.length > 0 ? `${first.join(".")}: ` : "";
   return {
@@ -91,6 +99,7 @@ const invalid = (entry: number, line: number | undefined, errors: Path[], messag
         path: ["entries", entry, ...path],
         message: messages[i] ?? "invalid",
       })),
+      ...(ops === undefined ? {} : { ops }),
     },
   };
 };
@@ -202,7 +211,7 @@ export async function expandScript(
     const applied = applyOps(work, ops, idCounter);
     if (!applied.ok) {
       const { paths, messages } = fromOpErrors(applied.errors, raw);
-      return invalid(i, entry.line, paths, messages);
+      return invalid(i, entry.line, paths, messages, ops);
     }
     work = applied.doc;
     idCounter = applied.idCounter;

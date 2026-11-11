@@ -75,6 +75,7 @@ describe("MCP server", () => {
       "render_contact_sheet",
       "render_frames",
       "retime",
+      "run_script",
       "set_keyframes",
       "set_matte",
       "stagger",
@@ -88,6 +89,7 @@ describe("MCP server", () => {
       "apply_preset",
       "stagger",
       "retime",
+      "run_script",
       "add_behavior",
       "upload_asset",
       "add_layer",
@@ -108,9 +110,9 @@ describe("MCP server", () => {
 
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
-    // 60_000 until the intent tools (ADR-0040); each new write tool lists the write fields and an
-    // output schema, ~1.8-2.5 KB apiece.
-    expect(JSON.stringify(tools).length).toBeLessThan(70_000);
+    // 70_000 after the intent tools (ADR-0040); 75_000 with run_script — shrinking back to 60 KB
+    // is an M8 item. Each new write tool lists the write fields and an output schema, ~1.8-2.5 KB.
+    expect(JSON.stringify(tools).length).toBeLessThan(75_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -474,6 +476,7 @@ describe("MCP server", () => {
       expect.arrayContaining([
         "kynimo://capabilities",
         "kynimo://presets",
+        "kynimo://sdk",
         "kynimo://schema/scene",
         "kynimo://schema/ops",
         ...LayerSchema.options.map((o) => `kynimo://schema/layer/${o.shape.type.value}`),

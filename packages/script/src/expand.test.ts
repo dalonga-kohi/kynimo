@@ -149,6 +149,11 @@ kynimo.stagger({ layers: [headline, card], offset: "base" });
     expect(layer.transform.position).toEqual({ value: [400, 300] });
   });
 
+  it("hands back the operations of a rejected entry", async () => {
+    const e = errOf(await expand(`kynimo.op({ op: "removeLayer", layer: "missing" });`));
+    expect(e).toMatchObject({ kind: "invalid", ops: [{ op: "removeLayer", layer: "missing" }] });
+  });
+
   it("leaves kynimo.op raw: no defaults are filled", async () => {
     const e = errOf(
       await expand(

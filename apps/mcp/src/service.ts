@@ -16,6 +16,7 @@ import {
 import {
   type Asset,
   applyBatch,
+  applyOps,
   type Change,
   type Composition,
   type Layer,
@@ -32,6 +33,7 @@ import {
   type StepResult,
   undo,
 } from "@kynimo/scene";
+import { type ExpandError, expandScript } from "@kynimo/script";
 import type { z } from "zod";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import { fingerprint } from "./hash.js";
@@ -97,6 +99,12 @@ export type Write = { kind: "ops"; ops: unknown } | { kind: "undo" } | { kind: "
 export interface WriteReply extends WriteResult {
   /** True when this call returned the stored result of an earlier call with the same key. */
   replayed: boolean;
+}
+
+/** What an intent expands to: the operations, and what the tool resolved its input to. */
+export interface IntentExpansion {
+  ops: Op[];
+  resolved?: object;
 }
 
 /** What an intent tool answers: the write result plus the operations it expanded to. */
@@ -257,6 +265,42 @@ const expandedPaths = (errors: OpError[]): OpError[] =>
   errors.map((e) =>
     e.path[0] === "ops" ? { ...e, path: ["expanded_ops", ...e.path.slice(1)] } : e,
   );
+
+/** A failed script as the tool error an agent can act on: where in the source or which call. */
+function scriptFault(e: ExpandError): ToolError {
+  if (e.kind === "invalid") {
+    return new ToolError("invalid", e.message, e.errors, undefined, {
+      script_error: {
+        kind: e.kind,
+        entry: e.entry,
+        ...(e.line === undefined ? {} : { line: e.line }),
+      },
+      ...(e.ops === undefined ? {} : { expanded_ops: e.ops }),
+    });
+  }
+  if (e.kind === "too_many_ops") {
+    return new ToolError(
+      "invalid",
+      e.message,
+      [{ path: ["source"], message: e.message }],
+      undefined,
+      { script_error: { kind: e.kind } },
+    );
+  }
+  return new ToolError(
+    "invalid",
+    e.message,
+    [{ path: ["source"], message: e.message }],
+    undefined,
+    {
+      script_error: {
+        kind: e.kind,
+        ...(e.line === undefined ? {} : { line: e.line }),
+        ...(e.column === undefined ? {} : { column: e.column }),
+      },
+    },
+  );
+}
 
 /** Throws a ToolError value; returns anything else. */
 function unwrap<T>(value: T | ToolError): T {
@@ -1330,11 +1374,15 @@ export class KynimoService {
     schema: z.ZodType<I>,
     body: unknown,
     dryRun: boolean,
-    run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+    run: (
+      doc: Project,
+      input: I,
+      ctx: { idCounter: number },
+    ) => IntentExpansion | Promise<IntentExpansion>,
   ): Promise<IntentReply> {
     const print = fingerprint({ tool, base_version: meta.base_version, body });
     const p = await this.load(meta.project_id);
-    const expand = () => {
+    const expand = async () => {
       const parsed = schema.safeParse(body);
       if (!parsed.success)
         throw new ToolError(
@@ -1346,7 +1394,7 @@ export class KynimoService {
           })),
         );
       try {
-        return run(p.doc, parsed.data);
+        return await run(p.doc, parsed.data, { idCounter: p.idCounter });
       } catch (e) {
         if (e instanceof IntentError)
           throw new ToolError("invalid", e.message, [{ path: e.path, message: e.message }]);
@@ -1356,7 +1404,7 @@ export class KynimoService {
     const stale = meta.base_version !== p.version;
     if (dryRun) {
       if (stale) throw staleVersion(meta.base_version, p.version);
-      const { ops, resolved } = expand();
+      const { ops, resolved } = await expand();
       const step = applyBatch(toState(p), this.actor, ops);
       if (!step.ok)
         throw new ToolError(
@@ -1376,7 +1424,7 @@ export class KynimoService {
     }
     // A stale base replays the stored outcome of this key if there is one, else records the conflict.
     if (stale) return await this.write(meta, { kind: "ops", ops: [] }, print);
-    const { ops, resolved } = expand();
+    const { ops, resolved } = await expand();
     // A rejection of the expanded operations points at them, not at an `ops` input the caller never sent.
     const reshape = (e: ToolError, fresh: boolean): ToolError =>
       e.kind === "invalid"
@@ -1392,6 +1440,43 @@ export class KynimoService {
     return reply.replayed
       ? reply
       : { ...reply, ops, ...(resolved === undefined ? {} : { resolved }) };
+  }
+
+  /**
+   * Runs a script (ADR-0036) as an intent: the script is expanded against the current document
+   * into operations, then written like any intent call. The fingerprint is the tool input
+   * (`source`, `seed`). On `dryRun` the reply also describes the motion of the would-be document.
+   */
+  async runScript(
+    meta: WriteMeta,
+    body: unknown,
+    dryRun: boolean,
+    schema: z.ZodType<{ source: string; seed?: number | undefined }>,
+  ): Promise<IntentReply & { op_count?: number; motion?: MotionDescription }> {
+    const reply = await this.intent(
+      meta,
+      "run_script",
+      schema,
+      body,
+      dryRun,
+      async (doc, input, ctx): Promise<IntentExpansion> => {
+        const seed = input.seed ?? 0;
+        const r = await expandScript(doc, { source: input.source, seed }, ctx);
+        if (!r.ok) throw scriptFault(r.error);
+        return {
+          ops: r.ops,
+          resolved: { entries: r.entries, layers_created: r.layersCreated, seed },
+        };
+      },
+    );
+    // A replay carries no ops, so no count either: 0 would mislead.
+    const counted = reply.ops === undefined ? reply : { ...reply, op_count: reply.ops.length };
+    if (!dryRun || reply.ops === undefined) return counted;
+    const p = await this.load(meta.project_id);
+    const applied = applyOps(p.doc, reply.ops, p.idCounter);
+    if (!applied.ok) return counted;
+    const main = applied.doc.compositions.find((c) => c.id === applied.doc.mainCompositionId);
+    return main === undefined ? counted : { ...counted, motion: describeMotion(applied.doc, main) };
   }
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */

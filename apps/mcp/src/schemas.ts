@@ -20,6 +20,7 @@ import {
   TRANSFORM_PROPERTIES,
   TrackMatteSchema,
 } from "@kynimo/scene";
+import { SCRIPT_LIMITS } from "@kynimo/script";
 import { z } from "zod";
 import { MAX_ASSET_BASE64 } from "./blobs.js";
 import { RENDER_LIMITS } from "./render.js";
@@ -465,6 +466,25 @@ export const IntentWriteOutput = z.looseObject({
   dry_run: z.boolean().optional(),
   ops: z.array(z.looseObject({})).optional(),
   resolved: z.looseObject({}).optional(),
+});
+
+/** What the script is, without the write fields. */
+export const RunScriptRequest = z.object({
+  source: z.string().max(SCRIPT_LIMITS.sourceBytes),
+  seed: z.number().int().min(0).max(0xffffffff).optional(),
+});
+
+export const RunScriptInput = RunScriptRequest.extend({
+  ...intentMeta,
+  source: RunScriptRequest.shape.source.describe(
+    "TypeScript (types are erased, not checked). Uses the global `kynimo`; see kynimo://sdk.",
+  ),
+  seed: RunScriptRequest.shape.seed.describe("uint32 for kynimo.random(); default 0."),
+});
+
+export const RunScriptOutput = IntentWriteOutput.extend({
+  op_count: z.number().int().optional(),
+  motion: z.looseObject({}).optional(),
 });
 
 export const ListPresetsOutput = z.looseObject({ presets: z.array(z.looseObject({})) });
