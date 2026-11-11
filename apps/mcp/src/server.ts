@@ -45,6 +45,8 @@ import {
   GetLayerSchemaOutput,
   GetProjectOutput,
   GetSceneOutput,
+  GetScriptInput,
+  GetScriptOutput,
   IdempotencyKeySchema,
   ImportSvgInput,
   ImportSvgRequest,
@@ -80,7 +82,7 @@ export const SERVER_VERSION = "0.1.0";
 const SERVER = { name: SERVER_NAME, version: SERVER_VERSION };
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
-For anything beyond a few edits, write a script: run_script runs TypeScript against the kynimo SDK (kynimo://sdk) and applies the result as one batch; dry_run previews it.
+For anything beyond a few edits, write a script: run_script runs TypeScript against the kynimo SDK (kynimo://sdk) and applies the result as one batch; dry_run previews it; get_script returns the source that wrote a version.
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
@@ -629,7 +631,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Run script",
       description:
-        "Runs a TypeScript program once against the `kynimo` SDK (types: kynimo://sdk) and applies the operations it records as one undoable batch. No clock, randomness (use kynimo.random(), seeded), network or imports; limits in get_capabilities.",
+        "Runs a TypeScript program once against the `kynimo` SDK (types: kynimo://sdk) and applies the operations it records as one undoable batch. No clock, randomness (use kynimo.random(), seeded), network or imports; limits in get_capabilities. Its source is kept with the version it writes (get_script).",
       inputSchema: RunScriptInput,
       outputSchema: RunScriptOutput,
       annotations: WRITE,
@@ -646,6 +648,19 @@ export function createServer(service: KynimoService): McpServer {
       // The operations are only worth their size when nothing was written.
       return { ...rest, ...(dry_run === true && ops !== undefined ? { ops } : {}) };
     }),
+  );
+
+  server.registerTool(
+    "get_script",
+    {
+      title: "Get script",
+      description:
+        "The run_script source and seed that wrote a version (default: the latest), to read, change and re-run. script_versions lists the 20 most recent, newest first.",
+      inputSchema: GetScriptInput,
+      outputSchema: GetScriptOutput,
+      annotations: READ,
+    },
+    guard(async (a) => service.getScript(a.project_id, a.version)),
   );
 
   server.registerTool(

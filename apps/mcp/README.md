@@ -24,7 +24,7 @@ To connect an MCP client (e.g. Claude Desktop or Claude Code), point it at the b
 }
 ```
 
-Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
+Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `get_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
 
 `import_svg` takes SVG text (up to 512 KB) and adds one shape layer, with the viewBox centre at `position` (default: the composition centre). It returns a fidelity report listing what was dropped, flattened or approximated. Use `dry_run: true` to preview the `addLayer` operation (ADR-0043).
 

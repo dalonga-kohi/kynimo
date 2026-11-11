@@ -536,6 +536,25 @@ export const RunScriptOutput = IntentWriteOutput.extend({
   motion: z.looseObject({}).optional(),
 });
 
+export const GetScriptInput = z.object({
+  project_id: ProjectIdSchema,
+  version: z
+    .number()
+    .int()
+    .min(1)
+    .max(2_147_483_647)
+    .optional()
+    .describe("A version a run_script wrote; default the latest."),
+});
+
+export const GetScriptOutput = z.looseObject({
+  project_id: z.string(),
+  version: z.number().int(),
+  seed: z.number(),
+  source: z.string(),
+  script_versions: z.array(z.number().int()),
+});
+
 export const ListPresetsOutput = z.looseObject({ presets: z.array(z.looseObject({})) });
 
 /** An add_behavior call as the server validates it, without the write fields. */

@@ -325,3 +325,100 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
     expect(await version()).toBe(1);
   });
 });
+
+describe("get_script", { timeout: 30_000 }, () => {
+  const ONE = `kynimo.composition().add("solid", { name: "A", width: 10, height: 10, color: "#ff0000" }, { id: "a" });`;
+  const TWO = `kynimo.composition().add("solid", { name: "B", width: 10, height: 10, color: "#00ff00" }, { id: "b" });`;
+  const NOTE = (id: string) => ({ op: "updateLayer", layer: id, set: { hidden: true } });
+
+  it("returns the source and seed of the latest script; the default seed is 0", async ({
+    client,
+    project: { run, project_id },
+  }) => {
+    const r = await run(1, "s1", ONE);
+    expect(await call(client, "get_script", { project_id })).toMatchObject({
+      project_id,
+      version: r.version,
+      seed: 0,
+      source: ONE,
+      script_versions: [r.version],
+    });
+    const seeded = await run(r.version as number, "s2", TWO, { seed: 7 });
+    expect(await call(client, "get_script", { project_id })).toMatchObject({
+      version: seeded.version,
+      seed: 7,
+      source: TWO,
+    });
+  });
+
+  it("reads an earlier script by version, newest first, across an apply_ops write", async ({
+    client,
+    project: { run, project_id },
+  }) => {
+    const first = await run(1, "s1", ONE);
+    const mid = await call(client, "apply_ops", {
+      project_id,
+      base_version: first.version,
+      idempotency_key: "o1",
+      ops: [NOTE("a")],
+    });
+    const second = await run(mid.version as number, "s2", TWO);
+    const latest = await call(client, "get_script", { project_id });
+    expect(latest).toMatchObject({ version: second.version, source: TWO });
+    expect(latest.script_versions).toEqual([second.version, first.version]);
+    expect(await call(client, "get_script", { project_id, version: first.version })).toMatchObject({
+      version: first.version,
+      source: ONE,
+    });
+
+    const e = await callError(client, "get_script", { project_id, version: mid.version });
+    expect(e.error).toBe("not_found");
+    expect(String(e.message)).toContain(
+      `was not written by run_script; script versions (newest first): ${second.version}, ${first.version}`,
+    );
+  });
+
+  it("is not_found with no script, or an unknown project", async ({
+    client,
+    project: { project_id },
+  }) => {
+    const none = await callError(client, "get_script", { project_id });
+    expect(none.error).toBe("not_found");
+    expect(String(none.message)).toContain("no run_script has written");
+    const v = await callError(client, "get_script", { project_id, version: 1 });
+    expect(String(v.message)).toContain("script versions (newest first): none");
+    expect((await callError(client, "get_script", { project_id: "nope" })).error).toBe("not_found");
+  });
+
+  it("stores nothing for a dry run, a replay or a rejected run", async ({
+    client,
+    project: { run, runError, project_id },
+  }) => {
+    await run(1, "d", ONE, { dry_run: true });
+    expect((await callError(client, "get_script", { project_id })).error).toBe("not_found");
+    await runError(1, "bad", "throw new Error('boom');");
+    expect((await callError(client, "get_script", { project_id })).error).toBe("not_found");
+
+    const r = await run(1, "s1", ONE);
+    await run(1, "s1", ONE);
+    await runError(1, "stale", TWO);
+    const got = await call(client, "get_script", { project_id });
+    expect(got.script_versions).toEqual([r.version]);
+    expect(got.source).toBe(ONE);
+  });
+
+  it("keeps the script after undo, and a re-run of it succeeds", async ({
+    client,
+    project: { run, meta, project_id },
+  }) => {
+    const r = await run(1, "s1", ONE);
+    const undone = await call(client, "undo", meta(r.version as number, "u1"));
+    const got = await call(client, "get_script", { project_id });
+    expect(got).toMatchObject({ version: r.version, source: ONE });
+    expect(got.script_versions).toEqual([r.version]);
+    const again = await run(undone.version as number, "s2", got.source as string, {
+      seed: got.seed,
+    });
+    expect(again).toMatchObject({ replayed: false, version: (undone.version as number) + 1 });
+  });
+});

@@ -11,6 +11,7 @@ import {
   type ProjectMeta,
   type ProjectState,
   type ProjectTx,
+  type ScriptRecord,
   type Stacks,
   type Step,
   type WriteOutcome,
@@ -117,6 +118,18 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
     `alter table kynimo_projects add column account text not null default '${LOCAL_ACCOUNT}'`,
     "create index kynimo_projects_account on kynimo_projects (account, created_at, id)",
     `update kynimo_write_keys set scope = '#create:${LOCAL_ACCOUNT}' where scope = '#create'`,
+  ],
+  // The run_script source and seed per version it wrote (ADR-0044). seed is a uint32, which does
+  // not fit integer; double precision holds it exactly and reads back as a JS number.
+  [
+    `create table kynimo_project_scripts (
+      project_id text not null references kynimo_projects (id) on delete cascade,
+      version integer not null,
+      source text not null,
+      seed double precision not null,
+      created_at timestamptz not null default now(),
+      primary key (project_id, version)
+    )`,
   ],
 ];
 
@@ -235,6 +248,35 @@ export class PostgresStore implements AccountStore {
     return row && migrateLoaded(id, row.doc, {}).doc;
   }
 
+  async getScript(id: string, version?: number): Promise<ScriptRecord | undefined> {
+    if (!PROJECT_ID_PATTERN.test(id)) return undefined;
+    if (
+      version !== undefined &&
+      (!Number.isInteger(version) || version < 1 || version > 2_147_483_647)
+    )
+      return undefined;
+    const [row] = await this.db.query<ScriptRecord>(
+      `select s.version, s.source, s.seed from kynimo_project_scripts s
+       join kynimo_projects p on p.id = s.project_id
+       where s.project_id = $1 and p.account = $2 and ($3::int is null or s.version = $3::int)
+       order by s.version desc limit 1`,
+      [id, this.account, version ?? null],
+    );
+    return row && { version: row.version, source: row.source, seed: Number(row.seed) };
+  }
+
+  async scriptVersions(id: string, limit: number): Promise<number[]> {
+    if (!PROJECT_ID_PATTERN.test(id) || !Number.isFinite(limit) || limit < 1) return [];
+    const rows = await this.db.query<{ version: number }>(
+      `select s.version from kynimo_project_scripts s
+       join kynimo_projects p on p.id = s.project_id
+       where s.project_id = $1 and p.account = $2
+       order by s.version desc limit $3`,
+      [id, this.account, Math.floor(limit)],
+    );
+    return rows.map((r) => r.version);
+  }
+
   private async lookup(q: Query, scope: string, actor: string, key: string): Promise<KeyLookup> {
     const [row] = await q<{
       fingerprint: string;
@@ -327,7 +369,14 @@ export class PostgresStore implements AccountStore {
         if (next) {
           if (next.id !== id) throw new Error(`a commit for ${id} cannot save project ${next.id}`);
           // A version that did not change keeps its stored document: no-op writes change nothing.
-          if (next.version !== current.version) await this.insertVersion(q, next);
+          if (next.version !== current.version) {
+            await this.insertVersion(q, next);
+            if (commit.script)
+              await q(
+                "insert into kynimo_project_scripts (project_id, version, source, seed) values ($1, $2, $3, $4)",
+                [id, next.version, commit.script.source, commit.script.seed],
+              );
+          }
           await q(
             `update kynimo_projects
              set name = $2, version = $3, id_counter = $4, history = $5, updated_at = now()
