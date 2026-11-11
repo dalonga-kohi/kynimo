@@ -2,9 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import { SCENE_FORMAT_VERSION, withLayerDefaults } from "@kynimo/scene";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { withLayerDefaults } from "./defaults.js";
 import { KynimoService, ToolError } from "./service.js";
 import {
   type AccountStore,

@@ -26,18 +26,6 @@ Animated text draws each cluster as its own paragraph: about 0.25 ms per glyph, 
    - Reuse shaped clusters across frames in the render cache (M7).
 3. Constraint: a layer with an active animator must stay pixel-identical to the plain layer when the animator changes nothing visible; the parity tests in `packages/renderer/src/text-animator.test.ts` and the `text-animators` reference frames are the gate. Raise the budgets only with the measured numbers.
 
-## `run_script` (M4, ADR-0036)
-
-1. `packages/script` (new): the sandbox runner from `spikes/script-sandbox` as a library. One WebAssembly instance per run in a worker thread with a wall-clock deadline, the prelude that removes `Date`, `Math.random`, `WeakRef` and `FinalizationRegistry`, counted limits, errors mapped back to source line and column. The seed and the document snapshot are passed in as values, never pasted into source. A run with pending promise work is an error.
-2. The SDK, generated from the operation and layer schemas: `kynimo.composition(id)`, layer builders per layer type, `layer.set`, `layer.animate` (the intent tools' expansion, shared code), `stagger`, presets, `kynimo.tokens` of the pinned pack, `kynimo.random()`. A test fails if an operation has no SDK path.
-3. Reads: the script gets a frozen snapshot (compositions, layers by id, name or selector, their resolved static properties). It can't read assets' bytes.
-4. Host side: check source size before evaluating and result size and op count after parsing; validate every recorded op, apply as one batch through the existing `apply_ops` path (so `base_version`, `idempotency_key`, undo and change records need nothing new). Keep the source on the change record.
-5. `dry_run` returns the ops and what `describe_motion` would say, without writing.
-6. Type declarations as the resource `kynimo://sdk`; a short version in the tool description. Server instructions lead with: "for anything beyond a few edits, write a script".
-7. Tests: the spike's hostile cases as unit tests, a property test that script → ops is byte-identical across runs, an end-to-end test that rebuilds the title-card reference scene from one script and matches its approved frames.
-
-Open: TypeScript erasure uses `module.stripTypeScriptTypes`, which Node still marks experimental. Fallback is a small type stripper dependency; decide when building.
-
 ## Brief suite v1 (M4)
 
 1. `apps/evals`: briefs as data (prompt, optional assets, composition size, duration); a runner that starts a local server, connects a model through an MCP client, and stops at a call or token cap.

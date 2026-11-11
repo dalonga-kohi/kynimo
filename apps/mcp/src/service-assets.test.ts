@@ -1,9 +1,9 @@
 import type { CapturedFrame } from "@kynimo/capture";
 import type { Project } from "@kynimo/scene";
+import { withLayerDefaults } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
 import { base64, interTtf, solidPng } from "./assets.test-util.js";
 import { type BlobStore, MemoryBlobStore } from "./blobs.js";
-import { withLayerDefaults } from "./defaults.js";
 import type { FrameRenderer, RenderMedia } from "./render.js";
 import { KynimoService, MAX_UPLOAD_BYTES, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";

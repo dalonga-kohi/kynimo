@@ -12,8 +12,10 @@ import {
   TEXT_ANIMATOR_LIMITS,
   TEXT_ANIMATOR_SUPPORT,
 } from "@kynimo/renderer";
-import { type Asset, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import { type Asset, MAX_BATCH_OPS, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import { SCRIPT_LIMITS } from "@kynimo/script";
 import { RENDER_LIMITS } from "./render.js";
+import { SCRIPT_CONCURRENCY } from "./service.js";
 
 /** A feature the scene format has no room for yet, or a tool this server does not have yet. */
 export interface Unavailable {
@@ -28,6 +30,7 @@ export const RESOURCES = {
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
   presets: "kynimo://presets",
+  sdk: "kynimo://sdk",
 } as const;
 
 const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
@@ -104,6 +107,12 @@ export function capabilityManifest(server: { name: string; version: string }) {
       tools: ["render_frames", "render_contact_sheet"],
       limits: RENDER_LIMITS,
       note: "requests over a limit are rejected with values that fit, never downscaled silently; every result lists skipped layers and warnings",
+    },
+    scripts: {
+      tool: "run_script",
+      resource: RESOURCES.sdk,
+      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS, concurrency: SCRIPT_CONCURRENCY },
+      note: "a script runs once in a sandbox with no clock, randomness (kynimo.random() is seeded), network or imports; limits are per run (interrupts count instructions; deadlineMs is a backstop); a script that exceeds one fails with nothing applied",
     },
     unavailable: UNAVAILABLE,
     resources: RESOURCES,

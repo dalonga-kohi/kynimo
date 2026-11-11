@@ -1,6 +1,6 @@
 # 0036 — Scripts: agents write TypeScript that compiles to scene operations
 
-- Status: accepted (extends ADR-0012: a third way code enters, at authoring time; amends ADR-0012: the scene-building TypeScript SDK moves from "direction" to beta; settles the sandbox technology for code that runs once, leaving per-frame component code to M6)
+- Status: accepted (extends ADR-0012: a third way code enters, at authoring time; amends ADR-0012: the scene-building TypeScript SDK moves from "direction" to beta; settles the sandbox technology for code that runs once, leaving per-frame component code to M6; extended by ADR-0041, which builds it and amends the op cap and the source persistence)
 - Date: 2026-11-09
 
 ## Context

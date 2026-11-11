@@ -1,8 +1,12 @@
 import type { CapturedFrame, CapturedSheet } from "@kynimo/capture";
 import { evaluateFrame } from "@kynimo/engine";
-import { type Project, ProjectSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  type Project,
+  ProjectSchema,
+  SCENE_FORMAT_VERSION,
+  withLayerDefaults,
+} from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
-import { withLayerDefaults } from "./defaults.js";
 import type { FrameRenderer } from "./render.js";
 import { KynimoService, ServiceRuntime, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";

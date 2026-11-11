@@ -1,5 +1,4 @@
 export * from "./auth.js";
-export { withLayerDefaults } from "./defaults.js";
 export * from "./http.js";
 export { createServer, SERVER_NAME, SERVER_VERSION } from "./server.js";
 export * from "./service.js";
