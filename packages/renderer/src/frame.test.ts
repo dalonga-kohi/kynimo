@@ -524,6 +524,57 @@ describe("precomps and unsupported layers", () => {
   });
 });
 
+describe("generator layers", () => {
+  const stripes = (thickness = 1) => ({
+    type: "pattern",
+    kind: "stripes",
+    size: prop(4),
+    thickness: prop(thickness),
+    angle: prop(0),
+    offset: prop([0, 0]),
+    foreground: prop("#ff0000"),
+    background: prop("#0000ff"),
+  });
+
+  it("plan as layer-space layers without a raster, placed by their matrix", () => {
+    const p = plan([
+      layer("g", "generator", {
+        width: 20,
+        height: 10,
+        generator: stripes(),
+        transform: transform({ position: prop([30, 40]) }),
+      }),
+    ]);
+    const l = only(p);
+    expect(p.skipped).toEqual([]);
+    expect(l.type).toBe("generator");
+    if (l.type !== "generator") return;
+    expect(l.space).toBe("layer");
+    expect([l.width, l.height]).toEqual([20, 10]);
+    expect(l.matrix).toEqual([1, 0, 0, 1, 30, 40]);
+    expect(l.generator.type).toBe("pattern");
+    expect("raster" in l).toBe(false);
+    const out = compositeReference(p);
+    expect(pixel(out, 35, 45)).toEqual(RED);
+    expect(pixel(out, 29, 45)).toEqual(CLEAR);
+  });
+
+  it("carry only the look effects that change pixels", () => {
+    const vignette = (amount: number) => ({
+      id: "v",
+      type: "vignette",
+      amount: prop(amount),
+      radius: prop(0.5),
+      feather: prop(0.5),
+      color: prop("#000000"),
+    });
+    const withLook = (effects: Obj[]) =>
+      only(plan([layer("g", "generator", { width: 8, height: 8, generator: stripes(), effects })]));
+    expect(withLook([vignette(0.5)]).effects).toHaveLength(1);
+    expect(withLook([vignette(0)]).effects).toBeUndefined();
+  });
+});
+
 describe("raster budget", () => {
   it("skips exactly the layer types the capability manifest marks accepted", async () => {
     const bytes = await encodeImage(4, 2, () => [255, 255, 255, 255], "png");
@@ -557,6 +608,20 @@ describe("raster budget", () => {
       image: layer("image", "image", { assetId: "img" }),
       video: layer("video", "video", { assetId: "clip" }),
       solid: layer("solid", "solid", { width: 10, height: 10, color: "#ff0000" }),
+      generator: layer("generator", "generator", {
+        width: 10,
+        height: 10,
+        generator: {
+          type: "pattern",
+          kind: "stripes",
+          size: prop(4),
+          thickness: prop(0.5),
+          angle: prop(0),
+          offset: prop([0, 0]),
+          foreground: prop("#ffffff"),
+          background: prop("#000000"),
+        },
+      }),
       precomp: layer("precomp", "precomp", { compositionId: "inner" }),
       adjustment: layer("adjustment", "adjustment", {
         effects: [{ id: "fill", type: "fill", color: prop("#ff0000"), amount: prop(1) }],
@@ -617,6 +682,47 @@ describe("raster budget", () => {
     expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 263 })).toThrow(
       /needs more than 263 raster pixels/,
     );
+  });
+});
+
+describe("generator raster budget", () => {
+  const pattern = {
+    type: "pattern",
+    kind: "stripes",
+    size: prop(4),
+    thickness: prop(0.5),
+    angle: prop(0),
+    offset: prop([0, 0]),
+    foreground: prop("#ff0000"),
+    background: prop("#0000ff"),
+  };
+  const gen = (id: string, extra: Obj = {}) =>
+    layer(id, "generator", { width: 10, height: 10, generator: pattern, ...extra });
+
+  it("counts a generator's target against the frame's raster pixels", () => {
+    const frame = frameOf([gen("a"), gen("b")]);
+    const images = new ImageLibrary(ck);
+    expect(rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 200 }).layers).toHaveLength(2);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 199 })).toThrow(
+      /needs more than 199 raster pixels/,
+    );
+  });
+
+  it("counts a generator used as a matte source once", () => {
+    const frame = frameOf([
+      layer("t", "solid", {
+        width: 10,
+        height: 10,
+        color: "#ffffff",
+        matte: { layerId: "m", mode: "alpha" },
+      }),
+      gen("m", { hidden: true }),
+    ]);
+    const images = new ImageLibrary(ck);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 199 })).toThrow(
+      /needs more than 199 raster pixels/,
+    );
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 200 })).not.toThrow();
   });
 });
 

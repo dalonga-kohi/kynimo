@@ -4,10 +4,12 @@ import {
   type BehaviorType,
   type BlendMode,
   type Effect,
+  type Generator,
   type LayerType,
   MAX_BEHAVIORS,
   MAX_EFFECT_RADIUS,
   MAX_EFFECTS,
+  MAX_GENERATOR_STOPS,
   MAX_SHADOW_OFFSET,
   type MaskMode,
   type Paint,
@@ -42,6 +44,10 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
     note: "frames decoded at upload; outside the clip the layer draws nothing",
   },
   solid: RENDERS,
+  generator: {
+    status: "renders",
+    note: "drawn on the GPU at the layer size, then placed like an image: gradient, noise, pattern or aurora",
+  },
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },
   adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
@@ -124,6 +130,17 @@ export const BEHAVIOR_LIMITS = {
   linkStepsPerFrame: MAX_FRAME_LINK_STEPS,
 } as const;
 
+/** Generator kinds (ADR-0045), typed over the scene's generator union like the tables above. */
+export const GENERATOR_SUPPORT: Readonly<Record<Generator["type"], Support>> = {
+  gradient: {
+    status: "renders",
+    note: `linear, radial or conic, up to ${MAX_GENERATOR_STOPS} stops`,
+  },
+  noise: { status: "renders", note: "seeded fractal value noise that evolves in time" },
+  pattern: { status: "renders", note: "stripes, checker, dots or grid, anti-aliased" },
+  aurora: { status: "renders", note: "two to four soft color blobs that loop with evolution" },
+};
+
 export const EFFECT_SUPPORT: Readonly<Record<Effect["type"], Support>> = {
   "gaussian-blur": RENDERS,
   "drop-shadow": RENDERS,
@@ -132,6 +149,11 @@ export const EFFECT_SUPPORT: Readonly<Record<Effect["type"], Support>> = {
   "hue-saturation": RENDERS,
   tint: RENDERS,
   fill: RENDERS,
+  vignette: RENDERS,
+  grain: RENDERS,
+  "chromatic-aberration": RENDERS,
+  posterize: RENDERS,
+  scanlines: RENDERS,
 };
 
 export const EFFECT_LIMITS = {

@@ -14,6 +14,7 @@ import { type Affine, multiply } from "./affine.js";
 import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
 import { resolveEffects } from "./effect.js";
+import { resolveGenerator } from "./generator.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
   ResolvedAudio,
@@ -375,6 +376,14 @@ function resolveLayer(
         width: layer.width,
         height: layer.height,
         color: parseColor(layer.color),
+      };
+    case "generator":
+      return {
+        ...base,
+        type: "generator",
+        width: layer.width,
+        height: layer.height,
+        generator: resolveGenerator(layer.generator, frame, fps, layer.width, layer.height),
       };
     case "precomp": {
       const nested = ctx.compositions.get(layer.compositionId);

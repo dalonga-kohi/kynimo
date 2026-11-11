@@ -69,6 +69,8 @@ const RESERVED = [
   "TransformProperty",
   "AddLayerOp",
   "Easing",
+  // A global of lib.es2015.generator.d.ts: a generator layer's `generator` property would redeclare it.
+  "Generator",
 ];
 
 /** The generated, input-side types. `fallbackOps` writes each op loosely instead of in full. */

@@ -1,4 +1,9 @@
-import { MAX_EFFECT_RADIUS } from "@kynimo/scene";
+import {
+  MAX_AURORA_COLORS,
+  MAX_EFFECT_RADIUS,
+  MAX_GENERATOR_STOPS,
+  MAX_NOISE_OCTAVES,
+} from "@kynimo/scene";
 
 /**
  * GLSL ES 3.00 for the WebGL2 compositor (ADR-0021). Every function mirrors `blend.ts` and
@@ -64,6 +69,166 @@ void main() {
   outColor = c;
 }`;
 
+/** `hashWords(seed, [a, b, c, d])` of `@kynimo/engine` in `uint` math (wrapping multiply == Math.imul). */
+const HASH = `
+uint rotl(uint x, uint r) { return (x << r) | (x >> (32u - r)); }
+uint murmurStep(uint h, uint k) {
+  k *= 0xcc9e2d51u;
+  k = rotl(k, 15u);
+  k *= 0x1b873593u;
+  h ^= k;
+  h = rotl(h, 13u);
+  return h * 5u + 0xe6546b64u;
+}
+uint hashWords4(uint seed, uint a, uint b, uint c, uint d) {
+  uint h = murmurStep(murmurStep(murmurStep(murmurStep(seed, a), b), c), d);
+  h ^= 16u;
+  h ^= h >> 16u;
+  h *= 0x85ebca6bu;
+  h ^= h >> 13u;
+  h *= 0xc2b2ae35u;
+  h ^= h >> 16u;
+  return h;
+}
+float hashUnit(uint h) { return float(h) / 4294967295.0; }
+`;
+
+/** The JS twin is `band` in effects.ts. */
+const BAND = `
+float bandOverlap(float v, float hw) { return max(0.0, min(v + 0.5, hw) - max(v - 0.5, -hw)); }
+float band(float x, float hw, float period) {
+  float u = x - period * floor(x / period + 0.5);
+  return min(1.0, bandOverlap(u, hw) + bandOverlap(abs(u) - period, hw));
+}
+`;
+
+/**
+ * Draws a generator (the twin of generators.ts) into a W×H layer-space target, premultiplied.
+ * u_type: 0 gradient, 1 noise, 2 pattern, 3 aurora. Pixel centers are (x + 0.5, y + 0.5).
+ */
+export const GENERATOR = `${HEADER}
+uniform int u_type;
+uniform vec2 u_size;
+uniform int u_kind;
+uniform vec2 u_a;          // gradient start
+uniform vec2 u_b;          // gradient end
+uniform int u_count;       // gradient stops, aurora colors
+uniform float u_offsets[${MAX_GENERATOR_STOPS}];
+uniform vec4 u_colors[${MAX_GENERATOR_STOPS}];
+uniform uint u_seed;
+uniform float u_scale;     // noise scale, pattern size, aurora sigma
+uniform int u_octaves;
+uniform float u_evolution;
+uniform vec2 u_offset;
+uniform vec4 u_low;        // noise low, pattern background
+uniform vec4 u_high;       // noise high, pattern foreground
+uniform float u_thickness;
+uniform vec2 u_rotation;
+uniform vec2 u_points[${MAX_AURORA_COLORS}];
+${HASH}
+${BAND}
+vec4 gradientColor(vec2 p) {
+  vec2 d = u_b - u_a;
+  float l2 = dot(d, d);
+  vec2 q = p - u_a;
+  float t;
+  if (l2 < 1e-12) t = 1.0;
+  else if (u_kind == 0) t = dot(q, d) / l2;
+  else if (u_kind == 1) t = length(q) / sqrt(l2);
+  else if (q == vec2(0.0)) t = 0.0;
+  else {
+    float turns = atan(d.x * q.y - d.y * q.x, dot(q, d)) / 6.28318530717958647692;
+    t = turns - floor(turns);
+  }
+  t = clamp(t, 0.0, 1.0);
+  int last = u_count - 1;
+  if (t <= u_offsets[0]) return u_colors[0];
+  if (t >= u_offsets[last]) return u_colors[last];
+  for (int i = 0; i < last; i++) {
+    float lo = u_offsets[i];
+    float hi = u_offsets[i + 1];
+    if (lo <= t && t <= hi && hi > lo) return mix(u_colors[i], u_colors[i + 1], (t - lo) / (hi - lo));
+  }
+  return u_colors[last];
+}
+
+float lattice(int o, ivec3 i) {
+  return hashUnit(hashWords4(u_seed, uint(o), uint(i.x), uint(i.y), uint(i.z)));
+}
+vec3 fade(vec3 u) { return u * u * u * (u * (u * 6.0 - 15.0) + 10.0); }
+vec4 noiseColor(vec2 p) {
+  float sum = 0.0;
+  float weights = 0.0;
+  float amplitude = 1.0;
+  for (int o = 0; o < ${MAX_NOISE_OCTAVES}; o++) {
+    if (o >= u_octaves) break;
+    float freq = float(1 << o);
+    vec3 q = vec3((p - u_offset) / u_scale * freq, u_evolution * freq);
+    vec3 fl = floor(q);
+    ivec3 i = ivec3(fl);
+    vec3 u = fade(q - fl);
+    float z0 = mix(mix(lattice(o, i), lattice(o, i + ivec3(1, 0, 0)), u.x),
+                   mix(lattice(o, i + ivec3(0, 1, 0)), lattice(o, i + ivec3(1, 1, 0)), u.x), u.y);
+    float z1 = mix(mix(lattice(o, i + ivec3(0, 0, 1)), lattice(o, i + ivec3(1, 0, 1)), u.x),
+                   mix(lattice(o, i + ivec3(0, 1, 1)), lattice(o, i + ivec3(1, 1, 1)), u.x), u.y);
+    sum += amplitude * mix(z0, z1, u.z);
+    weights += amplitude;
+    amplitude *= 0.5;
+  }
+  return mix(u_low, u_high, sum / weights);
+}
+
+vec4 patternColor(vec2 p) {
+  vec2 r = p - u_size / 2.0 - u_offset;
+  vec2 q = vec2(u_rotation.x * r.x + u_rotation.y * r.y, -u_rotation.y * r.x + u_rotation.x * r.y);
+  float s = u_scale;
+  float hw = u_thickness * s / 2.0;
+  float cov;
+  if (u_kind == 0) {
+    cov = band(q.x, hw, s);
+  } else if (u_kind == 1) {
+    cov = band(q.x, s / 2.0, 2.0 * s);
+    float b = band(q.y, s / 2.0, 2.0 * s);
+    cov = cov * (1.0 - b) + b * (1.0 - cov);
+  } else if (u_kind == 2) {
+    vec2 c = s * floor(q / s + 0.5);
+    cov = hw > 0.0 ? clamp(hw + 0.5 - length(q - c), 0.0, 1.0) : 0.0;
+  } else {
+    float a = band(q.x, hw, s);
+    float b = band(q.y, hw, s);
+    cov = a + b - a * b;
+  }
+  return mix(u_low, u_high, cov);
+}
+
+vec4 auroraColor(vec2 p) {
+  float d2[${MAX_AURORA_COLORS}];
+  float dmin = 3.4e38;
+  for (int i = 0; i < ${MAX_AURORA_COLORS}; i++) {
+    if (i >= u_count) break;
+    vec2 d = p - u_points[i];
+    d2[i] = dot(d, d);
+    dmin = min(dmin, d2[i]);
+  }
+  float total = 0.0;
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < ${MAX_AURORA_COLORS}; i++) {
+    if (i >= u_count) break;
+    float w = exp(-(d2[i] - dmin) / (2.0 * u_scale * u_scale));
+    total += w;
+    sum += w * u_colors[i];
+  }
+  return sum / total;
+}
+
+void main() {
+  vec2 p = vec2(ivec2(gl_FragCoord.xy)) + 0.5;
+  vec4 c = u_type == 0 ? gradientColor(p)
+    : u_type == 1 ? noiseColor(p)
+    : u_type == 2 ? patternColor(p) : auroraColor(p);
+  outColor = vec4(c.rgb * c.a, c.a);
+}`;
+
 /** Straight-color corrections preserve the source's coverage. Shadow and glow sit under it. */
 export const EFFECT = `${HEADER}
 uniform sampler2D u_src;
@@ -73,7 +238,24 @@ uniform vec2 u_params;
 uniform vec4 u_color;
 uniform vec4 u_white;
 uniform float u_amount;
+uniform float u_offset;
+uniform uint u_seed;
+uniform int u_frame;
+uniform int u_size;
+uniform bool u_monochrome;
+uniform ivec2 u_origin;
+uniform ivec2 u_inner;
 ${TRANSPARENT_FETCH}
+${HASH}
+${BAND}
+
+vec4 bilinearAt(vec2 p) {
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  vec4 top = mix(at(u_src, i), at(u_src, i + ivec2(1, 0)), f.x);
+  vec4 bottom = mix(at(u_src, i + ivec2(0, 1)), at(u_src, i + ivec2(1, 1)), f.x);
+  return mix(top, bottom, f.y);
+}
 
 float shiftedAlpha(vec2 p) {
   ivec2 i = ivec2(floor(p));
@@ -104,6 +286,14 @@ void main() {
     outColor = c + under * (1.0 - c.a);
     return;
   }
+  if (u_mode == 9) {
+    vec2 size = vec2(textureSize(u_src, 0));
+    vec2 o = (vec2(p) + 0.5 - size / 2.0) / (0.5 * max(size.x, size.y)) * u_amount;
+    vec4 r = bilinearAt(clamp(vec2(p) + 0.5 + o, vec2(0.5), size - 0.5) - 0.5);
+    vec4 b = bilinearAt(clamp(vec2(p) + 0.5 - o, vec2(0.5), size - 0.5) - 0.5);
+    outColor = vec4(r.r, c.g, b.b, max(r.a, max(c.a, b.a)));
+    return;
+  }
   if (c.a <= 0.0) {
     outColor = vec4(0.0);
     return;
@@ -125,6 +315,29 @@ void main() {
     case 6:
       rgb = mix(rgb, u_color.rgb, u_color.a * u_amount);
       break;
+    case 7: {
+      vec2 halfSize = vec2(u_inner) / 2.0;
+      float d = length((vec2(p) + 0.5 - halfSize - vec2(u_origin)) / halfSize);
+      float k = smoothstep(u_params.x, u_params.x + u_params.y, d);
+      rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
+      break;
+    }
+    case 8: {
+      ivec2 cell = ivec2(floor(vec2(p - u_origin) / float(u_size)));
+      for (int ch = 0; ch < 3; ch++) {
+        uint h = hashWords4(u_seed, uint(u_frame), uint(cell.x), uint(cell.y), u_monochrome ? 0u : uint(ch));
+        rgb[ch] = clamp(rgb[ch] + u_amount * 0.5 * (hashUnit(h) * 2.0 - 1.0), 0.0, 1.0);
+      }
+      break;
+    }
+    case 10:
+      rgb = floor(rgb * (u_amount - 1.0) + 0.5) / (u_amount - 1.0);
+      break;
+    case 11: {
+      float k = band(float(p.y - u_origin.y) + 0.5 - u_offset, u_params.y * u_params.x / 2.0, u_params.x);
+      rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
+      break;
+    }
   }
   outColor = vec4(clamp(rgb, 0.0, 1.0) * c.a, c.a);
 }`;

@@ -3,8 +3,17 @@ import {
   type Color,
   type Effect,
   type FrameRate,
+  MAX_ABERRATION,
   MAX_EFFECT_RADIUS,
+  MAX_POSTERIZE_LEVELS,
+  MAX_SCANLINE_OFFSET,
+  MAX_SCANLINE_SPACING,
   MAX_SHADOW_OFFSET,
+  MAX_VIGNETTE_FEATHER,
+  MAX_VIGNETTE_RADIUS,
+  MIN_POSTERIZE_LEVELS,
+  MIN_SCANLINE_SPACING,
+  MIN_VIGNETTE_FEATHER,
 } from "@kynimo/scene";
 import type { Rgba } from "./color.js";
 import { samplePoint, sampleUnit } from "./properties.js";
@@ -18,7 +27,28 @@ export type ResolvedEffect =
   | { type: "brightness-contrast"; brightness: number; contrast: number }
   | { type: "hue-saturation"; hue: number; saturation: number }
   | { type: "tint"; black: Rgba; white: Rgba; amount: number }
-  | { type: "fill"; color: Rgba; amount: number };
+  | { type: "fill"; color: Rgba; amount: number }
+  | { type: "vignette"; amount: number; radius: number; feather: number; color: Rgba }
+  | {
+      type: "grain";
+      amount: number;
+      size: number;
+      seed: number;
+      /** The layer-local frame that seeds the pattern: its floor when animated, 0 otherwise. */
+      frame: number;
+      monochrome: boolean;
+    }
+  | { type: "chromatic-aberration"; amount: number }
+  | { type: "posterize"; levels: number }
+  | {
+      type: "scanlines";
+      amount: number;
+      spacing: number;
+      thickness: number;
+      /** The scroll offset reduced into [0, spacing). */
+      offset: number;
+      color: Rgba;
+    };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
@@ -89,6 +119,50 @@ export function resolveEffects(
       case "fill":
         out.push({ type, color: color(effect.color), amount: unit(effect.amount) });
         break;
+      case "vignette":
+        out.push({
+          type,
+          amount: unit(effect.amount),
+          radius: number(effect.radius, 0, MAX_VIGNETTE_RADIUS),
+          feather: number(effect.feather, MIN_VIGNETTE_FEATHER, MAX_VIGNETTE_FEATHER),
+          color: color(effect.color),
+        });
+        break;
+      case "grain":
+        out.push({
+          type,
+          amount: unit(effect.amount),
+          size: effect.size,
+          seed: effect.seed,
+          frame: effect.animated ? Math.floor(frame) : 0,
+          monochrome: effect.monochrome,
+        });
+        break;
+      case "chromatic-aberration":
+        out.push({ type, amount: number(effect.amount, 0, MAX_ABERRATION) });
+        break;
+      case "posterize":
+        out.push({
+          type,
+          levels: Math.round(number(effect.levels, MIN_POSTERIZE_LEVELS, MAX_POSTERIZE_LEVELS)),
+        });
+        break;
+      case "scanlines": {
+        const spacing = number(effect.spacing, MIN_SCANLINE_SPACING, MAX_SCANLINE_SPACING);
+        const scroll = number(effect.offset, -MAX_SCANLINE_OFFSET, MAX_SCANLINE_OFFSET);
+        // Float64 remainder of a floored division stays in [0, spacing) even for negative scrolls.
+        let offset = scroll - spacing * Math.floor(scroll / spacing);
+        if (offset >= spacing) offset = 0;
+        out.push({
+          type,
+          amount: unit(effect.amount),
+          spacing,
+          thickness: unit(effect.thickness),
+          offset,
+          color: color(effect.color),
+        });
+        break;
+      }
     }
   }
   return out;

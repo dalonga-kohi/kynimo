@@ -11,6 +11,7 @@ import type {
   Vec2,
   WiggleBehavior,
 } from "@kynimo/scene";
+import { murmurStep } from "./hash.js";
 import { cubicPath } from "./path.js";
 import { sampleNumber, samplePosition } from "./track.js";
 
@@ -25,16 +26,6 @@ type Components = readonly number[];
 // ---------------------------------------------------------------------------------------------
 // Noise (wiggle)
 // ---------------------------------------------------------------------------------------------
-
-/** One murmur3 block step: folds the 32-bit word `k` into the running hash `h`. */
-function murmurStep(h: number, k: number): number {
-  let word = Math.imul(k, 0xcc9e2d51);
-  word = (word << 15) | (word >>> 17);
-  word = Math.imul(word, 0x1b873593);
-  let hash = h ^ word;
-  hash = (hash << 13) | (hash >>> 19);
-  return (Math.imul(hash, 5) + 0xe6546b64) | 0;
-}
 
 /**
  * Integer hash of (seed, axis, octave, lattice index) to an unsigned 32-bit value: murmur3's block

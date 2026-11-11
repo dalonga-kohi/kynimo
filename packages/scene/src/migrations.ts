@@ -109,6 +109,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 5, migrate: addTextAnimators },
   { from: 6, migrate: addBehaviors },
   { from: 7, migrate: addEffects },
+  // 8 → 9: generator layers and look effects are new variants; nothing to rewrite.
+  { from: 8, migrate: (doc) => doc },
 ];
 
 export interface MigrationError {

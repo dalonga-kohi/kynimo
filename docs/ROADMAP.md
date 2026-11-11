@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 under way (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects and SVG import done); M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -53,7 +53,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Reference scene: kinetic type (ADR-0018), built only with MCP tools
 - [x] Effects: Gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill, adjustment layers, `add_effect` and the `blur-in` preset → ADR-0042: format v8, ordered keyframeable stacks, `setEffects`, and bounded compositor passes
 - [x] SVG import → shape layer, with a fidelity report and dry run (ADR-0018) → ADR-0043: pure `@kynimo/svg` (inline text up to 512 KB, bounded `fast-xml-parser`), one shape layer with groups per painted element, `<use>` expansion, gradients, a fidelity report of dropped, flattened and approximated features, the `import_svg` intent tool, and a pixel comparison against Chromium's own SVG renderer
-- [ ] Built-in 2D shader effects and generator layers (backgrounds, textures, looks)
+- [x] Built-in 2D shader effects and generator layers (backgrounds, textures, looks) → ADR-0045: format v9, a typed `generator` layer (gradient, noise, pattern, aurora) and five looks (vignette, grain, chromatic aberration, posterize, scanlines) with `setGenerator`, CPU-side trig and integer hashing so GPU and float64 reference agree within 1/255, a frame sample budget and raster-pixel reservation, a reference scene
 
 ## M5 — Guidelines + quality checks
 
@@ -90,7 +90,7 @@ The human sees the video before any editor exists.
 - [ ] Share page: sign in, project list, the player on the shared renderer with timeline scrubbing, live view of agent edits (same document versions as MCP)
 - [ ] Frame-pinned comments on the share page; `list_comments`, `resolve_comment` so the agent reads and answers them
 - [ ] In-chat player: spike MCP UI support in Claude and ChatGPT (decision ADR), then return the player from the render and export tools where the client supports it
-- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 77 KB (after `import_svg`, ADR-0043) to 60 KB
+- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 78 KB (77 KB after `import_svg`, ADR-0043; 78 KB with generators, ADR-0045) to 60 KB; ADR-0045 also raised the apply_ops listing cap 14 to 15 KB, the manifest cap 8 to 9 KB and the project JSON schema cap 74 to 90 KB, all to lower again
 
 ## Private beta
 

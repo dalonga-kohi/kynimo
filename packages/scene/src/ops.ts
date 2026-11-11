@@ -10,6 +10,7 @@ import {
 } from "./behavior.js";
 import { MaskSchema, TrackMatteSchema } from "./compositing.js";
 import { EffectStackSchema } from "./effect.js";
+import { GeneratorSchema } from "./generator.js";
 import {
   AssetIdSchema,
   BehaviorIdSchema,
@@ -168,6 +169,12 @@ const setEffects = z.strictObject({
   effects: EffectStackSchema,
 });
 
+const setGenerator = z.strictObject({
+  op: z.literal("setGenerator"),
+  layer: LayerSelectorSchema,
+  generator: GeneratorSchema,
+});
+
 /** A behavior without its id: the id is supplied by the op or generated from the seeded counter. */
 export type BehaviorInput = Behavior extends infer B
   ? B extends Behavior
@@ -317,6 +324,7 @@ export const OpSchema = z.discriminatedUnion("op", [
   updateMask,
   removeMask,
   setEffects,
+  setGenerator,
   addBehavior,
   updateBehavior,
   removeBehavior,

@@ -24,7 +24,7 @@ const GradientStopsSchema = z
     },
   );
 
-const sameLengthCheck =
+export const sameLengthCheck =
   (what: string) =>
   (keyframes: Keyframe<readonly unknown[]>[], ctx: z.RefinementCtx): void => {
     const count = keyframes[0]?.value.length ?? 0;

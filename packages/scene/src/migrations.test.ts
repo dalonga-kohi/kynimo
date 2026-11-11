@@ -225,14 +225,14 @@ describe("migrateProject", () => {
   it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 8 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 9 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 8 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 9 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +255,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 8 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 9 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -347,7 +347,7 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v6);
-    expect(r).toMatchObject({ ok: true, from: 6, to: 8 });
+    expect(r).toMatchObject({ ok: true, from: 6, to: 9 });
     if (!r.ok) return;
     const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ behaviors: [] });
@@ -389,12 +389,27 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v7);
-    expect(r).toMatchObject({ ok: true, from: 7, to: 8 });
+    expect(r).toMatchObject({ ok: true, from: 7, to: 9 });
     if (!r.ok) return;
     const [solid, adjustment, nul] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ effects: [] });
     expect(adjustment).toMatchObject({ effects: [] });
     expect(nul).not.toHaveProperty("effects");
+  });
+
+  it("8 → 9 changes nothing but the version", () => {
+    const v8 = project({
+      formatVersion: 8,
+      compositions: [composition("main", [{ ...visual("a"), type: "adjustment", effects: [] }])],
+    });
+    const r = migrateProject(v8);
+    expect(r).toMatchObject({ ok: true, from: 8, to: 9 });
+    if (r.ok) expect({ ...r.doc, formatVersion: 8 }).toEqual(v8);
+  });
+
+  it("migrates a version 1 document to the current version", () => {
+    const r = migrateProject({ ...project(), formatVersion: 1 });
+    expect(r).toMatchObject({ ok: true, from: 1, to: SCENE_FORMAT_VERSION });
   });
 
   it("rejects unknown and future versions", () => {

@@ -192,6 +192,18 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         return effects.length > 0 && base.opacity > 0
           ? { ...base, type: "adjustment", effects }
           : null;
+      case "generator":
+        // The GPU target is as big as a solid's raster, so it counts against the same limit.
+        reserve(layer.width, layer.height);
+        return {
+          ...base,
+          type: "generator",
+          space: "layer",
+          matrix: layer.matrix,
+          width: layer.width,
+          height: layer.height,
+          generator: layer.generator,
+        };
       case "component":
         skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
         return null;
@@ -280,7 +292,8 @@ function rasterSpace(
       height: layer.raster.height,
       toRaster: multiply([1, 0, 0, 1, -layer.x, -layer.y], matrix),
     };
-  const { width, height } = layer.type === "precomp" ? layer.frame : layer.raster;
+  const { width, height } =
+    layer.type === "precomp" ? layer.frame : layer.type === "generator" ? layer : layer.raster;
   return { width, height, toRaster: [1, 0, 0, 1, 0, 0] };
 }
 

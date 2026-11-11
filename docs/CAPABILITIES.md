@@ -38,27 +38,27 @@ Status:
 
 ## 2. Layers
 
-| Capability                                                | AE equivalent    | Status |
-| --------------------------------------------------------- | ---------------- | ------ |
-| Shape layer (contents tree, see §4)                       | Shape layer      | beta   |
-| Text layer (see §5)                                       | Text layer       | beta   |
-| Image layer                                               | Footage          | beta   |
-| Video layer (pre-decoded to frames with FFmpeg, see note) | Footage          | beta   |
-| Solid                                                     | Solid            | beta   |
-| Null (invisible parent / controller)                      | Null object      | beta   |
-| Precomp layer                                             | Precomp layer    | beta   |
-| Collapse transformations on precomp layers                | Collapse         | v1.x   |
-| Adjustment layer (effects apply to everything below)      | Adjustment layer | beta   |
-| Component instance (typed props, see §8)                  | MOGRT            | beta   |
-| Shader generator layer (built-in or custom GLSL, see §8)  | —                | beta   |
-| Audio layer (mixed into exports, carries beat markers)    | Audio            | beta   |
-| 3D compositing: 3D layers (Z), cameras, lights, depth     | 3D               | v1.x   |
-| 3D model layer (glTF / GLB), shader materials             | 3D models        | v1.x   |
-| Lottie import → editable layers (unsupported reported)    | —                | v1.x   |
-| After Effects project (`.aep`) import                     | Open project     | no     |
-| Stable layer ids, human-readable names                    | —                | beta   |
-| Render switches: hidden, solo                             | Layer switches   | beta   |
-| Editor-only metadata: lock, shy, label color              | Layer switches   | beta   |
+| Capability                                                                                 | AE equivalent    | Status |
+| ------------------------------------------------------------------------------------------ | ---------------- | ------ |
+| Shape layer (contents tree, see §4)                                                        | Shape layer      | beta   |
+| Text layer (see §5)                                                                        | Text layer       | beta   |
+| Image layer                                                                                | Footage          | beta   |
+| Video layer (pre-decoded to frames with FFmpeg, see note)                                  | Footage          | beta   |
+| Solid                                                                                      | Solid            | beta   |
+| Null (invisible parent / controller)                                                       | Null object      | beta   |
+| Precomp layer                                                                              | Precomp layer    | beta   |
+| Collapse transformations on precomp layers                                                 | Collapse         | v1.x   |
+| Adjustment layer (effects apply to everything below)                                       | Adjustment layer | beta   |
+| Component instance (typed props, see §8)                                                   | MOGRT            | beta   |
+| Generator layer: built-in gradient, noise, pattern, aurora (ADR-0045; custom GLSL, see §8) | —                | beta   |
+| Audio layer (mixed into exports, carries beat markers)                                     | Audio            | beta   |
+| 3D compositing: 3D layers (Z), cameras, lights, depth                                      | 3D               | v1.x   |
+| 3D model layer (glTF / GLB), shader materials                                              | 3D models        | v1.x   |
+| Lottie import → editable layers (unsupported reported)                                     | —                | v1.x   |
+| After Effects project (`.aep`) import                                                      | Open project     | no     |
+| Stable layer ids, human-readable names                                                     | —                | beta   |
+| Render switches: hidden, solo                                                              | Layer switches   | beta   |
+| Editor-only metadata: lock, shy, label color                                               | Layer switches   | beta   |
 
 Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload. Limits and storage: ADR-0032 (frames as JPEG at most 1920 px and 60 fps, clips up to 60 s, audio as 48 kHz FLAC).
 
@@ -136,6 +136,8 @@ Spring note: a spring segment runs from its keyframe toward the next keyframe's 
 
 Effects stack per layer and on adjustment layers (ADR-0042). Use `add_effect` to insert an effect, `get_layer` to inspect the stack, and `setEffects` via `apply_ops` to edit, reorder or remove effects. Parameters use `{ value }` or `{ keyframes }` in layer time. Look up the fields in `get_layer_schema`.
 
+Generators and looks (ADR-0045, scene format 9): a **generator layer** is a layer of a given width and height that draws a procedural source: `gradient` (linear, radial or conic, up to 16 stops), `noise` (seeded fractal value noise that evolves in time), `pattern` (stripes, checker, dots, grid) or `aurora` (two to four soft color blobs that loop as `evolution` runs). Add one with `apply_ops` `addLayer` (or `add_layer`) and edit it with the `setGenerator` operation; scripts reach both through the SDK. It is placed, masked, matted, blended and given effects like any drawn layer. The **looks** are effects (`add_effect`, usually on an adjustment layer): `vignette`, `grain` (seeded, optionally animated), `chromatic-aberration`, `posterize` and `scanlines`.
+
 Adjustment layers filter the composite below them in the same composition. Their masks, track mattes and opacity control where and how strongly the finished filter appears. `blur-in` animates a layer from blurred and transparent to sharp at its original opacity.
 
 | Capability                                                                       | AE equivalent               | Status |
@@ -143,9 +145,10 @@ Adjustment layers filter the composite below them in the same composition. Their
 | Gaussian blur                                                                    | Gaussian blur               | beta   |
 | Drop shadow, glow                                                                | Drop shadow, glow           | beta   |
 | Color: brightness/contrast, hue/saturation, tint, fill                           | Color correction            | beta   |
-| Directional blur, levels, gradient ramp, seeded noise / grain                    | Various                     | v1.x   |
+| Directional blur, levels, gradient ramp                                          | Various                     | v1.x   |
 | Inner shadow                                                                     | Layer style (not an effect) | v1.x   |
-| Turbulent displace (seeded), chromatic aberration, vignette                      | Various                     | later  |
+| Turbulent displace (seeded)                                                      | Various                     | later  |
+| Looks: vignette, grain, chromatic aberration, posterize, scanlines (ADR-0045)    | Various                     | beta   |
 | Shader effects: built-in library + custom GLSL with animatable uniforms (see §8) | Third-party plugins         | beta   |
 | Particles                                                                        | Third-party plugins         | later  |
 
@@ -160,7 +163,7 @@ Code is a first-class way to build (ADR-0012, ADR-0036). **Scripts** run once at
 | Built-in library: charts, device mockups                                                         | v1.x   |
 | Custom components in sandboxed TypeScript, defined over MCP (`define_component`)                 | beta   |
 | Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`)        | beta   |
-| Built-in shader library: backgrounds, textures, transitions, looks                               | beta   |
+| Built-in shader library: backgrounds, textures, looks (ADR-0045); transitions                    | beta   |
 | Shaders on 3D layers and models (materials)                                                      | v1.x   |
 | Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`, ADR-0041) | beta   |
 | Code panel in the web editor; local CLI / dev mode                                               | later  |

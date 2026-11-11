@@ -3,6 +3,7 @@ import { BehaviorSchema, MAX_BEHAVIORS } from "./behavior.js";
 import { BlendModeSchema, MAX_MASKS, MaskSchema, TrackMatteSchema } from "./compositing.js";
 import { EffectStackSchema } from "./effect.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
+import { GeneratorSchema } from "./generator.js";
 import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
 import { MAX_COMPOSITION_SIZE } from "./limits.js";
 import {
@@ -141,6 +142,15 @@ export const SolidLayerSchema = z.strictObject({
   color: ColorSchema,
 });
 
+/** A procedural source (gradient, noise, pattern, aurora) of `width` x `height` layer units, placed like a solid. */
+export const GeneratorLayerSchema = z.strictObject({
+  ...drawn,
+  type: z.literal("generator"),
+  width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
+  height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
+  generator: GeneratorSchema,
+});
+
 /** Invisible parent or controller. */
 export const NullLayerSchema = z.strictObject({ ...visual, type: z.literal("null") });
 
@@ -182,6 +192,7 @@ export const LayerSchema = z.discriminatedUnion("type", [
   ImageLayerSchema,
   VideoLayerSchema,
   SolidLayerSchema,
+  GeneratorLayerSchema,
   NullLayerSchema,
   PrecompLayerSchema,
   AdjustmentLayerSchema,

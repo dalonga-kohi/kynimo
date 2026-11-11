@@ -10,6 +10,7 @@ const LAYER_TYPES = [
   "image",
   "video",
   "solid",
+  "generator",
   "null",
   "precomp",
   "adjustment",

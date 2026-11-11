@@ -41,6 +41,7 @@ export const VISUAL_LAYER_TYPES = [
   "image",
   "video",
   "solid",
+  "generator",
   "precomp",
   "adjustment",
   "component",
@@ -217,6 +218,7 @@ function defaultBox(ctx: PresetContext, layer: Layer, timing: PresetTiming): Box
   };
   switch (layer.type) {
     case "solid":
+    case "generator":
       return { x: 0, y: 0, width: layer.width, height: layer.height };
     case "image":
     case "video": {
@@ -291,7 +293,7 @@ export const PRESETS: readonly Preset[] = [
     title: "Blur in",
     description: "Fades the layer in as it sharpens from a soft Gaussian blur.",
     kind: "enter",
-    layerTypes: ["shape", "text", "image", "video", "solid", "precomp"],
+    layerTypes: ["shape", "text", "image", "video", "solid", "generator", "precomp"],
     params: z.strictObject({
       ...common,
       radius: z
