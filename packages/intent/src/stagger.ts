@@ -1,9 +1,9 @@
+import { mulberry32 } from "@kynimo/engine";
 import type { GuidelinePack } from "@kynimo/guidelines";
 import { millisecondsToFrames } from "@kynimo/guidelines";
 import type { FrameRate, Op, Project } from "@kynimo/scene";
 import { z } from "zod";
 import { IntentError, scoped } from "./errors.js";
-import { mulberry32 } from "./random.js";
 import { offsetMilliseconds, resolveStyle, StaggerOffsetInput, TargetsInput } from "./style.js";
 import { resolveTargets } from "./targets.js";
 import { diffLayerOps, listKeyframeTracks, mapLayerKeyframes } from "./walk.js";

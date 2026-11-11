@@ -1,5 +1,6 @@
 export * from "./affine.js";
 export * from "./color.js";
+export * from "./component.js";
 export * from "./easing.js";
 export * from "./evaluate.js";
 export * from "./generator.js";

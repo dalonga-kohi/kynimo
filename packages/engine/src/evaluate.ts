@@ -2,6 +2,7 @@ import type {
   Animatable,
   Asset,
   BezierPath,
+  ComponentLayer,
   Composition,
   FrameRate,
   Layer,
@@ -13,8 +14,10 @@ import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
+import { type ComponentHost, MAX_COMPONENT_DEPTH } from "./component.js";
 import { resolveEffects } from "./effect.js";
 import { resolveGenerator } from "./generator.js";
+import { hashWords } from "./hash.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
   ResolvedAudio,
@@ -119,19 +122,29 @@ interface Context {
   costs: Map<string, number>;
   /** Precomp layer ids from the root down to the composition being evaluated, for error messages. */
   chain: string[];
+  /** Evaluates component instances; without one they pass through unevaluated. */
+  components: ComponentHost | undefined;
+  /** Component instances currently being evaluated inside one another. */
+  componentDepth: number;
 }
+
+/**
+ * What an evaluation is for. Only the root is drawn on its background; a precomp is memoized and
+ * charged by composition id; a component output is neither (it is charged by its caller).
+ */
+type EvaluationKind = "root" | "precomp" | "component";
 
 function evaluateComposition(
   ctx: Context,
   comp: Composition,
   frame: number,
-  root: boolean,
+  kind: EvaluationKind,
 ): ResolvedComposition {
   const key = `${comp.id}@${frame}`;
-  const cached = root ? undefined : ctx.memo.get(key);
+  const cached = kind === "precomp" ? ctx.memo.get(key) : undefined;
   if (cached !== undefined) return cached;
 
-  if (!root) charge(ctx, comp);
+  if (kind === "precomp") charge(ctx, comp);
 
   const fps = comp.fps;
   const byId = new Map(comp.layers.map((l) => [l.id as string, l]));
@@ -192,7 +205,7 @@ function evaluateComposition(
     let resolved = resolvedById.get(layer.id);
     if (resolved === undefined) {
       const layerFrame = frame - layer.startFrame;
-      resolved = resolveLayer(ctx, layer, layerFrame, fps, {
+      resolved = resolveLayer(ctx, comp, layer, layerFrame, {
         id: layer.id,
         name: layer.name,
         layerFrame,
@@ -249,11 +262,11 @@ function evaluateComposition(
     height: comp.height,
     fps: { num: fps.num, den: fps.den },
     frame,
-    background: root && comp.background !== null ? parseColor(comp.background) : null,
+    background: kind === "root" && comp.background !== null ? parseColor(comp.background) : null,
     layers,
     audio,
   };
-  if (!root) ctx.memo.set(key, result);
+  if (kind === "precomp") ctx.memo.set(key, result);
   return result;
 }
 
@@ -316,11 +329,12 @@ function resolveMasks(masks: readonly Mask[], frame: number, fps: FrameRate): Re
 
 function resolveLayer(
   ctx: Context,
+  parent: Composition,
   layer: DrawnLayer,
   frame: number,
-  fps: FrameRate,
   base: Base,
 ): ResolvedLayer {
+  const fps = parent.fps;
   switch (layer.type) {
     case "shape":
       return { ...base, type: "shape", contents: resolveShapeItems(layer.contents, frame, fps) };
@@ -398,7 +412,7 @@ function resolveLayer(
         compositionId: nested.id,
         composition:
           local >= 0 && local < nested.durationFrames
-            ? withChain(ctx, layer.id, () => evaluateComposition(ctx, nested, local, false))
+            ? withChain(ctx, layer.id, () => evaluateComposition(ctx, nested, local, "precomp"))
             : null,
       };
     }
@@ -411,20 +425,83 @@ function resolveLayer(
         componentId: layer.componentId,
         componentVersion: layer.componentVersion,
         props: layer.props,
+        composition: resolveComponent(ctx, parent, layer, frame),
       };
   }
+}
+
+/** Seed for a component instance: a hash of the layer id's UTF-16 code units, so it is stable in the document. */
+function componentSeed(layerId: string): number {
+  const words: number[] = [];
+  for (let i = 0; i < layerId.length; i++) words.push(layerId.charCodeAt(i));
+  return hashWords(0, words);
+}
+
+/**
+ * Asks the host for an instance's subtree and evaluates it like a precomp at the instance's local
+ * frame. Never memoized: the output depends on the instance, not on a shared composition id.
+ */
+function resolveComponent(
+  ctx: Context,
+  parent: Composition,
+  layer: ComponentLayer,
+  layerFrame: number,
+): ResolvedComposition | null {
+  if (ctx.components === undefined || layerFrame < 0) return null;
+  const depth = ctx.componentDepth + 1;
+  if (depth > MAX_COMPONENT_DEPTH)
+    throw new RangeError(
+      `component layer '${layer.id}' nests components deeper than ${MAX_COMPONENT_DEPTH} levels (via ${[...ctx.chain, layer.id].join(" > ")})`,
+    );
+  const host = ctx.components;
+  return withChain(ctx, layer.id, () => {
+    const out = host.evaluate(layer, {
+      frame: layerFrame,
+      fps: { num: parent.fps.num, den: parent.fps.den },
+      durationFrames: layer.outFrame - layer.startFrame,
+      width: parent.width,
+      height: parent.height,
+      seed: componentSeed(layer.id),
+      depth,
+    });
+    if (out.fps.num !== parent.fps.num || out.fps.den !== parent.fps.den)
+      throw new RangeError(
+        `component layer '${layer.id}' ('${layer.componentId}@${layer.componentVersion}') returned a subtree at ${out.fps.num}/${out.fps.den} fps; it must match the containing composition's ${parent.fps.num}/${parent.fps.den}`,
+      );
+    if (layerFrame >= out.durationFrames)
+      throw new RangeError(
+        `component layer '${layer.id}' ('${layer.componentId}@${layer.componentVersion}') returned a subtree of ${out.durationFrames} frames, too short for its local frame ${layerFrame}`,
+      );
+    ctx.budget -= compositionCost(out);
+    if (ctx.budget < 0)
+      throw new RangeError(
+        `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, effects, masks, path and mask vertices, gradient stops); it ran out in component layer '${layer.id}' via layers ${ctx.chain.join(" > ")}. Components placed many times multiply: place fewer instances, or use components with fewer layers`,
+      );
+    ctx.componentDepth = depth;
+    try {
+      return evaluateComposition(ctx, out, layerFrame, "component");
+    } finally {
+      ctx.componentDepth = depth - 1;
+    }
+  });
+}
+
+export interface EvaluateOptions {
+  /** Evaluates component instances into nested compositions. Without it they pass through unevaluated. */
+  components?: ComponentHost;
 }
 
 /**
  * Evaluates a composition (the main one by default) at an integer `frame` into a resolved layer
  * tree: every track sampled and clamped to its domain, parenting folded into matrices, precomps
- * nested at their local frame. Pure and deterministic; the document is never modified.
+ * nested at their local frame, component instances evaluated by `options.components`. Pure and deterministic; the document is never modified.
  * The project must already have passed `ProjectSchema`.
  */
 export function evaluateFrame(
   project: Project,
   frame: number,
   compositionId: string = project.mainCompositionId,
+  options: EvaluateOptions = {},
 ): ResolvedComposition {
   const compositions = new Map(project.compositions.map((c) => [c.id as string, c]));
   const comp = compositions.get(compositionId);
@@ -446,6 +523,8 @@ export function evaluateFrame(
     linkSteps: MAX_FRAME_LINK_STEPS,
     costs: new Map(),
     chain: [],
+    components: options.components,
+    componentDepth: 0,
   };
-  return evaluateComposition(ctx, comp, frame, true);
+  return evaluateComposition(ctx, comp, frame, "root");
 }

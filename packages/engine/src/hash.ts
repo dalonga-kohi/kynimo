@@ -25,3 +25,15 @@ export function hashWords(seed: number, words: readonly number[]): number {
   h ^= h >>> 16;
   return h >>> 0;
 }
+
+/** Seeded 32-bit PRNG (mulberry32): pure integer math, so every platform agrees. Returns unsigned 32-bit integers. */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (t ^ (t >>> 14)) >>> 0;
+  };
+}
