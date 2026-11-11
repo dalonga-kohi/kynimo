@@ -58,6 +58,15 @@ describe("capability manifest", () => {
     expect(manifest.unavailable).not.toHaveProperty("behaviors");
   });
 
+  it("doesn't list the shipped intent tools as unavailable", () => {
+    expect(manifest.unavailable).not.toHaveProperty("intent_tools");
+    const text = JSON.stringify(manifest.unavailable);
+    // The preset catalog is a resource now; only the tokens/components/shaders catalogs are missing.
+    expect(manifest.unavailable.catalogs?.reason).toContain("kynimo://presets");
+    for (const tool of ["animate", "apply_preset", "stagger", "retime", "add_behavior"])
+      expect(text).not.toMatch(new RegExp(`\\b${tool}\\b.*arrive`));
+  });
+
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
     expect(JSON.stringify(manifest).length).toBeLessThan(8_000);

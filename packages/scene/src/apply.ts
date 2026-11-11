@@ -429,6 +429,26 @@ function run(ctx: Ctx, op: Op, i: number): void {
       );
       return;
     }
+    case "setTextAnimators": {
+      const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if (layer.type !== "text")
+        fail(
+          [i, "layer"],
+          `layer '${layer.id}' is a ${layer.type} layer and has no text animators; use a text layer`,
+        );
+      setLayerValue(ctx, i, layer, ["animators"], op.animators as Json);
+      return;
+    }
+    case "setShapeContents": {
+      const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if (layer.type !== "shape")
+        fail(
+          [i, "layer"],
+          `layer '${layer.id}' is a ${layer.type} layer and has no shape contents; use a shape layer`,
+        );
+      setLayerValue(ctx, i, layer, ["contents"], op.contents as Json);
+      return;
+    }
     case "setMatte": {
       const { composition, layer } = resolveDrawn(ctx, op.layer, [i, "layer"]);
       let matte: Json = null;

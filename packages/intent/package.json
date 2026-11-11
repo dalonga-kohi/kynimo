@@ -1,0 +1,27 @@
+{
+  "name": "@kynimo/intent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo intent tools: pure expansions of high-level motion requests (animate, stagger, retime) into scene operations over guideline tokens.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/engine": "workspace:*",
+    "@kynimo/guidelines": "workspace:*",
+    "@kynimo/scene": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

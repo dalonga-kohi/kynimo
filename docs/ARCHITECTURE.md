@@ -46,7 +46,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 - Versioned JSON scene graph: `Project → Composition[] → Layer[]` (shape, text, image, video, solid, null, precomp, adjustment, audio, component instance, shader generator; 3D layers, cameras, lights and models in v1.x; parenting and masks/mattes between layers), each with animatable properties and keyframe tracks, plus a guideline pack reference pinned by version. A scene is a composition placed in the main composition's sequence; precomp layers reference compositions by id, with no cycles. Audio is audio layers; beat markers live on them. See [CAPABILITIES.md](CAPABILITIES.md#document-model).
 - Schema-validated (runtime schemas + inferred TS types). `SCENE_FORMAT_VERSION` + migrations for every change.
-- **Typed operations** (`addLayer`, `setKeyframes`, …) are the only way to mutate a document. Intent tools such as `animate` and `apply_preset` expand into these operations (M4). They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
+- **Typed operations** (`addLayer`, `setKeyframes`, …) are the only way to mutate a document. Intent tools such as `animate` and `apply_preset` expand into these operations (`@kynimo/intent`, ADR-0040). They're pure: `(doc, op) → doc'` plus a change record, which gives undo, history and conflict detection for free.
 - Time model: integer frames at the composition frame rate; seconds only at the API edge.
 
 ### 2. Guidelines — `@kynimo/guidelines`
@@ -97,6 +97,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/capture`    | `@kynimo/capture` — headless capture: document + frames → PNG in the pinned Chromium (ADR-0022)                                                 | M2         |
 | `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3         |
 | `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M4         |
+| `packages/intent`     | `@kynimo/intent` — pure expansions of intent tools (animate, stagger, retime, presets) into operations over guideline tokens (ADR-0040)         | M4         |
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036)                                                                           | M4         |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |

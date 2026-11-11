@@ -29,6 +29,8 @@ import {
   Vec2Schema,
 } from "./primitives.js";
 import { LayerSelectorSchema } from "./selectors.js";
+import { MAX_SHAPE_ITEMS, ShapeItemSchema } from "./shape.js";
+import { MAX_TEXT_ANIMATORS, TextAnimatorSchema } from "./text-animator.js";
 import {
   animatable,
   TRANSFORM_PROPERTIES,
@@ -233,6 +235,20 @@ const removeBehavior = z.strictObject({
   behavior: BehaviorIdSchema,
 });
 
+/** Replaces a text layer's animator list whole (ADR-0038); the resulting layer is validated whole. */
+const setTextAnimators = z.strictObject({
+  op: z.literal("setTextAnimators"),
+  layer: LayerSelectorSchema,
+  animators: z.array(TextAnimatorSchema).max(MAX_TEXT_ANIMATORS),
+});
+
+/** Replaces a shape layer's contents whole; the resulting document is validated whole. */
+const setShapeContents = z.strictObject({
+  op: z.literal("setShapeContents"),
+  layer: LayerSelectorSchema,
+  contents: z.array(ShapeItemSchema).max(MAX_SHAPE_ITEMS),
+});
+
 /** Sets or clears a layer's track matte. The source is a layer of the same composition. */
 const setMatte = z.strictObject({
   op: z.literal("setMatte"),
@@ -296,6 +312,8 @@ export const OpSchema = z.discriminatedUnion("op", [
   addBehavior,
   updateBehavior,
   removeBehavior,
+  setTextAnimators,
+  setShapeContents,
   setMatte,
   precompose,
   addAsset,

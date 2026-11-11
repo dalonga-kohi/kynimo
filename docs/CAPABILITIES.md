@@ -128,7 +128,7 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 
 Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant). Motion that really needs code goes into a custom component or shader (§8).
 
-Behaviors today (ADR-0039, format v7): up to 16 per transform layer, on `anchorPoint`, `position`, `scale`, `rotation`, `skew` and `opacity`. Types: `wiggle` (seeded value noise, octaves, `linked` axes), `oscillate` (sine, triangle, square, sawtooth), `loop` (in or out; cycle, pingpong, offset, continue), `inertia` (overshoot and settle after a keyframe lands) and `link` (another layer's property × multiply + offset, optionally `delay` frames later; cycles refused). Ops `addBehavior`, `updateBehavior`, `removeBehavior` through `apply_ops`; `describe_motion` lists each behavior as a line and the manifest states the limits, including a per-frame budget of 100 000 link steps. The `add_behavior` intent tool and behavior presets are still M4-later.
+Behaviors today (ADR-0039, format v7): up to 16 per transform layer, on `anchorPoint`, `position`, `scale`, `rotation`, `skew` and `opacity`. Types: `wiggle` (seeded value noise, octaves, `linked` axes), `oscillate` (sine, triangle, square, sawtooth), `loop` (in or out; cycle, pingpong, offset, continue), `inertia` (overshoot and settle after a keyframe lands) and `link` (another layer's property × multiply + offset, optionally `delay` frames later; cycles refused). Ops `addBehavior`, `updateBehavior`, `removeBehavior` through `apply_ops`; `describe_motion` lists each behavior as a line and the manifest states the limits, including a per-frame budget of 100 000 link steps. `add_behavior` is a tool (ADR-0040); behavior presets are later.
 
 Spring note: a spring segment runs from its keyframe toward the next keyframe's value, and its length is set by the spring's settle time. The next keyframe must sit at or after that settle frame. Placing it earlier is a validation error, and the error suggests a fix op: move the keyframe to the settle frame, or switch the segment to bezier. Every stored keyframe value is therefore the value rendered at its frame, and no velocity carries into the next segment. `animate` places keyframes at settle frames automatically.
 
@@ -190,7 +190,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 
 1. **Same operations as the editor.** Every tool compiles to the typed scene operations in `@kynimo/scene`. Anything an agent does is undoable and editable in the UI.
 2. **Batch and transactional.** `apply_ops` applies a list of operations atomically and returns one new document version. A full entrance animation is one call, not forty.
-3. **Intent over math.** Agents are unreliable at bezier handles and frame arithmetic, and good at stating intent. Intent tools (`animate`, `apply_preset`, `stagger`, `retime`) take tokens and seconds, then expand them into exact keyframes the agent can still inspect and adjust.
+3. **Intent over math.** Agents are unreliable at bezier handles and frame arithmetic, and good at stating intent. Intent tools (`animate`, `apply_preset`, `stagger`, `retime`) take tokens or milliseconds, then expand them into exact keyframes the agent can still inspect and adjust.
 4. **Typed selectors.** Layers are addressed by id, by name, or by a structured, schema-validated selector, e.g. `{ "name": "title*" }`, `{ "type": "text", "composition": "scene-2" }`. Selectors resolve against the document as it stands when each op runs (so later ops in a batch see earlier ones), and change records store the concrete layer ids, so undo, replay and conflict detection always hit the same layers.
 5. **Compact reads.** `get_scene` returns a summary by default (layers, timing, what animates when) and full detail on request, so large projects don't flood the context window.
 6. **The agent sees its work.** Frames, contact sheets and a motion timeline summary are returned in the tool result.
@@ -202,7 +202,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 12. **Retry-safe writes.** Every mutating tool takes an idempotency key: a retry after a dropped connection returns the original result instead of applying twice, and `get_write_outcome` tells the agent whether a write landed (ADR-0018).
 13. **Bounded renders.** Render tools declare their limits in their schemas and reject oversized requests with values that fit. Deterministic results are cached; long renders are cancellable jobs with progress (ADR-0018).
 14. **Fidelity reports.** Imports and exports report missing assets and fonts, dropped, flattened and approximated features. Imports support a dry run (ADR-0018).
-15. **A bounded listing.** `tools/list` stays under 60 KB as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
+15. **A bounded listing.** `tools/list` stays under a byte budget (60 KB, raised to 70 KB for the intent tools in ADR-0040) as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
 
 ### Tool groups (target)
 
@@ -211,8 +211,8 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                                      | M3        |
 | Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome`, `get_layer_schema` | M3        |
 | Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
-| Precise  | `add_effect`, `add_behavior`                                                                                                                                         | M4        |
-| Intent   | `animate`, `apply_preset`, `stagger`, `retime`                                                                                                                       | M4        |
+| Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4        |
+| Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4        |
 | Code     | `run_script` (TypeScript → one validated batch of operations, ADR-0036)                                                                                              | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
@@ -222,4 +222,4 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                                            | M7        |
 | Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8        |
 
-MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028); each catalog arrives with the milestone that creates its data.
+MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028); each catalog arrives with the milestone that creates its data (the preset catalog is live: `kynimo://presets` and `list_presets`, ADR-0040).

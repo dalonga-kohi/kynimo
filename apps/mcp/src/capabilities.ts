@@ -27,6 +27,7 @@ export const RESOURCES = {
   scene: "kynimo://schema/scene",
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
+  presets: "kynimo://presets",
 } as const;
 
 const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
@@ -59,15 +60,12 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   effects: unavailable(
     "blur, drop shadow, glow, color effects and adjustment layers that use them arrive in M4",
   ),
-  intent_tools: unavailable(
-    "animate, apply_preset, stagger, retime and add_behavior arrive in M4; use set_keyframes or apply_ops (addBehavior)",
-  ),
   svg_import: unavailable("SVG import arrives in M4; draw with shape layers"),
   shaders: unavailable("built-in shader effects arrive in M4; custom GLSL in M6"),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
   components: unavailable("components and their catalog arrive in M6"),
   catalogs: unavailable(
-    "preset (M4), token (M5), component and shader (M6) catalogs arrive with their milestones",
+    "the token catalog arrives in M5, the component and shader catalogs in M6; the preset catalog is the resource kynimo://presets (tool list_presets)",
   ),
   export: unavailable("MP4, WebM and GIF export and preview clips arrive in M7"),
   keyframed_text: unavailable(

@@ -190,6 +190,9 @@ importers:
       '@kynimo/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@kynimo/intent':
+        specifier: workspace:*
+        version: link:../../packages/intent
       '@kynimo/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer
@@ -280,6 +283,21 @@ importers:
 
   packages/guidelines:
     dependencies:
+      '@kynimo/scene':
+        specifier: workspace:*
+        version: link:../scene
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  packages/intent:
+    dependencies:
+      '@kynimo/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@kynimo/guidelines':
+        specifier: workspace:*
+        version: link:../guidelines
       '@kynimo/scene':
         specifier: workspace:*
         version: link:../scene

@@ -1,4 +1,10 @@
 import {
+  AnimateInputSchema,
+  EasingInput,
+  RetimeInputSchema,
+  StaggerInputSchema,
+} from "@kynimo/intent";
+import {
   ColorSchema,
   LayerPatchSchema,
   LayerSchema,
@@ -8,6 +14,8 @@ import {
   MAX_COMPOSITION_SIZE,
   MAX_DURATION_FRAMES,
   MAX_LAYERS,
+  MAX_SHAPE_ITEMS,
+  MAX_TEXT_ANIMATORS,
   OpSchema,
   TRANSFORM_PROPERTIES,
   TrackMatteSchema,
@@ -158,12 +166,27 @@ function compactBody(o: AnyOp) {
     return obj.extend({
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
     });
+  if (name === "setTextAnimators")
+    return obj.extend({
+      animators: z
+        .array(z.looseObject({}))
+        .max(MAX_TEXT_ANIMATORS)
+        .describe("Replaces the list; items as in get_layer_schema('text')."),
+    });
+  if (name === "setShapeContents")
+    return obj.extend({
+      contents: z
+        .array(z.looseObject({}))
+        .max(MAX_SHAPE_ITEMS)
+        .describe("Replaces the list; items as in get_layer_schema('shape')."),
+    });
   return o;
 }
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`
+ * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`,
+ * `setTextAnimators.animators` items, `setShapeContents.contents` items
  * and every layer selector (`layer`, `parent`, `matte.layer`, `layers[]`, `target.layer`, ...), which
  * the server validates in full against `OpSchema` before anything is applied.
  */
@@ -307,6 +330,92 @@ export const PrecomposeInput = z.object({
 
 export const UndoRedoInput = z.object(writeMeta);
 
+/** Intent tools: the same write fields with shorter descriptions, plus `dry_run`. */
+const intentMeta = {
+  project_id: ProjectIdSchema,
+  base_version: writeMeta.base_version.describe("Project version this write is based on."),
+  idempotency_key: IdempotencyKeySchema.describe(
+    "Unique per write; a retry with the same key replays.",
+  ),
+  dry_run: z.boolean().optional().describe("Return the operations without writing."),
+};
+
+/** Targets as the tools list them; the server validates them against the full selector schema. */
+const Targets = z
+  .union([
+    z.string(),
+    z.looseObject({}),
+    z
+      .array(z.union([z.string(), z.looseObject({})]))
+      .min(1)
+      .max(50),
+  ])
+  .describe(
+    "Layer id, selector { name, type, composition } (name may use *), or a list, max 50. All must share a composition.",
+  );
+
+const Endpoint = z.union([z.number(), z.array(z.number()), z.looseObject({})]).optional();
+
+export const AnimateToolInput = AnimateInputSchema.omit({
+  layers: true,
+  from: true,
+  to: true,
+  easing: true,
+})
+  .extend({
+    ...intentMeta,
+    layers: Targets,
+    easing: z
+      .union([EasingInput.options[0], z.looseObject({})])
+      .optional()
+      .describe("Token (default move) or { type: bezier | spring | linear | hold, ... }."),
+    from: Endpoint.describe(
+      "Number, [x, y] (scale: n means [n, n]) or { by: delta } on the current value. Default: current.",
+    ),
+    to: Endpoint.describe("Like from. Set at least one of from, to."),
+  })
+  .strip();
+
+export const StaggerToolInput = StaggerInputSchema.omit({ layers: true })
+  .extend({ ...intentMeta, layers: Targets })
+  .strip();
+
+export const RetimeToolInput = RetimeInputSchema.omit({ layers: true })
+  .extend({ ...intentMeta, layers: Targets })
+  .strip();
+
+export const ApplyPresetToolInput = z.object({
+  ...intentMeta,
+  layers: Targets,
+  preset: z.string().describe("A preset id from list_presets."),
+  params: z.looseObject({}).optional().describe("The preset's params; see list_presets."),
+  stagger: StaggerInputSchema.omit({ layers: true })
+    .optional()
+    .describe("Delay each successive layer's start."),
+});
+
+const BehaviorRequest = z.looseObject({ type: z.string() });
+
+export const AddBehaviorInput = z.object({
+  ...intentMeta,
+  layer: LayerSelectorSchema,
+  behavior: BehaviorBodySchema.describe(
+    "{ type: wiggle | oscillate | loop | inertia | link, property, ...that type's fields }; name defaults to the type, enabled to true. Fields: kynimo://schema/ops (addBehavior).",
+  ),
+  id: z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe("Optional behavior id; generated when omitted."),
+  index: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Position in the layer's behaviors. Default: last."),
+});
+
 export const CreateProjectInput = z.object({
   name: z.string().min(1).max(200),
   idempotency_key: IdempotencyKeySchema,
@@ -347,6 +456,26 @@ export const WriteOutput = z.looseObject({
   assets_removed: z.array(z.string()).optional(),
   replayed: z.boolean(),
 });
+
+/** What the intent tools list of their reply; the rest of the write result is there too. */
+export const IntentWriteOutput = z.looseObject({
+  version: z.number().int(),
+  changed: z.boolean(),
+  replayed: z.boolean(),
+  dry_run: z.boolean().optional(),
+  ops: z.array(z.looseObject({})).optional(),
+  resolved: z.looseObject({}).optional(),
+});
+
+export const ListPresetsOutput = z.looseObject({ presets: z.array(z.looseObject({})) });
+
+/** An add_behavior call as the server validates it, without the write fields. */
+export const AddBehaviorRequest = AddBehaviorInput.omit({
+  project_id: true,
+  base_version: true,
+  idempotency_key: true,
+  dry_run: true,
+}).extend({ behavior: BehaviorRequest });
 
 const ProjectMetaOutput = z.looseObject({
   id: z.string(),

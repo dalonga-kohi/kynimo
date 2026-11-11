@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
 import { evaluateFrame, type ResolvedComposition } from "@kynimo/engine";
+import { IntentError } from "@kynimo/intent";
 import {
   AssetInfoError,
   readFontInfo,
@@ -21,6 +22,7 @@ import {
   LayerSelectorSchema,
   MAX_COMPOSITION_SIZE,
   matchLayers,
+  type Op,
   type OpError,
   type Project,
   ProjectSchema,
@@ -77,6 +79,8 @@ export class ToolError extends Error {
     message: string,
     readonly errors: OpError[] = [],
     readonly currentVersion?: number,
+    /** Extra fields for the error body (the expanded operations of a rejected intent call). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -93,6 +97,15 @@ export type Write = { kind: "ops"; ops: unknown } | { kind: "undo" } | { kind: "
 export interface WriteReply extends WriteResult {
   /** True when this call returned the stored result of an earlier call with the same key. */
   replayed: boolean;
+}
+
+/** What an intent tool answers: the write result plus the operations it expanded to. */
+export interface IntentReply extends WriteReply {
+  /** True when nothing was written (`dry_run`). */
+  dry_run?: boolean;
+  /** Absent on an idempotent replay: only the write result is stored. */
+  ops?: Op[];
+  resolved?: object;
 }
 
 export interface CreateProjectInput {
@@ -182,6 +195,17 @@ const notFound = (projectId: string) =>
     `project '${projectId}' does not exist; list_projects shows the available ids`,
   );
 
+const staleMessage = (base: number, current: number) =>
+  `base_version ${base} is stale: the project is at version ${current}. Read it again (get_scene) and rebuild the request with base_version ${current} and a new idempotency_key`;
+
+const staleVersion = (base: number, current: number) =>
+  new ToolError(
+    "conflict",
+    staleMessage(base, current),
+    [{ path: ["base_version"], message: `expected ${current}` }],
+    current,
+  );
+
 const rejectionError = (o: Extract<WriteOutcome, { status: "rejected" }>) =>
   new ToolError(o.kind, o.message, o.errors, o.currentVersion);
 
@@ -222,6 +246,17 @@ async function previousUse<T>(
   const o = seen.record.outcome;
   return o.status === "rejected" ? rejectionError(o) : replay(o);
 }
+
+const EXPANSION_REJECTED_FRESH =
+  "the operations this call expands to were rejected; nothing was applied. See expanded_ops and errors";
+const EXPANSION_REJECTED_REPLAYED =
+  "the operations this call expanded to were rejected; nothing was applied. See errors";
+
+/** `["ops", i, ...]` paths of a batch rejection, renamed for the operations an intent call expanded to. */
+const expandedPaths = (errors: OpError[]): OpError[] =>
+  errors.map((e) =>
+    e.path[0] === "ops" ? { ...e, path: ["expanded_ops", ...e.path.slice(1)] } : e,
+  );
 
 /** Throws a ToolError value; returns anything else. */
 function unwrap<T>(value: T | ToolError): T {
@@ -1187,6 +1222,8 @@ export class KynimoService {
     requestPrint?: string,
     /** Only replay a stored outcome for this key; never apply (upload retries, ADR-0032). */
     replayOnly = false,
+    /** Reshapes a batch rejection before it is thrown; `fresh` is false when it is a stored one replayed. */
+    reshapeRejection: (e: ToolError, fresh: boolean) => ToolError = (e) => e,
   ): Promise<WriteReply> {
     const { project_id: projectId, base_version: base, idempotency_key: key } = meta;
     // A tool whose ops derive from its input (upload_asset) fingerprints that input instead.
@@ -1202,7 +1239,10 @@ export class KynimoService {
           "write",
           (o) => ({ ...o.result, replayed: true }),
         );
-        if (earlier !== undefined) return { value: earlier };
+        if (earlier !== undefined)
+          return {
+            value: earlier instanceof ToolError ? reshapeRejection(earlier, false) : earlier,
+          };
         if (replayOnly)
           return {
             value: new ToolError(
@@ -1229,15 +1269,16 @@ export class KynimoService {
             errors,
             currentVersion: p.version,
           };
-          return { commit: { record: record(outcome) }, value: rejectionError(outcome) };
+          return {
+            commit: { record: record(outcome) },
+            value: reshapeRejection(rejectionError(outcome), true),
+          };
         };
 
         if (base !== p.version)
-          return reject(
-            "conflict",
-            `base_version ${base} is stale: the project is at version ${p.version}. Read it again (get_scene) and rebuild the request with base_version ${p.version} and a new idempotency_key`,
-            [{ path: ["base_version"], message: `expected ${p.version}` }],
-          );
+          return reject("conflict", staleMessage(base, p.version), [
+            { path: ["base_version"], message: `expected ${p.version}` },
+          ]);
 
         const state = toState(p);
         const step: StepResult =
@@ -1274,6 +1315,83 @@ export class KynimoService {
     );
     if (done === undefined) throw notFound(projectId);
     return unwrap(done.value);
+  }
+
+  /**
+   * Runs an intent tool: parses its input, expands it against the current document into
+   * operations, and writes them like `write` (same base_version, idempotency and error
+   * semantics). The idempotency fingerprint is the tool's own input, not the produced
+   * operations, so a retry replays the stored outcome even after the document has moved.
+   * With `dryRun` the operations are validated on a copy and nothing is stored or recorded.
+   */
+  async intent<I>(
+    meta: WriteMeta,
+    tool: string,
+    schema: z.ZodType<I>,
+    body: unknown,
+    dryRun: boolean,
+    run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+  ): Promise<IntentReply> {
+    const print = fingerprint({ tool, base_version: meta.base_version, body });
+    const p = await this.load(meta.project_id);
+    const expand = () => {
+      const parsed = schema.safeParse(body);
+      if (!parsed.success)
+        throw new ToolError(
+          "invalid",
+          `${tool}: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
+          parsed.error.issues.map((i) => ({
+            path: i.path.map(seg),
+            message: i.message,
+          })),
+        );
+      try {
+        return run(p.doc, parsed.data);
+      } catch (e) {
+        if (e instanceof IntentError)
+          throw new ToolError("invalid", e.message, [{ path: e.path, message: e.message }]);
+        throw e;
+      }
+    };
+    const stale = meta.base_version !== p.version;
+    if (dryRun) {
+      if (stale) throw staleVersion(meta.base_version, p.version);
+      const { ops, resolved } = expand();
+      const step = applyBatch(toState(p), this.actor, ops);
+      if (!step.ok)
+        throw new ToolError(
+          "invalid",
+          EXPANSION_REJECTED_FRESH,
+          expandedPaths(step.errors),
+          p.version,
+          { expanded_ops: ops },
+        );
+      return {
+        ...summarizeChanges(p.id, p.version, step.changes),
+        replayed: false,
+        dry_run: true,
+        ops,
+        ...(resolved === undefined ? {} : { resolved }),
+      };
+    }
+    // A stale base replays the stored outcome of this key if there is one, else records the conflict.
+    if (stale) return await this.write(meta, { kind: "ops", ops: [] }, print);
+    const { ops, resolved } = expand();
+    // A rejection of the expanded operations points at them, not at an `ops` input the caller never sent.
+    const reshape = (e: ToolError, fresh: boolean): ToolError =>
+      e.kind === "invalid"
+        ? new ToolError(
+            "invalid",
+            fresh ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
+            expandedPaths(e.errors),
+            e.currentVersion,
+            fresh ? { expanded_ops: ops } : undefined,
+          )
+        : e;
+    const reply = await this.write(meta, { kind: "ops", ops }, print, false, reshape);
+    return reply.replayed
+      ? reply
+      : { ...reply, ops, ...(resolved === undefined ? {} : { resolved }) };
   }
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */

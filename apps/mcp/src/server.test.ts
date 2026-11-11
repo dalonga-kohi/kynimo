@@ -52,9 +52,12 @@ describe("MCP server", () => {
   it("lists the M3 project, read and precise tools with input and output schemas", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "add_behavior",
       "add_layer",
       "add_mask",
+      "animate",
       "apply_ops",
+      "apply_preset",
       "create_project",
       "describe_motion",
       "find_layers",
@@ -65,19 +68,27 @@ describe("MCP server", () => {
       "get_scene",
       "get_write_outcome",
       "list_assets",
+      "list_presets",
       "list_projects",
       "precompose",
       "redo",
       "render_contact_sheet",
       "render_frames",
+      "retime",
       "set_keyframes",
       "set_matte",
+      "stagger",
       "undo",
       "update_layer",
       "upload_asset",
     ]);
     for (const t of tools) expect(t.outputSchema, t.name).toBeDefined();
     const writes = [
+      "animate",
+      "apply_preset",
+      "stagger",
+      "retime",
+      "add_behavior",
       "upload_asset",
       "add_layer",
       "add_mask",
@@ -97,7 +108,9 @@ describe("MCP server", () => {
 
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
-    expect(JSON.stringify(tools).length).toBeLessThan(60_000);
+    // 60_000 until the intent tools (ADR-0040); each new write tool lists the write fields and an
+    // output schema, ~1.8-2.5 KB apiece.
+    expect(JSON.stringify(tools).length).toBeLessThan(70_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -460,6 +473,7 @@ describe("MCP server", () => {
     expect(uris).toEqual(
       expect.arrayContaining([
         "kynimo://capabilities",
+        "kynimo://presets",
         "kynimo://schema/scene",
         "kynimo://schema/ops",
         ...LayerSchema.options.map((o) => `kynimo://schema/layer/${o.shape.type.value}`),

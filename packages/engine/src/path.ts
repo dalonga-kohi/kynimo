@@ -14,6 +14,8 @@ export interface MotionPath<V extends Vector> {
   readonly endDir: readonly number[];
   /** `p` in 0..1 walks the path at constant speed; outside 0..1 it continues along the end tangent. */
   at(p: number): Readonly<V>;
+  /** The bezier parameter `t` in 0..1 of the point `at(p)` for `p` in 0..1 (the same arc-length lookup). */
+  parameterAt(p: number): number;
 }
 
 const sub = (a: Vector, b: Vector) => a.map((x, i) => x - (b[i] as number));
@@ -64,28 +66,35 @@ export function cubicPath<V extends Vector>(p0: V, p1: V, p2: V, p3: V): MotionP
   const along = (origin: V, dir: number[], distance: number): V =>
     origin.map((x, i) => x + (dir[i] as number) * distance) as unknown as V;
 
+  const parameterAt = (p: number): number => {
+    if (p <= 0 || length === 0) return 0;
+    if (p >= 1) return 1;
+    const target = p * length;
+    // Largest i with cumulative[i] <= target.
+    let lo = 0;
+    let hi = ARC_LENGTH_SAMPLES;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if ((cumulative[mid] as number) <= target) lo = mid;
+      else hi = mid;
+    }
+    const start = cumulative[lo] as number;
+    const span = (cumulative[hi] as number) - start;
+    const local = span > 0 ? (target - start) / span : 0;
+    return lerp(lo, hi, local) / ARC_LENGTH_SAMPLES;
+  };
+
   return {
     length,
     startDir,
     endDir,
+    parameterAt,
     at(p) {
       if (p === 0 || length === 0) return p0;
       if (p === 1) return p3;
       if (p < 0) return along(p0, startDir, p * length);
       if (p > 1) return along(p3, endDir, (p - 1) * length);
-      const target = p * length;
-      // Largest i with cumulative[i] <= target.
-      let lo = 0;
-      let hi = ARC_LENGTH_SAMPLES;
-      while (hi - lo > 1) {
-        const mid = (lo + hi) >> 1;
-        if ((cumulative[mid] as number) <= target) lo = mid;
-        else hi = mid;
-      }
-      const start = cumulative[lo] as number;
-      const span = (cumulative[hi] as number) - start;
-      const local = span > 0 ? (target - start) / span : 0;
-      return point(lerp(lo, hi, local) / ARC_LENGTH_SAMPLES);
+      return point(parameterAt(p));
     },
   };
 }

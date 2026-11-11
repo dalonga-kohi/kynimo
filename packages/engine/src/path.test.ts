@@ -59,3 +59,27 @@ describe("cubicPath", () => {
     expect(() => cubicPath([0, 0], [0, 0, 0], [0, 0], [0, 0])).toThrow(RangeError);
   });
 });
+
+describe("parameterAt", () => {
+  it("is the bezier parameter of the point at(p) returns", () => {
+    const path = quarterCircle(100);
+    for (const p of [0.1, 0.37, 0.5, 0.9]) {
+      const t = path.parameterAt(p);
+      const u = 1 - t;
+      // The cubic through quarterCircle's control points.
+      const x = u ** 3 * 100 + 3 * u * u * t * 100 + 3 * u * t * t * (100 * K) + 0;
+      const y = 3 * u * u * t * (100 * K) + 3 * u * t * t * 100 + t ** 3 * 100;
+      const at = path.at(p);
+      expect(at[0]).toBeCloseTo(x, 6);
+      expect(at[1]).toBeCloseTo(y, 6);
+    }
+  });
+
+  it("clamps to the ends", () => {
+    const path = quarterCircle(100);
+    expect(path.parameterAt(-1)).toBe(0);
+    expect(path.parameterAt(0)).toBe(0);
+    expect(path.parameterAt(1)).toBe(1);
+    expect(path.parameterAt(2)).toBe(1);
+  });
+});
