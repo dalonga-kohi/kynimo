@@ -1167,7 +1167,9 @@ describe("evaluateFrame: behaviors", () => {
       expect(out.layers[298]?.transform.rotation).toBe(79); // l1 reads l0 at frame 79
     });
 
-    describe("link step budget", () => {
+    // These walk the full 100 000-step budget twice (~0.2 s each locally); a loaded CI runner is
+    // 10x slower and timed out at vitest's 5 s default, so they get the room they need.
+    describe("link step budget", { timeout: 20_000 }, () => {
       // Evaluating every layer of a delayed chain of n costs 1 + 2 + ... + (n - 1) steps.
       const delayedChain = (n: number, id = "main", extra: Obj = {}) => {
         const layers: Obj[] = [];
