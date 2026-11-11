@@ -2,8 +2,10 @@ import type { BlendMode, Json, MaskMode, TrackMatte } from "@kynimo/scene";
 import type { Affine } from "./affine.js";
 import type { Rgba } from "./color.js";
 import type { ResolvedEffect } from "./effect.js";
+import type { ResolvedGenerator } from "./generator.js";
 
 export type { ResolvedEffect } from "./effect.js";
+export type { ResolvedGenerator } from "./generator.js";
 
 import type { ResolvedTextAnimator } from "./text-animator.js";
 
@@ -123,6 +125,14 @@ export interface ResolvedSolidLayer extends LayerBase {
   color: Rgba;
 }
 
+/** A procedural source of `width` x `height` layer units, sampled at the layer's frame. */
+export interface ResolvedGeneratorLayer extends LayerBase {
+  type: "generator";
+  width: number;
+  height: number;
+  generator: ResolvedGenerator;
+}
+
 export interface ResolvedPrecompLayer extends LayerBase {
   type: "precomp";
   compositionId: string;
@@ -152,6 +162,7 @@ export type ResolvedLayer =
   | ResolvedImageLayer
   | ResolvedVideoLayer
   | ResolvedSolidLayer
+  | ResolvedGeneratorLayer
   | ResolvedPrecompLayer
   | ResolvedAdjustmentLayer
   | ResolvedComponentLayer;

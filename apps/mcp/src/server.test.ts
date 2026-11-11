@@ -118,7 +118,8 @@ describe("MCP server", () => {
     // 70_000 after the intent tools (ADR-0040); 75_000 with run_script — shrinking back to 60 KB
     // is an M8 item. Each new write tool lists the write fields and an output schema, ~1.8-2.5 KB.
     // 77_000 with import_svg (73.5 KB before it, 75.7 KB after): deviation from ADR-0035, last raise before M8 compaction.
-    expect(JSON.stringify(tools).length).toBeLessThan(77_000);
+    // 78_000 with the setGenerator op and the generator layer type (ADR-0045).
+    expect(JSON.stringify(tools).length).toBeLessThan(78_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

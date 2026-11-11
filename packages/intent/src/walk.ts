@@ -16,7 +16,15 @@ const isObject = (v: unknown): v is Obj => typeof v === "object" && v !== null &
 const SKIPPED = new Set(["props", "markers", "editor"]);
 
 /** Layer fields whose tracks an op can write back. */
-const WRITABLE = new Set(["transform", "masks", "effects", "behaviors", "animators", "contents"]);
+const WRITABLE = new Set([
+  "transform",
+  "masks",
+  "effects",
+  "generator",
+  "behaviors",
+  "animators",
+  "contents",
+]);
 
 export interface KeyframeTrack {
   /** Path from the layer to the `keyframes` list, e.g. `["transform", "position", "keyframes"]`. */
@@ -73,7 +81,7 @@ export function listKeyframeTracks(layer: Layer): KeyframeTrack[] {
 /**
  * Rewrites the `frame` of every keyframe of the layer's animatable fields: transform tracks
  * (including separate X/Y), mask paths, feather, opacity and expansion, text animator selectors
- * and properties, shape contents (recursively), effects and behavior tracks. Times stay in layer time.
+ * and properties, shape contents (recursively), effects, generators and behavior tracks. Times stay in layer time.
  * Throws `IntentError` (no path) if a keyframed field exists that no operation can write back
  * (a text layer's font size, an audio layer's volume, ...), instead of skipping it.
  */
@@ -142,6 +150,10 @@ export function diffLayerOps(before: Layer, after: Layer): Op[] {
   }
   if ("effects" in before && "effects" in after && !deepEqual(before.effects, after.effects))
     ops.push({ op: "setEffects", layer, effects: after.effects });
+  if (before.type === "generator" && after.type === "generator") {
+    if (!deepEqual(before.generator, after.generator))
+      ops.push({ op: "setGenerator", layer, generator: after.generator });
+  }
   if (before.type === "text" && after.type === "text") {
     if (!deepEqual(before.animators, after.animators))
       ops.push({ op: "setTextAnimators", layer, animators: after.animators });

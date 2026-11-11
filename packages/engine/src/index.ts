@@ -2,6 +2,8 @@ export * from "./affine.js";
 export * from "./color.js";
 export * from "./easing.js";
 export * from "./evaluate.js";
+export * from "./generator.js";
+export * from "./hash.js";
 export { lerp, lerpVector, type Vector } from "./mix.js";
 export * from "./path.js";
 export type * from "./resolved.js";

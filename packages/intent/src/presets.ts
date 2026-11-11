@@ -41,6 +41,7 @@ export const VISUAL_LAYER_TYPES = [
   "image",
   "video",
   "solid",
+  "generator",
   "precomp",
   "adjustment",
   "component",
@@ -217,6 +218,7 @@ function defaultBox(ctx: PresetContext, layer: Layer, timing: PresetTiming): Box
   };
   switch (layer.type) {
     case "solid":
+    case "generator":
       return { x: 0, y: 0, width: layer.width, height: layer.height };
     case "image":
     case "video": {

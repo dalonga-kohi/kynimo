@@ -163,6 +163,12 @@ function compactBody(o: AnyOp) {
           "Replaces the ordered effect stack. Items include id and type; see get_layer_schema for fields.",
         ),
     });
+  if (name === "setGenerator")
+    return obj.extend({
+      generator: z
+        .looseObject({})
+        .describe("Replaces the body; see get_layer_schema('generator')."),
+    });
   if (name === "addBehavior") return obj.extend({ behavior: BehaviorBodySchema });
   if (name === "updateBehavior")
     return obj.extend({

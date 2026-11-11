@@ -377,6 +377,13 @@ function run(ctx: Ctx, op: Op, i: number): void {
       setLayerValue(ctx, i, layer, ["effects"], op.effects as Json);
       return;
     }
+    case "setGenerator": {
+      const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if (layer.type !== "generator")
+        fail([i, "layer"], `layer '${layer.id}' is a ${layer.type} layer; use a generator layer`);
+      setLayerValue(ctx, i, layer, ["generator"], op.generator as Json);
+      return;
+    }
     case "addBehavior": {
       const { composition, layer } = resolveTransformed(ctx, op.layer, [i, "layer"]);
       const index = op.index ?? layer.behaviors.length;

@@ -557,6 +557,20 @@ describe("raster budget", () => {
       image: layer("image", "image", { assetId: "img" }),
       video: layer("video", "video", { assetId: "clip" }),
       solid: layer("solid", "solid", { width: 10, height: 10, color: "#ff0000" }),
+      generator: layer("generator", "generator", {
+        width: 10,
+        height: 10,
+        generator: {
+          type: "pattern",
+          kind: "stripes",
+          size: prop(4),
+          thickness: prop(0.5),
+          angle: prop(0),
+          offset: prop([0, 0]),
+          foreground: prop("#ffffff"),
+          background: prop("#000000"),
+        },
+      }),
       precomp: layer("precomp", "precomp", { compositionId: "inner" }),
       adjustment: layer("adjustment", "adjustment", {
         effects: [{ id: "fill", type: "fill", color: prop("#ff0000"), amount: prop(1) }],

@@ -101,6 +101,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(8_000);
+    expect(JSON.stringify(manifest).length).toBeLessThan(9_000);
   });
 });

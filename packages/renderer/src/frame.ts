@@ -34,7 +34,7 @@ import {
 export { RenderError };
 
 /** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
-function notYet(type: "component"): string {
+function notYet(type: "component" | "generator"): string {
   const support = LAYER_SUPPORT[type];
   if (support.status !== "accepted")
     throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
@@ -193,6 +193,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           ? { ...base, type: "adjustment", effects }
           : null;
       case "component":
+      case "generator":
         skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
         return null;
     }
@@ -265,7 +266,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
  */
 function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
   for (let s = layer.matte?.source ?? null; s !== null; s = s.matte?.source ?? null)
-    if (s.type === "component") return s;
+    if (s.type === "component" || s.type === "generator") return s;
   return null;
 }
 

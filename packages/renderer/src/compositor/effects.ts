@@ -19,6 +19,13 @@ export function activeEffect(effect: ResolvedEffect): boolean {
       return effect.amount > 0 && (effect.black.a > 0 || effect.white.a > 0);
     case "fill":
       return effect.amount * effect.color.a > 0;
+    // Looks get their passes in the next step; until then they are no-ops (step 2 replaces this).
+    case "vignette":
+    case "grain":
+    case "chromatic-aberration":
+    case "posterize":
+    case "scanlines":
+      return false;
   }
 }
 

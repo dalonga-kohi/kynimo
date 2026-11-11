@@ -297,6 +297,10 @@ function applyEffect(src: FloatImage, effect: ResolvedEffect): FloatImage {
           mix(rgb[k] ?? 0, v, effect.amount * effect.color.a),
         );
         break;
+      // Looks draw in the next step; `activeEffect` keeps them out of every stack until then.
+      default:
+        adjusted = rgb;
+        break;
     }
     for (let k = 0; k < 3; k++) out.data[p + k] = a * clamp(adjusted[k] ?? 0);
     out.data[p + 3] = a;

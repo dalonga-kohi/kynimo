@@ -7,6 +7,7 @@ export * from "./composition.js";
 export { withLayerDefaults } from "./defaults.js";
 export * from "./effect.js";
 export * from "./fonts.js";
+export * from "./generator.js";
 export * from "./history.js";
 export * from "./ids.js";
 export * from "./keyframes.js";

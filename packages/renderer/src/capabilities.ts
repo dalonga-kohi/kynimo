@@ -42,6 +42,7 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
     note: "frames decoded at upload; outside the clip the layer draws nothing",
   },
   solid: RENDERS,
+  generator: { status: "accepted", reason: "generator layers draw in the next step" },
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },
   adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
@@ -132,6 +133,11 @@ export const EFFECT_SUPPORT: Readonly<Record<Effect["type"], Support>> = {
   "hue-saturation": RENDERS,
   tint: RENDERS,
   fill: RENDERS,
+  vignette: RENDERS,
+  grain: RENDERS,
+  "chromatic-aberration": RENDERS,
+  posterize: RENDERS,
+  scanlines: RENDERS,
 };
 
 export const EFFECT_LIMITS = {

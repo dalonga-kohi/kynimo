@@ -2,7 +2,17 @@ import { keynote } from "@kynimo/guidelines";
 import { springSettleFrames } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { IntentError } from "./errors.js";
-import { applied, doc, keyed, kf, layerOf, lid, solid, text } from "./fixtures.test-util.js";
+import {
+  applied,
+  doc,
+  keyed,
+  kf,
+  layerOf,
+  lid,
+  type Obj,
+  solid,
+  text,
+} from "./fixtures.test-util.js";
 import { retime } from "./retime.js";
 
 const opacityFrames = (project: ReturnType<typeof doc>, id: string) =>
@@ -22,6 +32,43 @@ describe("retime", () => {
     const { ops, resolved } = retime(d, { layers: lid("a"), scale: 2 });
     expect(resolved).toEqual({ pivot: 10, scale: 2, shift: 0, layer_ids: ["a"] });
     expect(opacityFrames(applied(d, ops), "a")).toEqual([10, 30, 70]);
+  });
+
+  it("shifts generator keyframes and writes them back with setGenerator", () => {
+    const stops = [
+      { offset: 0, color: "#000000" },
+      { offset: 1, color: "#ffffff" },
+    ];
+    const generator = {
+      type: "aurora",
+      seed: 1,
+      colors: [{ value: "#ff0000" }, { value: "#0000ff" }],
+      evolution: keyed(kf(0, 0), kf(20, 1)),
+      softness: { value: 0.5 },
+    };
+    const gradient = {
+      type: "gradient",
+      kind: "linear",
+      start: { value: [0, 0] },
+      end: { value: [10, 0] },
+      stops: keyed(kf(0, stops), kf(20, stops)),
+    };
+    const make = (id: string, g: Obj) => {
+      const { color: _color, ...rest } = solid(id);
+      return { ...rest, type: "generator", generator: g };
+    };
+    const d = doc([make("g", generator), make("h", gradient)]);
+    const { ops } = retime(d, { layers: [lid("g"), lid("h")], shift: 7 });
+    expect(ops.map((op) => op.op)).toEqual(["setGenerator", "setGenerator"]);
+    const after = applied(d, ops);
+    const frames = (id: string, key: "evolution" | "stops") =>
+      (
+        layerOf(after, id) as unknown as {
+          generator: Record<string, { keyframes: { frame: number }[] }>;
+        }
+      ).generator[key]?.keyframes.map((k) => k.frame);
+    expect(frames("g", "evolution")).toEqual([7, 27]);
+    expect(frames("h", "stops")).toEqual([7, 27]);
   });
 
   it("shifts, and rounds half up", () => {

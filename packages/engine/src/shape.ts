@@ -29,7 +29,7 @@ import { type Mixer, sampleColor, sampleNumber, sampleTrack } from "./track.js";
 type Stops = { offset: number; color: string }[];
 
 /** Mixes stop by stop (the schema guarantees equal counts), colors in OKLab like every other color. */
-const mixStops: Mixer<Stops, ResolvedGradientStop[]> = (from, to, p) =>
+export const mixStops: Mixer<Stops, ResolvedGradientStop[]> = (from, to, p) =>
   from.map((stop, i) => {
     const other = to[i] ?? stop;
     return {
@@ -39,7 +39,7 @@ const mixStops: Mixer<Stops, ResolvedGradientStop[]> = (from, to, p) =>
   });
 
 /** Overshoot can push offsets outside 0..1 or out of order; clamp, then keep them non-decreasing. */
-function sanitizeStops(stops: ResolvedGradientStop[]): ResolvedGradientStop[] {
+export function sanitizeStops(stops: ResolvedGradientStop[]): ResolvedGradientStop[] {
   let floor = 0;
   for (const stop of stops) {
     floor = Math.max(floor, clampUnit(stop.offset));

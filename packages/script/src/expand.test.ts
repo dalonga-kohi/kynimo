@@ -459,6 +459,23 @@ kynimo.op({ op: "removeMask", layer: "bg", mask: "mk" });`,
   setEffects: `kynimo.op({ op: "setEffects", layer: "bg", effects: [
   { type: "gaussian-blur", id: "blur", radius: prop(12) },
 ] });`,
+  setGenerator: `kynimo.composition().add("generator", { name: "Sky", width: 100, height: 100, generator: {
+  type: "noise",
+  seed: 1,
+  scale: prop(64),
+  octaves: 2,
+  evolution: prop(0),
+  offset: prop([0, 0]),
+  low: prop("#000000"),
+  high: prop("#ffffff"),
+} }, { id: "gen" });
+kynimo.op({ op: "setGenerator", layer: "gen", generator: {
+  type: "aurora",
+  seed: 3,
+  colors: [prop("#ff0000"), prop("#0000ff")],
+  evolution: prop(0),
+  softness: prop(0.5),
+} });`,
   addBehavior: `kynimo.layer("bg").behavior(${WIGGLE}, { id: "w" });`,
   updateBehavior: `kynimo.layer("bg").behavior(${WIGGLE}, { id: "w" });
 kynimo.op({ op: "updateBehavior", layer: "bg", behavior: "w", set: { octaves: 3 } });`,
