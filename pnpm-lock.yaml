@@ -332,9 +332,21 @@ importers:
 
   packages/script:
     dependencies:
+      '@kynimo/guidelines':
+        specifier: workspace:*
+        version: link:../guidelines
+      '@kynimo/intent':
+        specifier: workspace:*
+        version: link:../intent
+      '@kynimo/scene':
+        specifier: workspace:*
+        version: link:../scene
       quickjs-emscripten:
         specifier: 0.32.0
         version: 0.32.0
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
 packages:
 
