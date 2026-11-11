@@ -45,7 +45,9 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
 
   it("is repeatable and exposes __SEED and __DATA", async () => {
     const source = "rec.push({ seed: rec.seed(), data: rec.data(), sum: rec.data().n * 2 });";
-    for (let seed = 0; seed < 20; seed++) {
+    // Each run starts a worker and a WebAssembly instance, so a few seeds keep this well inside the
+    // timeout on a loaded CI runner; they cover zero and the uint32 boundaries (`seed >>> 0`).
+    for (const seed of [0, 1, 2 ** 31, 2 ** 32 - 1]) {
       const a = await run(source, seed, { n: seed, s: "x '`${}" });
       const b = await run(source, seed, { n: seed, s: "x '`${}" });
       expect(a.ok && b.ok).toBe(true);
