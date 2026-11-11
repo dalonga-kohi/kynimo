@@ -1,4 +1,15 @@
-import { LayerSelectorSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  AnimateInputSchema,
+  ApplyPresetInputSchema,
+  animate,
+  applyPreset,
+  presetCatalog,
+  RetimeInputSchema,
+  retime,
+  StaggerInputSchema,
+  stagger,
+} from "@kynimo/intent";
+import { LayerSelectorSchema, type Op, type Project, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -7,9 +18,13 @@ import { withLayerDefaults } from "./defaults.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
 import { compactToolListing } from "./listing.js";
 import {
+  AddBehaviorInput,
+  AddBehaviorRequest,
   AddLayerInput,
   AddMaskInput,
+  AnimateToolInput,
   ApplyOpsInput,
+  ApplyPresetToolInput,
   CreateProjectInput,
   CreateProjectOutput,
   DescribeMotionInput,
@@ -21,8 +36,10 @@ import {
   GetProjectOutput,
   GetSceneOutput,
   IdempotencyKeySchema,
+  IntentWriteOutput,
   LAYER_TYPES,
   ListAssetsOutput,
+  ListPresetsOutput,
   ListProjectsOutput,
   PrecomposeInput,
   ProjectIdSchema,
@@ -30,8 +47,10 @@ import {
   RenderContactSheetOutput,
   RenderFramesInput,
   RenderFramesOutput,
+  RetimeToolInput,
   SetKeyframesInput,
   SetMatteInput,
+  StaggerToolInput,
   UndoRedoInput,
   UpdateLayerInput,
   UploadAssetInput,
@@ -47,7 +66,8 @@ const SERVER = { name: SERVER_NAME, version: SERVER_VERSION };
 
 const INSTRUCTIONS = `Kynimo is a motion graphics engine. A project holds compositions of layers; every edit is a typed scene operation, so it stays editable and undoable.
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
-Workflow: create_project or list_projects → get_scene (summary) → write with apply_ops (one atomic batch) or the single-purpose tools → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
+Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
+Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
@@ -339,7 +359,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Apply operations",
       description:
-        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, addBehavior, updateBehavior, removeBehavior, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
+        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, addBehavior, updateBehavior, removeBehavior, setTextAnimators, setShapeContents, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
       annotations: DESTRUCTIVE,
@@ -476,6 +496,105 @@ export function createServer(service: KynimoService): McpServer {
     }),
   );
 
+  // Intent
+  const intentTool = <I>(
+    name: string,
+    title: string,
+    description: string,
+    inputSchema: z.ZodObject,
+    schema: z.ZodType<I>,
+    run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+  ) =>
+    server.registerTool(
+      name,
+      { title, description, inputSchema, outputSchema: IntentWriteOutput, annotations: WRITE },
+      guard(async (a: Record<string, unknown>) => {
+        const { project_id, base_version, idempotency_key, dry_run, ...body } = a;
+        return {
+          ...(await service.intent(
+            meta(a as unknown as WriteMeta),
+            name,
+            schema,
+            body,
+            dry_run === true,
+            run,
+          )),
+        };
+      }),
+    );
+
+  intentTool(
+    "animate",
+    "Animate",
+    "Moves one transform property from a value to a value over a window of frames. Durations and easings are style tokens or ms. Keyframes inside the window are replaced; those outside stay. A spring easing sets its own duration.",
+    AnimateToolInput,
+    AnimateInputSchema,
+    animate,
+  );
+
+  intentTool(
+    "apply_preset",
+    "Apply preset",
+    "Applies a named enter or exit animation (fade-in, slide-in, typewriter, ...) to layers, optionally staggered. Presets and their params: list_presets.",
+    ApplyPresetToolInput,
+    ApplyPresetInputSchema,
+    applyPreset,
+  );
+
+  intentTool(
+    "stagger",
+    "Stagger",
+    "Delays the existing animation of each layer in turn, shifting its keyframes by offset steps (order, rhythm, seed). Calling it again shifts them again.",
+    StaggerToolInput,
+    StaggerInputSchema,
+    stagger,
+  );
+
+  intentTool(
+    "retime",
+    "Retime",
+    "Scales and shifts the keyframe times of layers around a pivot frame, optionally only inside a window. Refuses moves that collide keyframes or squeeze a spring.",
+    RetimeToolInput,
+    RetimeInputSchema,
+    retime,
+  );
+
+  intentTool(
+    "add_behavior",
+    "Add behavior",
+    "Adds a behavior (wiggle, oscillate, loop, inertia, link) to a layer's transform property. Same as an addBehavior op.",
+    AddBehaviorInput,
+    AddBehaviorRequest,
+    (_doc, a) => ({
+      ops: [
+        {
+          op: "addBehavior",
+          layer: a.layer,
+          behavior: {
+            ...(typeof a.behavior.type === "string" ? { name: a.behavior.type } : {}),
+            enabled: true,
+            ...a.behavior,
+          },
+          ...(a.id === undefined ? {} : { id: a.id }),
+          ...(a.index === undefined ? {} : { index: a.index }),
+        },
+      ] as unknown as Op[],
+    }),
+  );
+
+  server.registerTool(
+    "list_presets",
+    {
+      title: "List presets",
+      description:
+        "The presets apply_preset takes: id, kind (enter or exit), the layer types it fits and a JSON Schema of its params. Same as kynimo://presets.",
+      inputSchema: z.object({}),
+      outputSchema: ListPresetsOutput,
+      annotations: READ,
+    },
+    guard(async () => ({ presets: presetCatalog() })),
+  );
+
   server.registerTool(
     "undo",
     {
@@ -522,6 +641,16 @@ function registerResources(server: McpServer): void {
       mimeType: "application/json",
     },
     (uri) => json(uri, capabilityManifest(SERVER)),
+  );
+  server.registerResource(
+    "presets",
+    RESOURCES.presets,
+    {
+      title: "Motion presets",
+      description: "The presets apply_preset takes, with their params. Same as list_presets.",
+      mimeType: "application/json",
+    },
+    (uri) => json(uri, { presets: presetCatalog() }),
   );
   server.registerResource(
     "scene-schema",

@@ -27,6 +27,7 @@ export const RESOURCES = {
   scene: "kynimo://schema/scene",
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
+  presets: "kynimo://presets",
 } as const;
 
 const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {

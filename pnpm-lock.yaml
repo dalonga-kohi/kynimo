@@ -190,6 +190,9 @@ importers:
       '@kynimo/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@kynimo/intent':
+        specifier: workspace:*
+        version: link:../../packages/intent
       '@kynimo/renderer':
         specifier: workspace:*
         version: link:../../packages/renderer
