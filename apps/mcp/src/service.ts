@@ -1276,6 +1276,8 @@ export class KynimoService {
     replayOnly = false,
     /** Reshapes a batch rejection before it is thrown; `fresh` is false when it is a stored one replayed. */
     reshapeRejection: (e: ToolError, fresh: boolean) => ToolError = (e) => e,
+    /** Saved with the version this write creates (ADR-0044); never on a rejection or a no-op. */
+    script?: { source: string; seed: number },
   ): Promise<WriteReply> {
     const { project_id: projectId, base_version: base, idempotency_key: key } = meta;
     // A tool whose ops derive from its input (upload_asset) fingerprints that input instead.
@@ -1360,6 +1362,7 @@ export class KynimoService {
               idCounter: step.state.idCounter,
               history: fromHistory(step.state.history),
             },
+            ...(script === undefined ? {} : { script }),
           },
           value: { ...result, replayed: false },
         };
@@ -1390,7 +1393,11 @@ export class KynimoService {
     /** On `dryRun`, receives the document the operations would produce. */
     onDryRun?: (doc: Project) => void,
     /** `echoOps: false` keeps the expanded operations out of the reply (and of a rejection), for tools whose operations are large. */
-    options: { echoOps?: boolean } = {},
+    options: {
+      echoOps?: boolean;
+      /** The program behind the expansion, saved with the version a fresh write creates. */
+      script?: (input: I) => { source: string; seed: number };
+    } = {},
   ): Promise<IntentReply> {
     const echoOps = options.echoOps !== false;
     const print = fingerprint({ tool, base_version: meta.base_version, body });
@@ -1407,7 +1414,10 @@ export class KynimoService {
           })),
         );
       try {
-        return await run(p.doc, parsed.data, { idCounter: p.idCounter });
+        return {
+          ...(await run(p.doc, parsed.data, { idCounter: p.idCounter })),
+          input: parsed.data,
+        };
       } catch (e) {
         if (e instanceof IntentError)
           throw new ToolError("invalid", e.message, [{ path: e.path, message: e.message }]);
@@ -1438,7 +1448,7 @@ export class KynimoService {
     }
     // A stale base replays the stored outcome of this key if there is one, else records the conflict.
     if (stale) return await this.write(meta, { kind: "ops", ops: [] }, print);
-    const { ops, resolved } = await expand();
+    const { ops, resolved, input } = await expand();
     // A rejection of the expanded operations points at them, not at an `ops` input the caller never sent.
     const reshape = (e: ToolError, fresh: boolean): ToolError =>
       e.kind === "invalid"
@@ -1450,7 +1460,14 @@ export class KynimoService {
             fresh && echoOps ? { expanded_ops: ops } : undefined,
           )
         : e;
-    const reply = await this.write(meta, { kind: "ops", ops }, print, false, reshape);
+    const reply = await this.write(
+      meta,
+      { kind: "ops", ops },
+      print,
+      false,
+      reshape,
+      options.script?.(input),
+    );
     return reply.replayed
       ? reply
       : { ...reply, ...(echoOps ? { ops } : {}), ...(resolved === undefined ? {} : { resolved }) };
@@ -1493,12 +1510,34 @@ export class KynimoService {
       (next) => {
         wouldBe = next;
       },
+      { script: (input) => ({ source: input.source, seed: input.seed ?? 0 }) },
     );
     // A replay carries no ops, so no count either: 0 would mislead.
     const counted = reply.ops === undefined ? reply : { ...reply, op_count: reply.ops.length };
     if (!dryRun || wouldBe === undefined) return counted;
     const main = wouldBe.compositions.find((c) => c.id === wouldBe?.mainCompositionId);
     return main === undefined ? counted : { ...counted, motion: describeMotion(wouldBe, main) };
+  }
+
+  /** The run_script source and seed that wrote a version (default: the latest), ADR-0044. */
+  async getScript(projectId: string, version?: number) {
+    await this.load(projectId);
+    const versions = await this.store.scriptVersions(projectId, 20);
+    const rec = await this.store.getScript(projectId, version);
+    if (rec === undefined)
+      throw new ToolError(
+        "not_found",
+        version === undefined
+          ? `no run_script has written to project ${projectId} yet`
+          : `version ${version} of project ${projectId} was not written by run_script; script versions (newest first): ${versions.join(", ") || "none"}`,
+      );
+    return {
+      project_id: projectId,
+      version: rec.version,
+      seed: rec.seed,
+      source: rec.source,
+      script_versions: versions,
+    };
   }
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */

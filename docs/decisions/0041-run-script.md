@@ -1,6 +1,6 @@
 # 0041 — run_script
 
-- Status: accepted (extends ADR-0036; amends its op cap and the source-persistence line, see below)
+- Status: accepted (extends ADR-0036; amends its op cap and the source-persistence line, see below); amended by ADR-0044 (source kept per version)
 - Date: 2026-11-11
 
 ## Context
@@ -17,7 +17,7 @@ ADR-0036 decided that agents send TypeScript to `run_script`, which runs once in
 - **Declarations** are served as `kynimo://sdk` (about 22 KB), generated from the input JSON Schemas by a small emitter. Errors carry a kind and line/column (`script_error` in the tool error); a rejected entry is reported against `expanded_ops`.
 - **`dry_run`** returns the ops and `describe_motion` of the main composition as it would be after the batch. Nothing is stored.
 - **Listing.** `tools/list` grew to about 71.2 KB. The budget in `server.test.ts` moves from 70 KB to 75 KB; getting back to 60 KB stays the M8 item.
-- **Deferred, amending ADR-0036's contract: the source is not yet kept with the change record.** It needs per-version storage in all three stores, a Postgres migration and a read tool. It is a roadmap item (M4). Until then the ops a script produced are in the change record, and the document never depended on the source.
+- **Deferred, amending ADR-0036's contract: the source is not yet kept with the change record.** It needs per-version storage in all three stores, a Postgres migration and a read tool. It is a roadmap item (M4). Until then the ops a script produced are in the change record, and the document never depended on the source. Done in ADR-0044.
 
 Considered and not adopted:
 

@@ -216,7 +216,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4        |
 | Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4        |
 | Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4        |
-| Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041)                                                             | M4        |
+| Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
 | Intent   | `sync_to_beats`                                                                                                                                                      | M7        |

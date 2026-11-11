@@ -67,6 +67,7 @@ describe("MCP server", () => {
       "get_layer_schema",
       "get_project",
       "get_scene",
+      "get_script",
       "get_write_outcome",
       "import_svg",
       "list_assets",
