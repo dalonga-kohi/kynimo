@@ -98,6 +98,8 @@ describe("generator layers", () => {
     ["noise evolution 1001", noise({ evolution: prop(1001) })],
     ["aurora evolution 1001", aurora({ evolution: prop(1001) })],
     ["noise offset 8193", noise({ offset: prop([8193, 0]) })],
+    ["gradient start 65537", gradient({ start: prop([65537, 0]) })],
+    ["gradient end -65537", gradient({ end: prop([0, -65537]) })],
     ["17 stops", gradient({ stops: prop(stops(...Array.from({ length: 17 }, (_, i) => i / 16))) })],
     ["1 stop", gradient({ stops: prop(stops(0)) })],
     ["5 aurora colors", aurora({ colors: Array.from({ length: 5 }, () => prop("#ffffff")) })],
@@ -125,6 +127,7 @@ describe("generator layers", () => {
           "c",
           gradient({ stops: prop(stops(...Array.from({ length: 16 }, (_, i) => i / 15))) }),
         ),
+        genLayer("e", gradient({ start: prop([-65536, 65536]), end: prop([65536, -65536]) })),
         genLayer("d", aurora({ colors: Array.from({ length: 4 }, () => prop("#ffffff")) })),
       ]),
     ).toBe(true);

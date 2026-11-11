@@ -4,6 +4,12 @@ import {
   type Generator,
   MAX_GENERATOR_EVOLUTION,
   MAX_GENERATOR_OFFSET,
+  MAX_GENERATOR_POINT,
+  MAX_NOISE_SCALE,
+  MAX_PATTERN_ANGLE,
+  MAX_PATTERN_SIZE,
+  MIN_NOISE_SCALE,
+  MIN_PATTERN_SIZE,
 } from "@kynimo/scene";
 import type { Rgba } from "./color.js";
 import { hashWords } from "./hash.js";
@@ -76,6 +82,13 @@ export function resolveGenerator(
       clamp(y, -MAX_GENERATOR_OFFSET, MAX_GENERATOR_OFFSET),
     ];
   };
+  const point = (track: Animatable<[number, number]>): Point => {
+    const [x, y] = samplePoint(track, frame, fps);
+    return [
+      clamp(x, -MAX_GENERATOR_POINT, MAX_GENERATOR_POINT),
+      clamp(y, -MAX_GENERATOR_POINT, MAX_GENERATOR_POINT),
+    ];
+  };
   const evolution = (track: Animatable<number>) =>
     number(track, -MAX_GENERATOR_EVOLUTION, MAX_GENERATOR_EVOLUTION);
 
@@ -84,15 +97,15 @@ export function resolveGenerator(
       return {
         type: "gradient",
         kind: generator.kind,
-        start: samplePoint(generator.start, frame, fps),
-        end: samplePoint(generator.end, frame, fps),
+        start: point(generator.start),
+        end: point(generator.end),
         stops: sanitizeStops(sampleTrack(generator.stops, frame, fps, mixStops)),
       };
     case "noise":
       return {
         type: "noise",
         seed: generator.seed,
-        scale: number(generator.scale, 8, 4096),
+        scale: number(generator.scale, MIN_NOISE_SCALE, MAX_NOISE_SCALE),
         octaves: generator.octaves,
         evolution: evolution(generator.evolution),
         offset: offset(generator.offset),
@@ -100,11 +113,12 @@ export function resolveGenerator(
         high: color(generator.high),
       };
     case "pattern": {
-      const angle = (number(generator.angle, -3600, 3600) * Math.PI) / 180;
+      const angle =
+        (number(generator.angle, -MAX_PATTERN_ANGLE, MAX_PATTERN_ANGLE) * Math.PI) / 180;
       return {
         type: "pattern",
         kind: generator.kind,
-        size: number(generator.size, 2, 2048),
+        size: number(generator.size, MIN_PATTERN_SIZE, MAX_PATTERN_SIZE),
         thickness: sampleUnit(generator.thickness, frame, fps),
         rotation: [Math.cos(angle), Math.sin(angle)],
         offset: offset(generator.offset),

@@ -220,7 +220,11 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return out;
     };
 
-    const applyEffect = (src: Target, effect: ResolvedEffect): Target => {
+    const applyEffect = (
+      src: Target,
+      effect: ResolvedEffect,
+      pad: readonly [number, number],
+    ): Target => {
       if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
       const blurred =
         effect.type === "drop-shadow" || effect.type === "glow"
@@ -235,6 +239,8 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           ["u_blur", blurred.texture],
         ],
         (u) => {
+          gl.uniform2i(u("u_origin"), pad[0], pad[1]);
+          gl.uniform2i(u("u_inner"), src.width - 2 * pad[0], src.height - 2 * pad[1]);
           const mode = (id: number) => gl.uniform1i(u("u_mode"), id);
           const params = (x: number, y: number) => gl.uniform2f(u("u_params"), x, y);
           const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
@@ -307,10 +313,14 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     };
 
     /** The original target belongs to the caller. Intermediates are freed after their last read. */
-    const filter = (src: Target, effects: readonly ResolvedEffect[]): Target => {
+    const filter = (
+      src: Target,
+      effects: readonly ResolvedEffect[],
+      pad: readonly [number, number],
+    ): Target => {
       let out = src;
       for (const effect of effects) {
-        const next = applyEffect(out, effect);
+        const next = applyEffect(out, effect, pad);
         if (out !== src && out !== next) free(out);
         out = next;
       }
@@ -412,7 +422,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       );
       if (mask !== null) free(mask);
       if (owned) free(src);
-      const effected = filter(out, effects);
+      const effected = filter(out, effects, [x, y]);
       if (effected !== out) free(out);
       return effected;
     };
@@ -472,7 +482,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     const adjust = (layer: PlannedAdjustmentLayer, acc: Target): Target => {
       const { width, height } = acc;
       chargeEffects(width, height, layer.effects, layer.id);
-      const src = filter(acc, layer.effects);
+      const src = filter(acc, layer.effects, [0, 0]);
       const source = layer.matte?.source;
       const matte = source == null ? null : placed(source, width, height);
       const mask = uploadMask(layer.mask);

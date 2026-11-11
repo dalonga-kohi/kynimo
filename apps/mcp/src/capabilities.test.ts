@@ -106,6 +106,8 @@ describe("capability manifest", () => {
       noiseOctaves: 6,
       noiseScale: { min: 8, max: 4096 },
       patternSize: { min: 2, max: 2048 },
+      patternAngle: 3600,
+      gradientPoint: 65536,
     });
     expect(manifest.limits.effects).toMatchObject({
       chromaticAberration: 32,

@@ -47,6 +47,24 @@ describe("resolveGenerator", () => {
     ]);
   });
 
+  it("clamps eased gradient points to the point bound", () => {
+    const g = gen({
+      type: "gradient",
+      kind: "linear",
+      start: { keyframes: [kf(0, [0, 0], ease), kf(10, [65536, -65536])] },
+      end: prop([100, 0]),
+      stops: prop([
+        { offset: 0, color: "#000000" },
+        { offset: 1, color: "#ffffff" },
+      ]),
+    });
+    for (let f = 0; f <= 10; f++) {
+      const r = resolveGenerator(g, f, fps, 10, 10);
+      if (r.type !== "gradient") throw new Error("kind");
+      for (const v of [...r.start, ...r.end]) expect(Math.abs(v)).toBeLessThanOrEqual(65536);
+    }
+  });
+
   it("keeps eased stop offsets in 0..1 and non-decreasing", () => {
     const stops = (a: number, b: number) => [
       { offset: a, color: "#000000" },

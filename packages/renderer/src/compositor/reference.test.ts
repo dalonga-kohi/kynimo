@@ -1,4 +1,4 @@
-import type { ResolvedGenerator, Rgba } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator, Rgba } from "@kynimo/engine";
 import { describe, expect, it } from "vitest";
 import { pixel } from "../canvaskit.test-util.js";
 import type { FramePlan, PlannedLayer, RasterImage } from "../raster.js";
@@ -284,6 +284,75 @@ describe("compositeReference", () => {
       effects: [{ type: "grain", amount: 1, size: 1, seed: 1, frame: 0, monochrome: true }],
     });
     expect(pixel(compositeReference(plan([grain])), 2, 2)).toEqual([0, 0, 0, 0]);
+  });
+
+  describe("looks stay anchored to the unpadded raster", () => {
+    const looks: Record<string, ResolvedEffect> = {
+      vignette: {
+        type: "vignette",
+        amount: 0.8,
+        radius: 0.3,
+        feather: 0.6,
+        color: { r: 0, g: 0, b: 0.2, a: 1 },
+      },
+      grain: { type: "grain", amount: 0.6, size: 3, seed: 7, frame: 0, monochrome: false },
+      scanlines: {
+        type: "scanlines",
+        amount: 0.8,
+        spacing: 5,
+        thickness: 0.4,
+        offset: 1.5,
+        color: { r: 0, g: 0, b: 0, a: 1 },
+      },
+    };
+    const interior = (effects: ResolvedEffect[]) =>
+      compositeReference(
+        plan(
+          [layerSpace("s", flat(32, 32, [200, 120, 60, 255]), [1, 0, 0, 1, 8, 8], { effects })],
+          {
+            width: 48,
+            height: 48,
+          },
+        ),
+      );
+    for (const [name, look] of Object.entries(looks))
+      it(`gives the same ${name} interior with and without a reaching effect`, () => {
+        const plain = interior([look]);
+        const padded = interior([{ type: "chromatic-aberration", amount: 3 }, look]);
+        const blurred = interior([{ type: "glow", radius: 4, intensity: 1, color: gray(1) }, look]);
+        let varies = false;
+        // The aberration itself fringes the outermost few pixels, so look past them.
+        for (let y = 12; y < 36; y++)
+          for (let x = 12; x < 36; x++) {
+            expect(pixel(padded, x, y)).toEqual(pixel(plain, x, y));
+            expect(pixel(blurred, x, y)).toEqual(pixel(plain, x, y));
+            if (pixel(plain, x, y).join() !== "200,120,60,255") varies = true;
+          }
+        expect(varies).toBe(true);
+      });
+  });
+
+  it("keeps the edge colour under chromatic aberration on an adjustment layer", () => {
+    const backdrop = layerSpace("bg", flat(16, 16, [200, 100, 50, 255]), undefined, {});
+    const adjustment = {
+      id: "adj",
+      type: "adjustment",
+      opacity: 1,
+      blendMode: "normal",
+      mask: null,
+      matte: null,
+      effects: [{ type: "chromatic-aberration", amount: 6 }],
+    } as unknown as PlannedLayer;
+    const out = compositeReference(plan([adjustment, backdrop], { width: 16, height: 16 }));
+    for (const [x, y] of [
+      [0, 8],
+      [15, 8],
+      [8, 0],
+      [8, 15],
+      [0, 0],
+      [15, 15],
+    ] as const)
+      expect(pixel(out, x, y)).toEqual([200, 100, 50, 255]);
   });
 
   it("refuses a huge generator before allocating it, naming the layer", () => {

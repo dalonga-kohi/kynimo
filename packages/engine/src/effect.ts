@@ -5,7 +5,15 @@ import {
   type FrameRate,
   MAX_ABERRATION,
   MAX_EFFECT_RADIUS,
+  MAX_POSTERIZE_LEVELS,
+  MAX_SCANLINE_OFFSET,
+  MAX_SCANLINE_SPACING,
   MAX_SHADOW_OFFSET,
+  MAX_VIGNETTE_FEATHER,
+  MAX_VIGNETTE_RADIUS,
+  MIN_POSTERIZE_LEVELS,
+  MIN_SCANLINE_SPACING,
+  MIN_VIGNETTE_FEATHER,
 } from "@kynimo/scene";
 import type { Rgba } from "./color.js";
 import { samplePoint, sampleUnit } from "./properties.js";
@@ -115,8 +123,8 @@ export function resolveEffects(
         out.push({
           type,
           amount: unit(effect.amount),
-          radius: number(effect.radius, 0, 2),
-          feather: number(effect.feather, 0.01, 2),
+          radius: number(effect.radius, 0, MAX_VIGNETTE_RADIUS),
+          feather: number(effect.feather, MIN_VIGNETTE_FEATHER, MAX_VIGNETTE_FEATHER),
           color: color(effect.color),
         });
         break;
@@ -134,11 +142,14 @@ export function resolveEffects(
         out.push({ type, amount: number(effect.amount, 0, MAX_ABERRATION) });
         break;
       case "posterize":
-        out.push({ type, levels: Math.round(number(effect.levels, 2, 32)) });
+        out.push({
+          type,
+          levels: Math.round(number(effect.levels, MIN_POSTERIZE_LEVELS, MAX_POSTERIZE_LEVELS)),
+        });
         break;
       case "scanlines": {
-        const spacing = number(effect.spacing, 2, 64);
-        const scroll = number(effect.offset, -8192, 8192);
+        const spacing = number(effect.spacing, MIN_SCANLINE_SPACING, MAX_SCANLINE_SPACING);
+        const scroll = number(effect.offset, -MAX_SCANLINE_OFFSET, MAX_SCANLINE_OFFSET);
         // Float64 remainder of a floored division stays in [0, spacing) even for negative scrolls.
         let offset = scroll - spacing * Math.floor(scroll / spacing);
         if (offset >= spacing) offset = 0;

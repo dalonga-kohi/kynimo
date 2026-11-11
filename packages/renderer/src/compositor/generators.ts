@@ -79,6 +79,7 @@ function shader(width: number, height: number, g: ResolvedGenerator): Shader {
               (t - lo) / (hi - lo),
             );
         }
+        return mixInto(out, colors[last] as Straight, colors[last] as Straight, 0);
       };
     }
     case "noise": {

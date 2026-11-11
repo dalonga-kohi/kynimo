@@ -293,7 +293,7 @@ export const PRESETS: readonly Preset[] = [
     title: "Blur in",
     description: "Fades the layer in as it sharpens from a soft Gaussian blur.",
     kind: "enter",
-    layerTypes: ["shape", "text", "image", "video", "solid", "precomp"],
+    layerTypes: ["shape", "text", "image", "video", "solid", "generator", "precomp"],
     params: z.strictObject({
       ...common,
       radius: z

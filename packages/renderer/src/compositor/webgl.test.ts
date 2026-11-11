@@ -501,6 +501,40 @@ describe("WebGL2 compositor on SwiftShader", () => {
       expect((await gpu.composite(p)).pixels).not.toEqual((await gpu.composite(flat)).pixels);
     });
 
+  it("renders gradients with degenerate or huge-but-valid points the same on both sides", async () => {
+    const stops = [
+      { offset: 0, color: rgba(0.9, 0.2, 0.1, 1) },
+      { offset: 1, color: rgba(0.1, 0.4, 0.9, 1) },
+    ];
+    const pairs: [number, number][][] = [
+      [
+        [-65536, 65536],
+        [65536, -65536],
+      ],
+      [
+        [32, 24],
+        [32, 24],
+      ],
+      [
+        [-65536, -65536],
+        [65536, 65536],
+      ],
+    ];
+    for (const kind of ["linear", "radial", "conic"] as const)
+      for (const [start, end] of pairs) {
+        const g: ResolvedGenerator = {
+          type: "gradient",
+          kind,
+          start: start as [number, number],
+          end: end as [number, number],
+          stops,
+        };
+        const p = plan([generatorLayer("g", W, H, g)]);
+        expect(compositeReference(p).pixels.every(Number.isFinite)).toBe(true);
+        await expectMatches(p, () => kind === "conic");
+      }
+  });
+
   it("places generators with a minifying rotation, a mask, effects and as a luma matte source", async () => {
     const source = generators["noise, 6 octaves"] as ResolvedGenerator;
     const rotated = generatorLayer("g", 128, 96, source, {
@@ -656,6 +690,61 @@ describe("WebGL2 compositor on SwiftShader", () => {
     // Outside the edge only the channel shifted inwards still sees the layer: blue on every side.
     expect(left[2]).toBeGreaterThan(left[0] ?? 255);
     expect(at(40, 24)[2]).toBeGreaterThan(at(40, 24)[0] ?? 255);
+  });
+
+  describe("looks stay anchored to the unpadded raster", () => {
+    const flat32 = { width: 32, height: 32, pixels: new Uint8Array(32 * 32 * 4).fill(0) };
+    for (let i = 0; i < flat32.pixels.length; i += 4) flat32.pixels.set([200, 120, 60, 255], i);
+    const lookStack = (look: ResolvedEffect, before: ResolvedEffect[]) =>
+      plan([solid("s", flat32, { matrix: [1, 0, 0, 1, 16, 8], effects: [...before, look] })]);
+    const interiorEqual = async (a: FramePlan, b: FramePlan) => {
+      const [pa, pb] = [(await gpu.composite(a)).pixels, (await gpu.composite(b)).pixels];
+      // The aberration itself fringes the outermost few pixels, so look past them.
+      for (let y = 12; y < 36; y++)
+        for (let x = 20; x < 44; x++)
+          for (let k = 0; k < 4; k++) expect(pa[(y * W + x) * 4 + k]).toBe(pb[(y * W + x) * 4 + k]);
+    };
+    const names = ["vignette", "grain", "scanlines"] as const;
+    for (const name of names)
+      it(`gives the same ${name} interior with and without chromatic aberration`, async () => {
+        const look = looks[name] as ResolvedEffect;
+        const plain = lookStack(look, []);
+        const padded = lookStack(look, [{ type: "chromatic-aberration", amount: 3 }]);
+        await interiorEqual(plain, padded);
+        await expectMatches(padded);
+      });
+    it("keeps static grain still while a glow radius animates before it", async () => {
+      const grain = looks.grain as ResolvedEffect;
+      const glow = (radius: number): ResolvedEffect => ({
+        type: "glow",
+        radius,
+        intensity: 1,
+        color,
+      });
+      await interiorEqual(lookStack(grain, [glow(2)]), lookStack(grain, [glow(6)]));
+    });
+  });
+
+  it("keeps the edge colour under chromatic aberration on an adjustment layer", async () => {
+    const adjustment: PlannedAdjustmentLayer = {
+      type: "adjustment",
+      id: "adj",
+      blendMode: "normal",
+      opacity: 1,
+      effects: [{ type: "chromatic-aberration", amount: 8 }],
+      mask: null,
+      matte: null,
+    };
+    const opaque = { width: W, height: H, pixels: new Uint8Array(W * H * 4) };
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        opaque.pixels.set([(x * 4) % 256, (y * 5) % 256, 90, 255], (y * W + x) * 4);
+    const p = plan([adjustment, solid("bg", opaque)]);
+    await expectMatches(p);
+    const { pixels } = await gpu.composite(p);
+    // The left edge column keeps its backdrop colour instead of fringing towards transparent.
+    expect(pixels[20 * W * 4 + 3]).toBe(255);
+    expect(pixels[20 * W * 4 + 2]).toBe(90);
   });
 
   it("catches a mismatched hash: another grain or noise seed on the GPU fails the comparison", async () => {

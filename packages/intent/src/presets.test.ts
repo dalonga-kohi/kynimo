@@ -59,6 +59,23 @@ const fixtures = (id: string): Record<string, Record<string, unknown>> => ({
   shape: shape(id, [rect("r")]),
   image: asImage(id),
   video: asVideo(id),
+  generator: delete_(
+    {
+      ...solid(id),
+      type: "generator",
+      generator: {
+        type: "pattern",
+        kind: "stripes",
+        size: prop(16),
+        thickness: prop(0.5),
+        angle: prop(0),
+        offset: prop([0, 0]),
+        foreground: prop("#ffffff"),
+        background: prop("#000000"),
+      },
+    },
+    "color",
+  ),
   null: delete_(
     { ...solid(id), type: "null" },
     "width",
@@ -196,6 +213,20 @@ describe("enter and exit timing", () => {
       start_frames: [20],
       duration_frames: [15],
       easing: { type: "linear" },
+    });
+  });
+
+  it("blurs a generator layer in like a solid", () => {
+    const source = project([fixtures("g").generator as Record<string, unknown>]);
+    const { ops } = applyPreset(source, {
+      layers: lid("g"),
+      preset: "blur-in",
+      params: { start: 0, duration: 400, radius: 20, easing: { type: "linear" } },
+    });
+    const result = applied(source, ops);
+    expect(evaluateFrame(result, 0).layers[0]).toMatchObject({
+      effects: [{ type: "gaussian-blur", radius: 20 }],
+      transform: { opacity: 0 },
     });
   });
 

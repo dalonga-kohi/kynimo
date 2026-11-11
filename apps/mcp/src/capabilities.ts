@@ -22,8 +22,22 @@ import {
   MAX_BATCH_OPS,
   MAX_GENERATOR_EVOLUTION,
   MAX_GENERATOR_OFFSET,
+  MAX_GENERATOR_POINT,
   MAX_GENERATOR_STOPS,
+  MAX_GRAIN_SIZE,
   MAX_NOISE_OCTAVES,
+  MAX_NOISE_SCALE,
+  MAX_PATTERN_ANGLE,
+  MAX_PATTERN_SIZE,
+  MAX_POSTERIZE_LEVELS,
+  MAX_SCANLINE_SPACING,
+  MAX_VIGNETTE_FEATHER,
+  MAX_VIGNETTE_RADIUS,
+  MIN_NOISE_SCALE,
+  MIN_PATTERN_SIZE,
+  MIN_POSTERIZE_LEVELS,
+  MIN_SCANLINE_SPACING,
+  MIN_VIGNETTE_FEATHER,
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
@@ -101,17 +115,21 @@ const GENERATOR_LIMITS = {
   gradientStops: MAX_GENERATOR_STOPS,
   auroraColors: MAX_AURORA_COLORS,
   noiseOctaves: MAX_NOISE_OCTAVES,
-  noiseScale: { min: 8, max: 4096 },
+  noiseScale: { min: MIN_NOISE_SCALE, max: MAX_NOISE_SCALE },
   evolution: { min: -MAX_GENERATOR_EVOLUTION, max: MAX_GENERATOR_EVOLUTION },
   offset: { min: -MAX_GENERATOR_OFFSET, max: MAX_GENERATOR_OFFSET },
-  patternSize: { min: 2, max: 2048 },
+  patternSize: { min: MIN_PATTERN_SIZE, max: MAX_PATTERN_SIZE },
+  patternAngle: MAX_PATTERN_ANGLE,
+  gradientPoint: MAX_GENERATOR_POINT,
 } as const;
 
 const LOOK_LIMITS = {
   chromaticAberration: MAX_ABERRATION,
-  grainSize: { min: 1, max: 8 },
-  posterizeLevels: { min: 2, max: 32 },
-  scanlineSpacing: { min: 2, max: 64 },
+  grainSize: { min: 1, max: MAX_GRAIN_SIZE },
+  posterizeLevels: { min: MIN_POSTERIZE_LEVELS, max: MAX_POSTERIZE_LEVELS },
+  scanlineSpacing: { min: MIN_SCANLINE_SPACING, max: MAX_SCANLINE_SPACING },
+  vignetteRadius: { min: 0, max: MAX_VIGNETTE_RADIUS },
+  vignetteFeather: { min: MIN_VIGNETTE_FEATHER, max: MAX_VIGNETTE_FEATHER },
 } as const;
 
 /** The capability manifest (ADR-0018), built from the renderer's tables, so it cannot drift from them. */

@@ -155,7 +155,7 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
     }
     img = padded;
   }
-  return effects.reduce(applyEffect, img);
+  return effects.reduce((acc, effect) => applyEffect(acc, effect, [x, y]), img);
 }
 
 function charge(
@@ -208,7 +208,7 @@ const straight = (data: Float64Array, p: number, a: number): [number, number, nu
 function adjust(layer: PlannedAdjustmentLayer, acc: FloatImage, plan: FramePlan, nested: Nested) {
   if (layer.effects.length === 0) return;
   charge(nested, layer.id, layer.effects, acc.width, acc.height);
-  const filtered = layer.effects.reduce(applyEffect, acc);
+  const filtered = layer.effects.reduce((img, effect) => applyEffect(img, effect, [0, 0]), acc);
   const source = layer.matte?.source;
   const matte = source == null ? null : placed(source, plan, nested);
   for (let p = 0; p < acc.data.length; p += 4) {
@@ -251,7 +251,11 @@ function gaussian(src: FloatImage, radius: number): FloatImage {
   return pass(pass(src, 1, 0), 0, 1);
 }
 
-function applyEffect(src: FloatImage, effect: ResolvedEffect): FloatImage {
+function applyEffect(
+  src: FloatImage,
+  effect: ResolvedEffect,
+  pad: readonly [number, number],
+): FloatImage {
   if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
   const out = blank(src.width, src.height);
   if (effect.type === "drop-shadow" || effect.type === "glow") {
@@ -272,7 +276,7 @@ function applyEffect(src: FloatImage, effect: ResolvedEffect): FloatImage {
     return out;
   }
   if (effect.type === "chromatic-aberration") return aberrate(src, effect.amount);
-  const look = lookShader(src, effect);
+  const look = lookShader(src, effect, pad);
   for (let p = 0; p < src.data.length; p += 4) {
     const a = src.data[p + 3] ?? 0;
     if (a <= 0) continue;
@@ -332,20 +336,27 @@ function aberrate(src: FloatImage, amount: number): FloatImage {
   const cx = src.width / 2;
   const cy = src.height / 2;
   const scale = 0.5 * Math.max(src.width, src.height);
+  // The shifted position stays on the raster: past the edge it would fetch transparent black.
+  const edge = (x: number, y: number): [number, number] => [
+    Math.min(src.width - 0.5, Math.max(0.5, x)),
+    Math.min(src.height - 0.5, Math.max(0.5, y)),
+  ];
   for (let y = 0; y < src.height; y++)
     for (let x = 0; x < src.width; x++) {
       const ox = ((x + 0.5 - cx) / scale) * strength;
       const oy = ((y + 0.5 - cy) / scale) * strength;
       const p = (y * src.width + x) * 4;
-      const red = bilinear(src, x + 0.5 + ox, y + 0.5 + oy, 0);
-      const blue = bilinear(src, x + 0.5 - ox, y + 0.5 - oy, 2);
+      const [rx, ry] = edge(x + 0.5 + ox, y + 0.5 + oy);
+      const [bx, by] = edge(x + 0.5 - ox, y + 0.5 - oy);
+      const red = bilinear(src, rx, ry, 0);
+      const blue = bilinear(src, bx, by, 2);
       out.data[p] = red;
       out.data[p + 1] = texel(src, x, y, 1);
       out.data[p + 2] = blue;
       out.data[p + 3] = Math.max(
-        bilinear(src, x + 0.5 + ox, y + 0.5 + oy, 3),
+        bilinear(src, rx, ry, 3),
         texel(src, x, y, 3),
-        bilinear(src, x + 0.5 - ox, y + 0.5 - oy, 3),
+        bilinear(src, bx, by, 3),
       );
     }
   return out;
@@ -359,6 +370,7 @@ function aberrate(src: FloatImage, amount: number): FloatImage {
 function lookShader(
   src: FloatImage,
   effect: ResolvedEffect,
+  [padX, padY]: readonly [number, number],
 ): ((x: number, y: number, rgb: [number, number, number]) => number[]) | null {
   const f = Math.fround;
   switch (effect.type) {
@@ -369,11 +381,10 @@ function lookShader(
       const { color } = effect;
       const c = [f(color.r), f(color.g), f(color.b)];
       const strength = amount * f(color.a);
+      const halfW = (src.width - 2 * padX) / 2;
+      const halfH = (src.height - 2 * padY) / 2;
       return (x, y, rgb) => {
-        const d = Math.hypot(
-          (x + 0.5 - src.width / 2) / (src.width / 2),
-          (y + 0.5 - src.height / 2) / (src.height / 2),
-        );
+        const d = Math.hypot((x + 0.5 - halfW - padX) / halfW, (y + 0.5 - halfH - padY) / halfH);
         const k = smoothstep(radius, radius + feather, d);
         return rgb.map((v, i) => mix(v, c[i] ?? 0, strength * k));
       };
@@ -382,8 +393,8 @@ function lookShader(
       const amount = f(effect.amount);
       const { seed, frame, size, monochrome } = effect;
       return (x, y, rgb) => {
-        const cx = Math.floor(x / size);
-        const cy = Math.floor(y / size);
+        const cx = Math.floor((x - padX) / size);
+        const cy = Math.floor((y - padY) / size);
         return rgb.map((v, ch) => {
           const n = (hashWords(seed, [frame, cx, cy, monochrome ? 0 : ch]) / 4294967295) * 2 - 1;
           return Math.min(1, Math.max(0, v + amount * 0.5 * n));
@@ -402,7 +413,7 @@ function lookShader(
       const c = [f(color.r), f(color.g), f(color.b)];
       const strength = f(effect.amount) * f(color.a);
       return (_x, y, rgb) => {
-        const k = band(y + 0.5 - offset, hw, spacing);
+        const k = band(y - padY + 0.5 - offset, hw, spacing);
         return rgb.map((v, i) => mix(v, c[i] ?? 0, strength * k));
       };
     }

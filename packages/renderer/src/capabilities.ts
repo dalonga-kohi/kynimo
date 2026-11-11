@@ -9,6 +9,7 @@ import {
   MAX_BEHAVIORS,
   MAX_EFFECT_RADIUS,
   MAX_EFFECTS,
+  MAX_GENERATOR_STOPS,
   MAX_SHADOW_OFFSET,
   type MaskMode,
   type Paint,
@@ -131,7 +132,10 @@ export const BEHAVIOR_LIMITS = {
 
 /** Generator kinds (ADR-0045), typed over the scene's generator union like the tables above. */
 export const GENERATOR_SUPPORT: Readonly<Record<Generator["type"], Support>> = {
-  gradient: { status: "renders", note: "linear, radial or conic, up to 16 stops" },
+  gradient: {
+    status: "renders",
+    note: `linear, radial or conic, up to ${MAX_GENERATOR_STOPS} stops`,
+  },
   noise: { status: "renders", note: "seeded fractal value noise that evolves in time" },
   pattern: { status: "renders", note: "stripes, checker, dots or grid, anti-aliased" },
   aurora: { status: "renders", note: "two to four soft color blobs that loop with evolution" },

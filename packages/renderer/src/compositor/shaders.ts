@@ -243,6 +243,8 @@ uniform uint u_seed;
 uniform int u_frame;
 uniform int u_size;
 uniform bool u_monochrome;
+uniform ivec2 u_origin;
+uniform ivec2 u_inner;
 ${TRANSPARENT_FETCH}
 ${HASH}
 ${BAND}
@@ -287,8 +289,8 @@ void main() {
   if (u_mode == 9) {
     vec2 size = vec2(textureSize(u_src, 0));
     vec2 o = (vec2(p) + 0.5 - size / 2.0) / (0.5 * max(size.x, size.y)) * u_amount;
-    vec4 r = bilinearAt(vec2(p) + o);
-    vec4 b = bilinearAt(vec2(p) - o);
+    vec4 r = bilinearAt(clamp(vec2(p) + 0.5 + o, vec2(0.5), size - 0.5) - 0.5);
+    vec4 b = bilinearAt(clamp(vec2(p) + 0.5 - o, vec2(0.5), size - 0.5) - 0.5);
     outColor = vec4(r.r, c.g, b.b, max(r.a, max(c.a, b.a)));
     return;
   }
@@ -314,14 +316,14 @@ void main() {
       rgb = mix(rgb, u_color.rgb, u_color.a * u_amount);
       break;
     case 7: {
-      vec2 size = vec2(textureSize(u_src, 0));
-      float d = length((vec2(p) + 0.5 - size / 2.0) / (size / 2.0));
+      vec2 halfSize = vec2(u_inner) / 2.0;
+      float d = length((vec2(p) + 0.5 - halfSize - vec2(u_origin)) / halfSize);
       float k = smoothstep(u_params.x, u_params.x + u_params.y, d);
       rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
       break;
     }
     case 8: {
-      ivec2 cell = p / u_size;
+      ivec2 cell = ivec2(floor(vec2(p - u_origin) / float(u_size)));
       for (int ch = 0; ch < 3; ch++) {
         uint h = hashWords4(u_seed, uint(u_frame), uint(cell.x), uint(cell.y), u_monochrome ? 0u : uint(ch));
         rgb[ch] = clamp(rgb[ch] + u_amount * 0.5 * (hashUnit(h) * 2.0 - 1.0), 0.0, 1.0);
@@ -332,7 +334,7 @@ void main() {
       rgb = floor(rgb * (u_amount - 1.0) + 0.5) / (u_amount - 1.0);
       break;
     case 11: {
-      float k = band(float(p.y) + 0.5 - u_offset, u_params.y * u_params.x / 2.0, u_params.x);
+      float k = band(float(p.y - u_origin.y) + 0.5 - u_offset, u_params.y * u_params.x / 2.0, u_params.x);
       rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
       break;
     }
