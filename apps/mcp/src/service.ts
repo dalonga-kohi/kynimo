@@ -16,7 +16,6 @@ import {
 import {
   type Asset,
   applyBatch,
-  applyOps,
   type Change,
   type Composition,
   type Layer,
@@ -278,7 +277,7 @@ function scriptFault(e: ExpandError): ToolError {
       ...(e.ops === undefined ? {} : { expanded_ops: e.ops }),
     });
   }
-  if (e.kind === "too_many_ops") {
+  if (e.kind === "too_many_ops" || e.kind === "too_many_intent_calls") {
     return new ToolError(
       "invalid",
       e.message,
@@ -332,6 +331,9 @@ export interface ServiceOptions {
 
 /** Uploads FFmpeg decodes at once; the rest wait their turn. */
 export const MEDIA_CONCURRENCY = 2;
+
+/** Scripts expanded at once, server-wide; each runs a worker thread and a replay on this thread. */
+export const SCRIPT_CONCURRENCY = 2;
 
 /** A counting semaphore. */
 class Slots {
@@ -610,6 +612,7 @@ export class ServiceRuntime {
   readonly assetBytes: RenderCache<Uint8Array>;
   readonly media: MediaTools | undefined;
   readonly decodeSlots = new Slots(MEDIA_CONCURRENCY);
+  readonly scriptSlots = new Slots(SCRIPT_CONCURRENCY);
   readonly maxRenderAssetBytes: number;
   readonly scriptLimits: Partial<ScriptLimits>;
   readonly mediaUnavailable: string;
@@ -1383,6 +1386,8 @@ export class KynimoService {
       input: I,
       ctx: { idCounter: number },
     ) => IntentExpansion | Promise<IntentExpansion>,
+    /** On `dryRun`, receives the document the operations would produce. */
+    onDryRun?: (doc: Project) => void,
   ): Promise<IntentReply> {
     const print = fingerprint({ tool, base_version: meta.base_version, body });
     const p = await this.load(meta.project_id);
@@ -1418,6 +1423,7 @@ export class KynimoService {
           p.version,
           { expanded_ops: ops },
         );
+      onDryRun?.(step.state.doc);
       return {
         ...summarizeChanges(p.id, p.version, step.changes),
         replayed: false,
@@ -1457,6 +1463,7 @@ export class KynimoService {
     dryRun: boolean,
     schema: z.ZodType<{ source: string; seed?: number | undefined }>,
   ): Promise<IntentReply & { op_count?: number; motion?: MotionDescription }> {
+    let wouldBe: Project | undefined;
     const reply = await this.intent(
       meta,
       "run_script",
@@ -1465,10 +1472,13 @@ export class KynimoService {
       dryRun,
       async (doc, input, ctx): Promise<IntentExpansion> => {
         const seed = input.seed ?? 0;
-        const r = await expandScript(
-          doc,
-          { source: input.source, seed },
-          { ...ctx, limits: this.rt.scriptLimits },
+        // Server-wide cap on concurrent scripts: each holds a worker thread and replays here.
+        const r = await this.rt.scriptSlots.run(() =>
+          expandScript(
+            doc,
+            { source: input.source, seed },
+            { ...ctx, limits: this.rt.scriptLimits },
+          ),
         );
         if (!r.ok) throw scriptFault(r.error);
         return {
@@ -1476,15 +1486,15 @@ export class KynimoService {
           resolved: { entries: r.entries, layers_created: r.layersCreated, seed },
         };
       },
+      (next) => {
+        wouldBe = next;
+      },
     );
     // A replay carries no ops, so no count either: 0 would mislead.
     const counted = reply.ops === undefined ? reply : { ...reply, op_count: reply.ops.length };
-    if (!dryRun || reply.ops === undefined) return counted;
-    const p = await this.load(meta.project_id);
-    const applied = applyOps(p.doc, reply.ops, p.idCounter);
-    if (!applied.ok) return counted;
-    const main = applied.doc.compositions.find((c) => c.id === applied.doc.mainCompositionId);
-    return main === undefined ? counted : { ...counted, motion: describeMotion(applied.doc, main) };
+    if (!dryRun || wouldBe === undefined) return counted;
+    const main = wouldBe.compositions.find((c) => c.id === wouldBe?.mainCompositionId);
+    return main === undefined ? counted : { ...counted, motion: describeMotion(wouldBe, main) };
   }
 
   /** The composition to render and the renderer, or a tool error naming what is missing. */

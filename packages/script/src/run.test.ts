@@ -121,6 +121,28 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
     expect(JSON.stringify(after)).toBe(JSON.stringify(before));
   });
 
+  it("classifies cpu_limit by the interrupt count, not by the error text", async () => {
+    const fake = await run(`throw { message: "interrupted", stack: "script.ts:99:1" };`);
+    expect(errorOf(fake).kind).toBe("runtime");
+    const slowMessage = await run(
+      `throw { get message() { for (;;) {} }, stack: "script.ts:1:1" };`,
+      1,
+      null,
+      COUNTED,
+    );
+    expect(errorOf(slowMessage).kind).toBe("cpu_limit");
+  });
+
+  it("maps a host-side stack overflow while reading a deeply nested value to stack_limit", async () => {
+    const r = await run(
+      `let a: unknown[] = []; for (let i = 0; i < 200000; i++) a = [a]; (globalThis as any).deep = a; rec.push(a);`,
+      1,
+      null,
+      COUNTED,
+    );
+    expect(errorOf(r).kind).toBe("stack_limit");
+  });
+
   it("cannot rebind __collect or replace a frozen SDK global", async () => {
     const e = errorOf(await run("__collect = () => '[1]';"));
     expect(e.kind).toBe("runtime");

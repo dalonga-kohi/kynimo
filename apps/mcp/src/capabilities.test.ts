@@ -9,6 +9,7 @@ import {
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { describe, expect, it } from "vitest";
 import { capabilityManifest } from "./capabilities.js";
+import { SCRIPT_CONCURRENCY } from "./service.js";
 
 const manifest = capabilityManifest({ name: "kynimo", version: "test" });
 const sorted = (values: Iterable<string>) => [...values].sort();
@@ -53,7 +54,7 @@ describe("capability manifest", () => {
     expect(manifest.scripts).toMatchObject({
       tool: "run_script",
       resource: "kynimo://sdk",
-      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS },
+      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS, concurrency: SCRIPT_CONCURRENCY },
     });
     expect(manifest.resources.sdk).toBe("kynimo://sdk");
     expect(manifest.unavailable).not.toHaveProperty("scripts");

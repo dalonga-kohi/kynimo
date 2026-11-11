@@ -84,6 +84,11 @@ async function run(): Promise<WorkerOutput> {
     };
 
     const toFailure = (err: unknown, file: string): Failure => {
+      // The count decides, not the text (a script can throw an error that says "interrupted"), and
+      // it holds even when the interrupt hit while the error itself was being read.
+      if (interrupts > input.interrupts) {
+        return new Failure("cpu_limit", "script exceeded its CPU budget");
+      }
       if (typeof err !== "object" || err === null) {
         return new Failure("runtime", String(err));
       }
@@ -103,9 +108,7 @@ async function run(): Promise<WorkerOutput> {
         }
       }
       let failure: Failure;
-      if (/interrupted/i.test(message)) {
-        failure = new Failure("cpu_limit", "script exceeded its CPU budget");
-      } else if (/out of memory/i.test(message)) {
+      if (/out of memory/i.test(message)) {
         failure = new Failure("memory_limit", "script exceeded its memory limit");
       } else if (/stack overflow/i.test(message)) {
         failure = new Failure(
@@ -154,6 +157,15 @@ async function run(): Promise<WorkerOutput> {
       if (e.line !== undefined) out.line = e.line;
       if (e.column !== undefined) out.column = e.column;
       return out;
+    }
+    if (e instanceof RangeError) {
+      // The host's own stack ran out (e.g. dumping a deeply nested value out of the VM).
+      return {
+        ok: false,
+        kind: "stack_limit",
+        message: "script exceeded its stack limit (value nested too deeply)",
+        interrupts,
+      };
     }
     return {
       ok: false,

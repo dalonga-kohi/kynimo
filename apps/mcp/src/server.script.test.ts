@@ -266,4 +266,14 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
       /^For anything beyond a few edits, write a script: run_script/,
     );
   });
+
+  it("refuses too many intent calls with their own error kind", async () => {
+    const e = await runError(
+      1,
+      "many",
+      `for (let i = 0; i < 51; i++) kynimo.animate({ layers: "a", property: "opacity", to: 1 });`,
+    );
+    expect(e).toMatchObject({ error: "invalid", script_error: { kind: "too_many_intent_calls" } });
+    expect(await version()).toBe(1);
+  });
 });

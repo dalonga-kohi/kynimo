@@ -15,6 +15,7 @@ import {
 import { type Asset, MAX_BATCH_OPS, SCENE_FORMAT_VERSION } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { RENDER_LIMITS } from "./render.js";
+import { SCRIPT_CONCURRENCY } from "./service.js";
 
 /** A feature the scene format has no room for yet, or a tool this server does not have yet. */
 export interface Unavailable {
@@ -110,7 +111,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
     scripts: {
       tool: "run_script",
       resource: RESOURCES.sdk,
-      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS },
+      limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS, concurrency: SCRIPT_CONCURRENCY },
       note: "a script runs once in a sandbox with no clock, randomness (kynimo.random() is seeded), network or imports; limits are per run (interrupts count instructions; deadlineMs is a backstop); a script that exceeds one fails with nothing applied",
     },
     unavailable: UNAVAILABLE,

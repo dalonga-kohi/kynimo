@@ -14,6 +14,8 @@ export interface ScriptLimits {
   resultBytes: number;
   /** Wall-clock backstop for native built-ins the interrupt handler cannot reach. */
   deadlineMs: number;
+  /** Intent calls (animate, preset, stagger, retime) per run; each already takes up to 50 targets. */
+  maxIntentCalls: number;
 }
 
 /**
@@ -29,6 +31,7 @@ export const SCRIPT_LIMITS: Readonly<ScriptLimits> = Object.freeze({
   interrupts: 15_000,
   resultBytes: 2 * 1024 * 1024,
   deadlineMs: 5_000,
+  maxIntentCalls: 50,
 });
 
 export interface RunInput {
@@ -231,7 +234,8 @@ type Outcome =
 
 function runInWorker(workerData: WorkerInput, deadlineMs: number): Promise<Outcome> {
   return new Promise((resolve) => {
-    const worker = new Worker(WORKER_URL, { workerData });
+    // `env: {}`: the worker must not inherit the server's environment (secrets).
+    const worker = new Worker(WORKER_URL, { workerData, env: {} });
     let settled = false;
     const finish = (outcome: Outcome) => {
       if (settled) return; // a completed result is never changed by the deadline or an exit

@@ -2,7 +2,7 @@ import { animate, mulberry32, stagger } from "@kynimo/intent";
 import { applyOps, MAX_BATCH_OPS, type Op, type Project, withLayerDefaults } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { opNames } from "./declarations.js";
-import { type ExpandResult, expandScript } from "./expand.js";
+import { type ExpandResult, expandScript, replayEntries } from "./expand.js";
 import { baseDoc, HELPERS } from "./fixtures.test-util.js";
 
 const expand = (source: string, doc: Project = baseDoc(), seed?: number): Promise<ExpandResult> =>
@@ -24,7 +24,7 @@ const errOf = (r: ExpandResult) => {
 const lineOf = (source: string, needle: string): number =>
   `${HELPERS}\n${source}`.split("\n").findIndex((l) => l.includes(needle)) + 1;
 
-const apply = (doc: Project, ops: Op[]): Project => {
+const applyAll = (doc: Project, ops: Op[]): Project => {
   const r = applyOps(doc, ops);
   if (!r.ok) throw new Error(JSON.stringify(r.errors));
   return r.doc;
@@ -50,7 +50,7 @@ kynimo.stagger({ layers: [headline, card], offset: "base" });
     expect(r.layersCreated).toEqual(["layer-1", "layer-2"]);
     expect(r.entries).toBe(7);
     // The whole batch applies on the original document.
-    const final = apply(doc, r.ops);
+    const final = applyAll(doc, r.ops);
     expect(final.compositions[0]?.layers.map((l) => l.id)).toEqual([
       "layer-2",
       "layer-1",
@@ -59,7 +59,7 @@ kynimo.stagger({ layers: [headline, card], offset: "base" });
     ]);
 
     // Entry 4 (headline.animate) equals the intent package's own expansion on the doc so far.
-    const afterEdits = apply(doc, r.ops.slice(0, 4));
+    const afterEdits = applyAll(doc, r.ops.slice(0, 4));
     const expected = animate(afterEdits, {
       layers: "layer-1" as never,
       property: "scale",
@@ -111,7 +111,7 @@ kynimo.stagger({ layers: [headline, card], offset: "base" });
       expect(op.layer).toEqual(
         withLayerDefaults({ type, ...props }, doc.compositions[0]) as typeof op.layer,
       );
-      const layer = apply(doc, r.ops).compositions[0]?.layers[0];
+      const layer = applyAll(doc, r.ops).compositions[0]?.layers[0];
       expect(layer?.type).toBe(type);
       expect(layer?.outFrame).toBe(300);
     }
@@ -184,7 +184,7 @@ kynimo.stagger({ layers: ["title", "bg"], offset: "base" });
         to: [10, 0],
         duration: 500,
       });
-      work = apply(work, a.ops);
+      work = applyAll(work, a.ops);
       manual.push(...a.ops);
     }
     manual.push(...stagger(work, { layers: ["title", "bg"] as never, offset: "base" }).ops);
@@ -494,6 +494,142 @@ describe("every op is reachable from the SDK", () => {
     const doc = baseDoc();
     const r = okOf(await expand(OP_SNIPPETS[name] as string, doc));
     expect(r.ops.some((o) => o.op === name)).toBe(true);
-    apply(doc, r.ops);
+    applyAll(doc, r.ops);
+  });
+});
+
+describe("replay passes", () => {
+  const hide = (layer: string) => ({
+    kind: "op",
+    op: { op: "updateLayer", layer, set: { hidden: true } },
+    line: 1,
+  });
+  const animateEntry = { kind: "animate", input: { layers: "bg", property: "opacity", to: 0.5 } };
+  /** An `applyOps` that counts the full-document passes it is asked for. */
+  const counting = () => {
+    const calls: number[] = [];
+    const fn: typeof applyOps = (doc, ops, idCounter) => {
+      calls.push(Array.isArray(ops) ? ops.length : 0);
+      return applyOps(doc, ops, idCounter);
+    };
+    return { calls, fn };
+  };
+
+  it("applies 500 raw entries in one pass", async () => {
+    const { calls, fn } = counting();
+    const entries = Array.from({ length: MAX_BATCH_OPS }, () => hide("bg"));
+    const r = await replayEntries(baseDoc(), entries, 0, 50, fn);
+    expect(okOf(r).ops).toHaveLength(MAX_BATCH_OPS);
+    expect(calls).toEqual([MAX_BATCH_OPS]);
+  });
+
+  it("takes at most 2 x intent calls + 1 passes for alternating raw and intent entries", async () => {
+    const { calls, fn } = counting();
+    const entries: unknown[] = [];
+    for (let i = 0; i < 10; i++) entries.push(hide("bg"), hide("title"), animateEntry);
+    entries.push(hide("bg"));
+    const r = await replayEntries(baseDoc(), entries, 0, 50, fn);
+    expect(r.ok).toBe(true);
+    expect(calls.length).toBeLessThanOrEqual(2 * 10 + 1);
+    expect(calls.length).toBe(21);
+  });
+
+  it("refuses more than maxIntentCalls intent calls without replaying anything", async () => {
+    const { calls, fn } = counting();
+    const entries = [hide("bg"), ...Array.from({ length: 51 }, () => animateEntry)];
+    const r = await replayEntries(baseDoc(), entries, 0, 50, fn);
+    const e = errOf(r);
+    expect(e.kind).toBe("too_many_intent_calls");
+    expect(e.message).toMatch(/51 intent calls.*at most 50.*arrays of layers|stagger/s);
+    expect(calls).toEqual([]);
+    // Through a script, with the default limit.
+    const viaScript = errOf(
+      await expand(
+        `for (let i = 0; i < 51; i++) kynimo.animate({ layers: "bg", property: "opacity", to: 0.5 });`,
+      ),
+    );
+    expect(viaScript.kind).toBe("too_many_intent_calls");
+  });
+
+  it("maps a rejection inside a grouped batch back to its entry, line and op path", async () => {
+    const entries = [
+      hide("bg"),
+      { kind: "op", op: { op: "updateLayer", layer: "ghost", set: { hidden: true } }, line: 7 },
+      hide("title"),
+    ];
+    const e = errOf(await replayEntries(baseDoc(), entries, 0, 50, applyOps));
+    expect(e).toMatchObject({
+      kind: "invalid",
+      entry: 1,
+      line: 7,
+      ops: [{ op: "updateLayer", layer: "ghost" }],
+    });
+    if (e.kind === "invalid") {
+      expect(e.errors[0]?.path.slice(0, 3)).toEqual(["entries", 1, "op"]);
+      expect(e.errors.every((x) => x.path[1] === 1)).toBe(true);
+    }
+  });
+
+  it("reports the earlier entry when a later entry is also invalid", async () => {
+    const entries = [{ kind: "op", op: { op: "removeLayer", layer: "ghost" } }, { kind: "nope" }];
+    const e = errOf(await replayEntries(baseDoc(), entries, 0, 50, applyOps));
+    expect(e).toMatchObject({ kind: "invalid", entry: 0 });
+  });
+
+  it("stops with too_many_ops before an apply that would pass the cap", async () => {
+    const { calls, fn } = counting();
+    // 450 raw ops, then an intent call that expands to more than the 50 left.
+    const entries: unknown[] = Array.from({ length: 450 }, () => hide("bg"));
+    entries.push({
+      kind: "animate",
+      input: {
+        layers: ["bg", "title"],
+        property: "position",
+        from: [0, 0],
+        to: [1, 1],
+        duration: 10,
+        easing: "linear",
+      },
+    });
+    const long = Array.from({ length: 60 }, () => animateEntry);
+    const r = await replayEntries(baseDoc(), [...entries, ...long], 0, 100, fn);
+    expect(errOf(r).kind).toBe("too_many_ops");
+    expect(calls.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(MAX_BATCH_OPS);
+  });
+
+  it("does not list layers a later entry removed", async () => {
+    const r = okOf(
+      await expand(`
+const c = kynimo.composition();
+const a = c.add("solid", solidProps("A"));
+const b = c.add("solid", solidProps("B"));
+a.remove();
+`),
+    );
+    expect(r.layersCreated).toEqual(["layer-2"]);
+  });
+
+  it("fills defaults from a composition created earlier in the same run", async () => {
+    const doc = baseDoc();
+    const r = await replayEntries(
+      doc,
+      [
+        { kind: "op", op: { op: "precompose", layers: ["bg", "title"], id: "inner" } },
+        {
+          kind: "op",
+          defaults: true,
+          op: {
+            op: "addLayer",
+            composition: "inner",
+            id: "n1",
+            layer: { type: "null", name: "N" },
+          },
+        },
+      ],
+      0,
+      50,
+      applyOps,
+    );
+    expect(r.ok).toBe(true);
   });
 });
