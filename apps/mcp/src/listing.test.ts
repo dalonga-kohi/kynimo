@@ -95,7 +95,7 @@ describe("tool listing", () => {
 
   it("keeps each tool within a size cap, so one tool cannot eat the budget unnoticed", async () => {
     for (const tool of await listTools()) {
-      const cap = tool.name === "apply_ops" ? 13_000 : 4_500;
+      const cap = tool.name === "apply_ops" ? 14_000 : 4_500;
       expect(JSON.stringify(tool).length, tool.name).toBeLessThan(cap);
     }
   });

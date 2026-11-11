@@ -8,6 +8,8 @@ import {
   MAX_COMPOSITION_SIZE,
   MAX_DURATION_FRAMES,
   MAX_LAYERS,
+  MAX_SHAPE_ITEMS,
+  MAX_TEXT_ANIMATORS,
   OpSchema,
   TRANSFORM_PROPERTIES,
   TrackMatteSchema,
@@ -158,12 +160,27 @@ function compactBody(o: AnyOp) {
     return obj.extend({
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
     });
+  if (name === "setTextAnimators")
+    return obj.extend({
+      animators: z
+        .array(z.looseObject({}))
+        .max(MAX_TEXT_ANIMATORS)
+        .describe("Replaces the list; items as in get_layer_schema('text')."),
+    });
+  if (name === "setShapeContents")
+    return obj.extend({
+      contents: z
+        .array(z.looseObject({}))
+        .max(MAX_SHAPE_ITEMS)
+        .describe("Replaces the list; items as in get_layer_schema('shape')."),
+    });
   return o;
 }
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`
+ * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`,
+ * `setTextAnimators.animators` items, `setShapeContents.contents` items
  * and every layer selector (`layer`, `parent`, `matte.layer`, `layers[]`, `target.layer`, ...), which
  * the server validates in full against `OpSchema` before anything is applied.
  */
