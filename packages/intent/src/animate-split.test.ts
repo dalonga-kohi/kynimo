@@ -41,7 +41,9 @@ function run(
   });
   const after = layerOf(applied(d, [op]), "a");
   const read = (l: typeof layer) =>
-    (l as unknown as { transform: Record<string, never> }).transform[property];
+    (l as unknown as { transform: Record<string, PositionTrack> }).transform[
+      property
+    ] as PositionTrack;
   return {
     op,
     before: (f: number) => sample(property, read(layer), f, fps),

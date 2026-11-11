@@ -1,4 +1,6 @@
+import { sampleNumber } from "@kynimo/engine";
 import { keynote } from "@kynimo/guidelines";
+import type { Animatable } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { IntentError } from "./errors.js";
 import {
@@ -13,8 +15,15 @@ import {
   solid,
   text,
 } from "./fixtures.test-util.js";
-import { applyPreset, PRESETS, presetCatalog, typedCharacters } from "./presets.js";
+import {
+  applyPreset,
+  assertDistinctTracks,
+  PRESETS,
+  presetCatalog,
+  typedCharacters,
+} from "./presets.js";
 
+const fps = { num: 30, den: 1 };
 const sha = "a".repeat(64);
 const imageAsset = {
   id: "img",
@@ -100,6 +109,20 @@ describe("preset catalog", () => {
   });
 });
 
+describe("one track per property", () => {
+  const op = (layer: string, property: string) =>
+    ({ op: "setTransformTrack", layer, property, track: { value: 1 } }) as never;
+
+  it("is a programming error for a preset to set a property twice on a layer", () => {
+    expect(() =>
+      assertDistinctTracks("bad", [op("a", "opacity"), op("a", "position"), op("a", "opacity")]),
+    ).toThrow(/'bad' sets the opacity track of "a" twice/);
+    expect(() =>
+      assertDistinctTracks("ok", [op("a", "opacity"), op("b", "opacity")]),
+    ).not.toThrow();
+  });
+});
+
 describe("every preset expands and applies on each allowed layer type", () => {
   for (const preset of PRESETS) {
     for (const type of FIXTURE_TYPES_BY_PRESET(preset)) {
@@ -137,19 +160,28 @@ const track = (d: ReturnType<typeof doc>, id: string, property: string) =>
   (layerOf(d, id) as unknown as { transform: Record<string, unknown> }).transform[property];
 
 describe("enter and exit timing", () => {
-  it("enters at the layer's in frame, exits so they end at the out frame", () => {
+  it("enters at the layer's in frame, exits so they end on the last visible frame", () => {
     const d = project([solid("a", { inFrame: 10, startFrame: 10, outFrame: 100 })]);
     const enter = applyPreset(d, { layers: lid("a"), preset: "fade-in" });
     expect(enter.resolved).toMatchObject({ start_frames: [10], duration_frames: [18] });
     expect(enter.resolved.easing).toEqual(keynote.motion.easings.enter);
     const exit = applyPreset(d, { layers: lid("a"), preset: "fade-out" });
-    expect(exit.resolved).toMatchObject({ start_frames: [82], duration_frames: [18] });
+    expect(exit.resolved).toMatchObject({ start_frames: [81], duration_frames: [18] });
     expect(track(applied(d, exit.ops), "a", "opacity")).toMatchObject({
       keyframes: [
-        { frame: 72, value: 1, interpolation: keynote.motion.easings.exit },
-        { frame: 90, value: 0, interpolation: { type: "hold" } },
+        { frame: 71, value: 1, interpolation: keynote.motion.easings.exit },
+        { frame: 89, value: 0, interpolation: { type: "hold" } },
       ],
     });
+  });
+
+  it("a fade-out is fully gone on the last visible frame and still there the frame before", () => {
+    const d = project([solid("a", { inFrame: 10, startFrame: 10, outFrame: 100 })]);
+    const out = applied(d, applyPreset(d, { layers: lid("a"), preset: "fade-out" }).ops);
+    const opacity = track(out, "a", "opacity") as Animatable<number>;
+    // Layer time: composition frame 99 is the last visible one (outFrame is exclusive).
+    expect(sampleNumber(opacity, 99 - 10, fps)).toBe(0);
+    expect(sampleNumber(opacity, 98 - 10, fps)).toBeGreaterThan(0);
   });
 
   it("honors start, duration and easing params", () => {
@@ -258,6 +290,44 @@ describe("stagger", () => {
     expect(resolved.start_frames).toEqual([10, 13, 16]);
     expect(resolved.layer_ids).toEqual(["a", "b", "c"]);
     applied(d, ops);
+  });
+
+  it("staggered exits all end on their own last visible frame, layer 0 leaving first", () => {
+    const d = project([
+      solid("a", { outFrame: 90 }),
+      solid("b", { outFrame: 90 }),
+      solid("c", { outFrame: 120 }),
+    ]);
+    const { resolved, ops } = applyPreset(d, {
+      layers: [lid("a"), lid("b"), lid("c")],
+      preset: "fade-out",
+      stagger: { offset: 100 },
+    });
+    // 3 frame gaps; every layer's window ends at outFrame - 1, earlier ones start earlier.
+    expect(resolved.start_frames).toEqual([89 - 18 - 6, 89 - 18 - 3, 119 - 18]);
+    const out = applied(d, ops);
+    for (const [id, last] of [
+      ["a", 89],
+      ["b", 89],
+      ["c", 119],
+    ] as const) {
+      const opacity = track(out, id, "opacity") as Animatable<number>;
+      expect(sampleNumber(opacity, last, fps)).toBe(0);
+    }
+    // The last layer to leave lands exactly on its last visible frame, not a frame later.
+    const c = track(out, "c", "opacity") as Animatable<number>;
+    expect(sampleNumber(c, 118, fps)).toBeGreaterThan(0);
+  });
+
+  it("adds the delays to an explicit exit start", () => {
+    const d = project([solid("a"), solid("b")]);
+    const { resolved } = applyPreset(d, {
+      layers: [lid("a"), lid("b")],
+      preset: "fade-out",
+      params: { start: 50 },
+      stagger: { offset: 100 },
+    });
+    expect(resolved.start_frames).toEqual([50, 53]);
   });
 });
 

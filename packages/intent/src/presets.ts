@@ -109,6 +109,23 @@ const Box = z.strictObject({
 });
 type Box = z.infer<typeof Box>;
 
+/**
+ * A preset animates each property of a layer at most once: two `setTransformTrack` ops for the
+ * same layer and property would overwrite each other. A preset that does is a programming error.
+ */
+export function assertDistinctTracks(presetId: string, ops: readonly Op[]): void {
+  const seen = new Set<string>();
+  for (const op of ops) {
+    if (op.op !== "setTransformTrack") continue;
+    const key = `${JSON.stringify(op.layer)}:${op.property}`;
+    if (seen.has(key))
+      throw new Error(
+        `preset '${presetId}' sets the ${op.property} track of ${JSON.stringify(op.layer)} twice; a preset must animate each property once`,
+      );
+    seen.add(key);
+  }
+}
+
 /** One transform part of a preset, resolved against its layer. */
 function transformPart(
   ctx: PresetContext,
@@ -577,8 +594,9 @@ function validateParams(preset: Preset, raw: unknown): Params {
 
 /**
  * Expands a preset on each target layer into operations. Each layer's start is the preset's
- * default (enter: the layer's in frame; exit: its out frame minus the duration) or `params.start`,
- * plus its stagger delay.
+ * default (enter: the layer's in frame; exit: so the animation ends on its last visible frame,
+ * `outFrame - 1`) or `params.start`, plus its stagger delay (for exits at the default start the
+ * delay counts back from the end instead, so the order still says which layer leaves first).
  */
 export function applyPreset(
   doc: Project,
@@ -607,6 +625,7 @@ export function applyPreset(
       ? targets.map(() => 0)
       : staggerDelays(targets.length, input.stagger, pack, fps);
 
+  const maxDelay = Math.max(0, ...delays);
   const ops: Op[] = [];
   const starts: number[] = [];
   const durations: number[] = [];
@@ -628,13 +647,24 @@ export function applyPreset(
       fps,
       ["params", "duration"],
     );
-    const base =
-      (params.start as number | undefined) ??
-      (preset.kind === "enter" ? layer.inFrame : layer.outFrame - frames);
-    const start = base + (delays[i] as number);
+    const delay = delays[i] as number;
+    const explicit = params.start as number | undefined;
+    // outFrame is exclusive: an exit lands on the last visible frame, outFrame - 1. With the
+    // default start a stagger counts back from there, so layer 0 leaves first and every layer
+    // still finishes on its own last visible frame.
+    const start =
+      explicit !== undefined
+        ? explicit + delay
+        : preset.kind === "enter"
+          ? layer.inFrame + delay
+          : layer.outFrame - 1 - frames - (maxDelay - delay);
     starts.push(start);
     durations.push(frames);
-    scoped(path, () => ops.push(...preset.expand(ctx, layer, params, { start, frames, easing })));
+    const expanded = scoped(path, () =>
+      preset.expand(ctx, layer, params, { start, frames, easing }),
+    );
+    assertDistinctTracks(preset.id, expanded);
+    ops.push(...expanded);
   });
   return {
     ops,
