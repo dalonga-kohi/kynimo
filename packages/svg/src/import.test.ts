@@ -539,6 +539,27 @@ describe("gradients", () => {
     });
   });
 
+  it("reports a linear gradient whose bands would lean, and not an exact one", () => {
+    const leaning = importValid(
+      svg(
+        `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient><rect width="140" height="35" fill="url(#g)"/>`,
+      ),
+    );
+    expect(entry(leaning, "gradient-transform")).toMatchObject({ kind: "approximated" });
+    const square = importValid(
+      svg(
+        `<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">${stops}</linearGradient><rect width="40" height="40" fill="url(#g)"/>`,
+      ),
+    );
+    expect(entry(square, "gradient-transform")).toBeUndefined();
+    const axis = importValid(
+      svg(
+        `<linearGradient id="g">${stops}</linearGradient><rect width="140" height="35" fill="url(#g)"/>`,
+      ),
+    );
+    expect(entry(axis, "gradient-transform")).toBeUndefined();
+  });
+
   it("inherits attributes and stops through href, safely with cycles", () => {
     const r = importValid(
       svg(

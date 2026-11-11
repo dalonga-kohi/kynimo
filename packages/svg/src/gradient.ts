@@ -1,6 +1,7 @@
 import type { Paint } from "@kynimo/scene";
 import {
   apply,
+  applyLinear,
   determinant,
   IDENTITY,
   isSimilarity,
@@ -187,6 +188,21 @@ export function buildGradient(gradient: XNode, env: GradientEnv): Paint | null {
     const x2 = coord("x2", "100%", "x");
     const y2 = coord("y2", "0%", "y");
     if (x1 === x2 && y1 === y2) return solid(lastStop.color);
+    // Colour bands are perpendicular to the vector in gradient space. Kynimo's linear gradients
+    // keep them perpendicular in user space, so a map that does not preserve that is approximated.
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const across = applyLinear(full, [-dy, dx]);
+    const along = applyLinear(full, [dx, dy]);
+    const bandSkew = Math.abs(across[0] * along[0] + across[1] * along[1]);
+    if (bandSkew > 1e-6 * Math.hypot(...across) * Math.hypot(...along)) {
+      env.report.add(
+        "approximated",
+        "gradient-transform",
+        env.element,
+        "A linear gradient is skewed by its transform or the shape's bounding box, so its color bands lean in SVG; Kynimo's stay perpendicular to the gradient line. Use gradientUnits=userSpaceOnUse or a uniform transform.",
+      );
+    }
     const start = apply(full, [x1, y1]);
     const end = apply(full, [x2, y2]);
     return {
