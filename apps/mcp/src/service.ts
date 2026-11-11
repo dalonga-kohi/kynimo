@@ -515,7 +515,7 @@ function describeUpload(input: UploadAssetInput, bytes: Uint8Array) {
     throw e;
   }
   throw invalid(
-    "unsupported file type: upload a PNG or JPEG image, a TrueType/OpenType font (.ttf/.otf), a video (MP4, MOV, WebM, MKV) or audio (WAV, MP3, FLAC, Ogg, M4A). SVG uploads are not available yet (see get_capabilities)",
+    "unsupported file type: upload a PNG or JPEG image, a TrueType/OpenType font (.ttf/.otf), a video (MP4, MOV, WebM, MKV) or audio (WAV, MP3, FLAC, Ogg, M4A). SVG: use import_svg",
   );
 }
 

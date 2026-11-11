@@ -7,6 +7,7 @@ import {
 import {
   ColorSchema,
   EffectIdSchema,
+  LayerIdSchema,
   LayerPatchSchema,
   LayerSchema,
   LayerSelectorSchema,
@@ -23,6 +24,7 @@ import {
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
+import { SVG_LIMITS } from "@kynimo/svg";
 import { z } from "zod";
 import { MAX_ASSET_BASE64 } from "./blobs.js";
 import { RENDER_LIMITS } from "./render.js";
@@ -439,6 +441,30 @@ export const AddEffectInput = z.object({
   id: EffectIdSchema.optional(),
   index: z.number().int().nonnegative().optional().describe("Stack position; default appends."),
 });
+
+/** What the import is, without the write fields. */
+export const ImportSvgRequest = z.object({
+  svg: z
+    .string()
+    .max(SVG_LIMITS.sourceBytes)
+    .describe("SVG markup (\u2264512 KB). Becomes one editable shape layer."),
+  composition: z.string().min(1).max(64).optional().describe("Composition id. Default: main."),
+  layer_id: LayerIdSchema.optional().describe("Default: svg, svg-2, ..."),
+  name: z.string().min(1).max(200).optional().describe("Default: the SVG <title>, else SVG."),
+  position: z
+    .array(z.number())
+    .length(2)
+    .optional()
+    .describe("Layer position [x, y] in composition px. Default: centre."),
+  width: z
+    .number()
+    .positive()
+    .optional()
+    .describe("On-screen width in px; height follows. Default: the SVG's own size."),
+  index: z.number().int().nonnegative().optional().describe("Stack position; default 0 (top)."),
+});
+
+export const ImportSvgInput = ImportSvgRequest.extend(intentMeta);
 
 export const CreateProjectInput = z.object({
   name: z.string().min(1).max(200),

@@ -68,6 +68,7 @@ describe("MCP server", () => {
       "get_project",
       "get_scene",
       "get_write_outcome",
+      "import_svg",
       "list_assets",
       "list_presets",
       "list_projects",
@@ -93,6 +94,7 @@ describe("MCP server", () => {
       "run_script",
       "add_behavior",
       "add_effect",
+      "import_svg",
       "upload_asset",
       "add_layer",
       "add_mask",
@@ -114,7 +116,8 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     // 70_000 after the intent tools (ADR-0040); 75_000 with run_script — shrinking back to 60 KB
     // is an M8 item. Each new write tool lists the write fields and an output schema, ~1.8-2.5 KB.
-    expect(JSON.stringify(tools).length).toBeLessThan(75_000);
+    // 77_000 with import_svg (73.5 KB before it, 75.7 KB after).
+    expect(JSON.stringify(tools).length).toBeLessThan(77_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

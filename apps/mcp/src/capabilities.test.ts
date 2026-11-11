@@ -62,6 +62,12 @@ describe("capability manifest", () => {
     expect(manifest.unavailable).not.toHaveProperty("scripts");
   });
 
+  it("declares SVG import as available and lists what it does not carry", () => {
+    expect(manifest.imports.svg).toMatchObject({ tool: "import_svg", status: "renders" });
+    expect(manifest.imports.svg.note).toContain("Not carried (reported)");
+    expect(manifest.unavailable).not.toHaveProperty("svg_import");
+  });
+
   it("lists every behavior type as supported and states its limits", () => {
     expect(sorted(Object.keys(manifest.features.behaviors))).toEqual(sorted(BEHAVIOR_TYPES));
     for (const support of Object.values(manifest.features.behaviors))

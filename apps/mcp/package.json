@@ -32,6 +32,7 @@
     "@kynimo/renderer": "workspace:*",
     "@kynimo/scene": "workspace:*",
     "@kynimo/script": "workspace:*",
+    "@kynimo/svg": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "aws4fetch": "1.0.20",
     "jose": "6.2.15",
