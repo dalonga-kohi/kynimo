@@ -62,7 +62,6 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  svg_import: unavailable("SVG import arrives in M4; draw with shape layers"),
   shaders: unavailable("built-in shader effects arrive in M4; custom GLSL in M6"),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
   components: unavailable("components and their catalog arrive in M6"),
@@ -117,6 +116,13 @@ export function capabilityManifest(server: { name: string; version: string }) {
       resource: RESOURCES.sdk,
       limits: { ...SCRIPT_LIMITS, max_ops: MAX_BATCH_OPS, concurrency: SCRIPT_CONCURRENCY },
       note: "a script runs once in a sandbox with no clock, randomness (kynimo.random() is seeded), network or imports; limits are per run (interrupts count instructions; deadlineMs is a backstop); a script that exceeds one fails with nothing applied",
+    },
+    imports: {
+      svg: {
+        tool: "import_svg",
+        status: "renders",
+        note: "import_svg: paths, basic shapes, groups, transforms, fills, strokes, dashes, linear/radial gradients, <use>. Not carried (reported): text, images, filters, clip paths, masks, patterns, markers, <style> sheets, animation.",
+      },
     },
     unavailable: UNAVAILABLE,
     resources: RESOURCES,

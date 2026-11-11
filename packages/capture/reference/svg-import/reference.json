@@ -1,0 +1,4 @@
+{
+  "description": "SVG import: an Orbit logo imported with importSvg (a rounded badge and glow with bounding-box and user-space gradients, a rotated group holding an evenodd ring with a hole, a stroked trail with a gradient, a sparkle) springing in with an eased scale, rotation and fade on the layer transform, beside a stroked bolt icon imported once and placed at two sizes (96 and 32 px) that fade in one after another.",
+  "frames": [6, 16, 40]
+}

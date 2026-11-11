@@ -1,3 +1,4 @@
+import { importSvg } from "@kynimo/svg";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -398,5 +399,201 @@ describe("intent tools", () => {
     const first = (await client.readResource({ uri: "kynimo://presets" })).contents[0];
     if (first === undefined || !("text" in first)) throw new Error("expected text contents");
     expect(JSON.parse(first.text)).toEqual(tool);
+  });
+
+  describe("import_svg", () => {
+    const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50"><title>Logo</title><rect x="0" y="0" width="100" height="50" fill="#ff0000"/></svg>`;
+    const NOISY = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><clipPath id="c"><rect width="5" height="5"/></clipPath></defs><text x="1" y="5">Hi</text><rect width="10" height="10" fill="#00f" clip-path="url(#c)"/></svg>`;
+    const getLayer = async (id: string) =>
+      (await call(client, "get_layer", { project_id, layer: id })) as {
+        layer: {
+          name: string;
+          type: string;
+          inFrame: number;
+          outFrame: number;
+          contents: unknown;
+          transform: Record<string, { value: unknown }>;
+        };
+      };
+    const ids = async () =>
+      (
+        (await call(client, "get_scene", { project_id })) as {
+          compositions: { layers: { id: string }[] }[];
+        }
+      ).compositions.flatMap((c) => c.layers.map((l) => l.id));
+
+    it("adds one shape layer built from the converter, centred, named by the title", async () => {
+      const r = await call(client, "import_svg", { ...meta(3, "svg1"), svg: LOGO });
+      expect(r).toMatchObject({ version: 4, changed: true, layers_added: ["svg"] });
+      expect(r.resolved).toMatchObject({
+        layer_id: "svg",
+        name: "Logo",
+        size: { width: 100, height: 50 },
+        view_box: { x: 0, y: 0, width: 100, height: 50 },
+        report: { entries: [], summary: { paths: 1, fills: 1 } },
+      });
+      const expected = importSvg(LOGO);
+      const { layer } = await getLayer("svg");
+      expect(layer).toMatchObject({ type: "shape", name: "Logo", inFrame: 0, outFrame: 150 });
+      expect(layer.contents).toEqual(JSON.parse(JSON.stringify(expected.contents)));
+      expect(layer.transform.anchorPoint?.value).toEqual(expected.anchorPoint);
+      expect(layer.transform.position?.value).toEqual([960, 540]);
+      expect(layer.transform.scale?.value).toEqual(expected.scale);
+    });
+
+    it("generates svg, svg-2, ... and defaults the name to SVG without a title", async () => {
+      const bare = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><path d="M0 0H4V4Z" fill="#000"/></svg>`;
+      await call(client, "import_svg", { ...meta(3, "s1"), svg: bare });
+      const second = await call(client, "import_svg", { ...meta(4, "s2"), svg: bare });
+      expect(second.resolved).toMatchObject({ layer_id: "svg-2", name: "SVG" });
+      expect(await ids()).toEqual(expect.arrayContaining(["svg", "svg-2"]));
+    });
+
+    it("honors name, layer_id, position, width and index", async () => {
+      const r = await call(client, "import_svg", {
+        ...meta(3, "opts"),
+        svg: LOGO,
+        name: "Mark",
+        layer_id: "mark",
+        position: [100, 200],
+        width: 400,
+        index: 2,
+      });
+      expect(r.resolved).toMatchObject({
+        layer_id: "mark",
+        name: "Mark",
+        size: { width: 400, height: 200 },
+      });
+      const { layer } = await getLayer("mark");
+      expect(layer.name).toBe("Mark");
+      expect(layer.transform.position?.value).toEqual([100, 200]);
+      expect(layer.transform.scale?.value).toEqual([4, 4]);
+      expect((await ids()).indexOf("mark")).toBe(2);
+    });
+
+    it("targets a composition other than main", async () => {
+      await call(client, "precompose", {
+        ...meta(3, "pre"),
+        layers: ["a"],
+        composition_id: "inner",
+      });
+      const r = await call(client, "import_svg", {
+        ...meta(4, "inner"),
+        svg: LOGO,
+        composition: "inner",
+      });
+      expect(r.ops).toBeUndefined();
+      const scene = (await call(client, "get_scene", { project_id })) as {
+        compositions: { id: string; layers: { id: string }[] }[];
+      };
+      expect(scene.compositions.find((c) => c.id === "inner")?.layers.map((l) => l.id)).toContain(
+        "svg",
+      );
+      const e = await callError(client, "import_svg", {
+        ...meta(5, "nocomp"),
+        svg: LOGO,
+        composition: "nope",
+      });
+      expect(e).toMatchObject({ error: "invalid", errors: [{ path: ["composition"] }] });
+    });
+
+    it("previews with the report and writes nothing on dry_run", async () => {
+      const dry = await call(client, "import_svg", {
+        ...meta(3, "dry"),
+        svg: NOISY,
+        dry_run: true,
+      });
+      expect(dry).toMatchObject({ dry_run: true, version: 3, changed: true });
+      expect(dry.ops).toBeUndefined();
+      expect(dry.resolved).toMatchObject({ layer_id: "svg" });
+      const features = (
+        dry.resolved as { report: { entries: { feature: string }[] } }
+      ).report.entries.map((e) => e.feature);
+      expect(features).toEqual(expect.arrayContaining(["text", "clip-path"]));
+      expect(await version()).toBe(3);
+      expect(await ids()).not.toContain("svg");
+    });
+
+    it("still adds a layer when nothing is paintable, and says why", async () => {
+      const r = await call(client, "import_svg", {
+        ...meta(3, "empty"),
+        svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><text x="1" y="2">Hi</text></svg>`,
+      });
+      expect(r).toMatchObject({ version: 4, layers_added: ["svg"] });
+      expect((await getLayer("svg")).layer.contents).toEqual([]);
+      const report = (r.resolved as { report: { entries: { feature: string }[] } }).report;
+      expect(report.entries.map((e) => e.feature)).toContain("text");
+    });
+
+    it("refuses unusable SVG as invalid input at svg and writes nothing", async () => {
+      const bad = [
+        "not xml at all",
+        `<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "b">]><svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><!-- ${"\u00e9".repeat(300 * 1024)} --></svg>`,
+      ];
+      for (const [i, svg] of bad.entries()) {
+        const e = await callError(client, "import_svg", { ...meta(3, `bad-${i}`), svg });
+        expect(e, `case ${i}`).toMatchObject({ error: "invalid" });
+        expect((e.errors as { path: unknown[] }[])[0]?.path[0], `case ${i}`).toBe("svg");
+      }
+      expect(await version()).toBe(3);
+    });
+
+    it("keeps the reply small for a large SVG, written or dry-run", async () => {
+      const paths = Array.from(
+        { length: 2000 },
+        (_, i) =>
+          `<path d="M${i} 0 L${i + 5} 3 L${i} 9 Z" fill="#${(i % 4096).toString(16).padStart(3, "0")}"/>`,
+      ).join("");
+      const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 10">${paths}</svg>`;
+      const size = (r: unknown) => JSON.stringify(r).length;
+      const dry = await call(client, "import_svg", {
+        ...meta(3, "big-dry"),
+        svg: big,
+        dry_run: true,
+      });
+      expect(size(dry)).toBeLessThan(20_000);
+      expect(dry.ops).toBeUndefined();
+      expect(await version()).toBe(3);
+      expect(await ids()).not.toContain("svg");
+      const written = await call(client, "import_svg", { ...meta(3, "big"), svg: big });
+      expect(size(written)).toBeLessThan(20_000);
+      expect(written.ops).toBeUndefined();
+      expect(written).toMatchObject({ version: 4, layers_added: ["svg"] });
+      const { layer } = await getLayer("svg");
+      expect((layer.contents as unknown[]).length).toBeGreaterThan(0);
+    });
+
+    it("does not echo the expanded operations when they are rejected", async () => {
+      const e = await callError(client, "import_svg", {
+        ...meta(3, "dup"),
+        svg: LOGO,
+        layer_id: "a",
+      });
+      expect(e).toMatchObject({ error: "invalid" });
+      expect(e.expanded_ops).toBeUndefined();
+      expect(JSON.stringify(e).length).toBeLessThan(5_000);
+    });
+
+    it("refuses a width that overflows the layer scale, pointing at width", async () => {
+      for (const width of [1e308, 5e-324]) {
+        const e = await callError(client, "import_svg", {
+          ...meta(3, `w-${width}`),
+          svg: LOGO,
+          width,
+        });
+        expect(e).toMatchObject({ error: "invalid", errors: [{ path: ["width"] }] });
+      }
+      expect(await version()).toBe(3);
+    });
+
+    it("replays a retry with the same key", async () => {
+      const args = { ...meta(3, "replay"), svg: LOGO };
+      const first = await call(client, "import_svg", args);
+      const again = await call(client, "import_svg", args);
+      expect(again).toMatchObject({ version: 4, replayed: true, layers_added: ["svg"] });
+      expect(first).toMatchObject({ replayed: false, resolved: { layer_id: "svg" } });
+      expect(await ids()).toEqual(expect.arrayContaining(["svg"]));
+    });
   });
 });

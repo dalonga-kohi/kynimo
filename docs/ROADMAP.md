@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 under way (shape operators, text animators, behaviors, intent tools and `run_script` done); M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 under way (shape operators, text animators, behaviors, intent tools, `run_script`, effects and SVG import done); M5's pack format and four draft packs exist (ADR-0037). An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -52,7 +52,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [ ] Brief suite v1 (ADR-0035): five briefs run by a real model over MCP; a report of completion, tool calls, rejected calls, tokens and contact sheets, kept per run so milestones can be compared. Runs on demand, not in CI. Lands right after the intent tools; its first report sets the baseline and compares the same briefs with and without `run_script`
 - [ ] Reference scene: kinetic type (ADR-0018), built only with MCP tools
 - [x] Effects: Gaussian blur, drop shadow, glow, brightness/contrast, hue/saturation, tint, fill, adjustment layers, `add_effect` and the `blur-in` preset → ADR-0042: format v8, ordered keyframeable stacks, `setEffects`, and bounded compositor passes
-- [ ] SVG import → shape layer, with a fidelity report and dry run (ADR-0018)
+- [x] SVG import → shape layer, with a fidelity report and dry run (ADR-0018) → ADR-0043: pure `@kynimo/svg` (inline text up to 512 KB, bounded `fast-xml-parser`), one shape layer with groups per painted element, `<use>` expansion, gradients, a fidelity report of dropped, flattened and approximated features, the `import_svg` intent tool, and a pixel comparison against Chromium's own SVG renderer
 - [ ] Built-in 2D shader effects and generator layers (backgrounds, textures, looks)
 
 ## M5 — Guidelines + quality checks
@@ -90,7 +90,7 @@ The human sees the video before any editor exists.
 - [ ] Share page: sign in, project list, the player on the shared renderer with timeline scrubbing, live view of agent edits (same document versions as MCP)
 - [ ] Frame-pinned comments on the share page; `list_comments`, `resolve_comment` so the agent reads and answers them
 - [ ] In-chat player: spike MCP UI support in Claude and ChatGPT (decision ADR), then return the player from the render and export tools where the client supports it
-- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 75 KB to 60 KB
+- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 77 KB (after `import_svg`, ADR-0043) to 60 KB
 
 ## Private beta
 

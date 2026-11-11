@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="320" viewBox="0 0 320 320">
+  <title>gradients</title>
+  <defs>
+    <linearGradient id="bbox" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3b30"/>
+      <stop offset="0.5" stop-color="#ffcc00" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#0a84ff"/>
+    </linearGradient>
+    <linearGradient id="user" gradientUnits="userSpaceOnUse" x1="170" y1="20" x2="300" y2="20">
+      <stop offset="0" stop-color="#34c759"/>
+      <stop offset="1" stop-color="#5856d6" stop-opacity="0.3"/>
+    </linearGradient>
+    <radialGradient id="rbbox" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#ff9500"/>
+      <stop offset="1" stop-color="#7a1f00"/>
+    </radialGradient>
+    <radialGradient id="ruser" gradientUnits="userSpaceOnUse" cx="240" cy="240" r="70">
+      <stop offset="0" stop-color="#00c7be" stop-opacity="1"/>
+      <stop offset="1" stop-color="#003c8f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rot" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(45 0.5 0.5)">
+      <stop offset="0" stop-color="#ff2d55"/>
+      <stop offset="1" stop-color="#ffd60a"/>
+    </linearGradient>
+    <linearGradient id="scaled" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="0" gradientTransform="translate(20 0) scale(100 1)">
+      <stop offset="0" stop-color="#000"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+    <linearGradient id="inherit" xlink:href="#bbox" x1="1" y1="0" x2="0" y2="0"/>
+  </defs>
+  <rect x="10" y="10" width="130" height="130" fill="url(#bbox)"/>
+  <rect x="170" y="10" width="140" height="60" fill="url(#user)"/>
+  <circle cx="240" cy="110" r="35" fill="url(#rbbox)"/>
+  <rect x="10" y="150" width="60" height="60" fill="url(#rot)"/>
+  <rect x="85" y="150" width="60" height="60" fill="url(#bbox)"/>
+  <rect x="10" y="225" width="120" height="40" fill="url(#scaled)"/>
+  <rect x="10" y="275" width="140" height="35" fill="url(#inherit)"/>
+  <circle cx="240" cy="240" r="70" fill="url(#ruser)"/>
+  <path d="M 170 290 h 140" stroke="url(#user)" stroke-width="12" fill="none"/>
+</svg>

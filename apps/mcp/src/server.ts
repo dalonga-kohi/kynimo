@@ -23,6 +23,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
+import { importSvgExpansion } from "./import-svg.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
 import { compactToolListing } from "./listing.js";
 import {
@@ -45,6 +46,8 @@ import {
   GetProjectOutput,
   GetSceneOutput,
   IdempotencyKeySchema,
+  ImportSvgInput,
+  ImportSvgRequest,
   IntentWriteOutput,
   LAYER_TYPES,
   ListAssetsOutput,
@@ -86,7 +89,8 @@ Time is integer frames at the composition frame rate. Layers are top-first (inde
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
 Text layers take animators (like After Effects): each has a range selector (unit characters/words/lines, start/end/offset as fractions of the text, shape, ease, order incl. seeded random) that weights each unit (0..1, times amount), and properties (position, scale, rotation, opacity, fill, tracking; blur is accepted but not drawn yet) applied at that weight. Selected units get the properties, so to reveal text set opacity 0 and sweep start from 0 to 1 (the unrevealed part stays selected); units the window cuts are selected partly.
 Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).
-Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adjustment layer filters the composite below it. Edit or remove effects with the setEffects operation.`;
+Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adjustment layer filters the composite below it. Edit or remove effects with the setEffects operation.
+Use import_svg for vector logos and icons: it makes one shape layer and reports what the SVG had that shapes cannot carry.`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(structured) }],
@@ -519,6 +523,7 @@ export function createServer(service: KynimoService): McpServer {
     inputSchema: z.ZodObject,
     schema: z.ZodType<I>,
     run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+    options?: { echoOps?: boolean },
   ) =>
     server.registerTool(
       name,
@@ -533,6 +538,8 @@ export function createServer(service: KynimoService): McpServer {
             body,
             dry_run === true,
             run,
+            undefined,
+            options,
           )),
         };
       }),
@@ -581,6 +588,17 @@ export function createServer(service: KynimoService): McpServer {
     AddEffectInput,
     AddEffectInputSchema,
     addEffect,
+  );
+
+  intentTool(
+    "import_svg",
+    "Import SVG",
+    "Converts SVG markup into one editable shape layer (paths, groups, fills, strokes, gradients). Returns a fidelity report of what was dropped, flattened or approximated; use dry_run to see it first. The reply omits the layer; read it with get_scene.",
+    ImportSvgInput,
+    ImportSvgRequest,
+    importSvgExpansion,
+    // The layer holds the whole drawing; read it with get_scene or find_layers.
+    { echoOps: false },
   );
 
   intentTool(

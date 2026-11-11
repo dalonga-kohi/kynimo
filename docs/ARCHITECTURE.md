@@ -99,6 +99,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M4         |
 | `packages/intent`     | `@kynimo/intent` — pure expansions of intent tools (animate, stagger, retime, presets) into operations over guideline tokens (ADR-0040)         | M4         |
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036, ADR-0041)                                                                 | M4         |
+| `packages/svg`        | `@kynimo/svg` — pure SVG-to-shape-layer converter with a fidelity report, behind `import_svg`                                                   | M4         |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
