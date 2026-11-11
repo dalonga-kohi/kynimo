@@ -250,7 +250,11 @@ export class PostgresStore implements AccountStore {
 
   async getScript(id: string, version?: number): Promise<ScriptRecord | undefined> {
     if (!PROJECT_ID_PATTERN.test(id)) return undefined;
-    if (version !== undefined && (!Number.isInteger(version) || version < 1)) return undefined;
+    if (
+      version !== undefined &&
+      (!Number.isInteger(version) || version < 1 || version > 2_147_483_647)
+    )
+      return undefined;
     const [row] = await this.db.query<ScriptRecord>(
       `select s.version, s.source, s.seed from kynimo_project_scripts s
        join kynimo_projects p on p.id = s.project_id

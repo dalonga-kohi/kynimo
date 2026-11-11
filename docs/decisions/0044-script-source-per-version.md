@@ -19,7 +19,7 @@ ADR-0036 said the source of a script is kept with the change record, so a later 
 
 ## Considered and not adopted
 
-- A nullable column on `kynimo_project_versions`: that table holds superseded snapshots, not the current version, and a script belongs to the version just written.
+- A nullable column on `kynimo_project_versions`: a separate table keeps the up-to-64 KB sources out of the document-version rows every read joins, and keeps "which versions have a script" a small indexed scan.
 - A separate `list_scripts` tool: costs listing budget; `script_versions` in `get_script` covers it.
 - An MCP resource only: client support for resources is uneven, a tool works everywhere.
 - Keeping the source in the idempotency record: Postgres expires outcomes after 7 days.

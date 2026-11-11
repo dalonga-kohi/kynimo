@@ -220,7 +220,8 @@ for (const [name, make] of Object.entries(backends)) {
       expect(await store.getScript("p-0000")).toBeUndefined();
       expect(await store.getScript("../x", 2)).toBeUndefined();
       expect(await store.getScript(`p-${"0".repeat(32)}`, 2)).toBeUndefined();
-      for (const v of [0, -1, 1.5, 9]) expect(await store.getScript(id, v)).toBeUndefined();
+      for (const v of [0, -1, 1.5, 9, 2_147_483_648])
+        expect(await store.getScript(id, v)).toBeUndefined();
       expect(await store.scriptVersions("p-0000", 5)).toEqual([]);
       expect(await store.scriptVersions(`p-${"0".repeat(32)}`, 5)).toEqual([]);
     });

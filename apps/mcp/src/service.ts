@@ -66,6 +66,9 @@ import { type CompositionSummary, summarizeComposition } from "./summary.js";
 type SelectorInput = z.input<typeof LayerSelectorSchema>;
 
 /** A tool-level failure. The server turns it into an MCP error result. */
+/** The seed a run_script runs with and stores: one definition so they cannot drift. */
+const effectiveSeed = (input: { seed?: number | undefined }): number => input.seed ?? 0;
+
 export class ToolError extends Error {
   constructor(
     readonly kind:
@@ -1492,7 +1495,7 @@ export class KynimoService {
       body,
       dryRun,
       async (doc, input, ctx): Promise<IntentExpansion> => {
-        const seed = input.seed ?? 0;
+        const seed = effectiveSeed(input);
         // Server-wide cap on concurrent scripts: each holds a worker thread and replays here.
         const r = await this.rt.scriptSlots.run(() =>
           expandScript(
@@ -1510,7 +1513,7 @@ export class KynimoService {
       (next) => {
         wouldBe = next;
       },
-      { script: (input) => ({ source: input.source, seed: input.seed ?? 0 }) },
+      { script: (input) => ({ source: input.source, seed: effectiveSeed(input) }) },
     );
     // A replay carries no ops, so no count either: 0 would mislead.
     const counted = reply.ops === undefined ? reply : { ...reply, op_count: reply.ops.length };
@@ -1522,8 +1525,8 @@ export class KynimoService {
   /** The run_script source and seed that wrote a version (default: the latest), ADR-0044. */
   async getScript(projectId: string, version?: number) {
     await this.load(projectId);
-    const versions = await this.store.scriptVersions(projectId, 20);
     const rec = await this.store.getScript(projectId, version);
+    const versions = await this.store.scriptVersions(projectId, 20);
     if (rec === undefined)
       throw new ToolError(
         "not_found",
