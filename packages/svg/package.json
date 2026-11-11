@@ -1,0 +1,28 @@
+{
+  "name": "@kynimo/svg",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo SVG import: pure conversion of SVG text into shape-layer contents plus a fidelity report.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/scene": "workspace:*",
+    "fast-xml-parser": "^5.12.0"
+  },
+  "devDependencies": {
+    "@kynimo/engine": "workspace:*"
+  }
+}
