@@ -2,11 +2,15 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Project, ProjectSchema, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  type Project,
+  ProjectSchema,
+  SCENE_FORMAT_VERSION,
+  withLayerDefaults,
+} from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
 import { base64, hasFfmpeg, makeClip, makeTone, solidPng } from "./assets.test-util.js";
 import { type BlobStore, MemoryBlobStore } from "./blobs.js";
-import { withLayerDefaults } from "./defaults.js";
 import {
   Ffmpeg,
   JpegSplitter,

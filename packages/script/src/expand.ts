@@ -9,7 +9,14 @@ import {
   StaggerInputSchema,
   stagger,
 } from "@kynimo/intent";
-import { applyOps, MAX_BATCH_OPS, type Op, type OpError, type Project } from "@kynimo/scene";
+import {
+  applyOps,
+  MAX_BATCH_OPS,
+  type Op,
+  type OpError,
+  type Project,
+  withLayerDefaults,
+} from "@kynimo/scene";
 import { z } from "zod";
 import { runScript, type ScriptError, type ScriptLimits } from "./run.js";
 import { SDK_SOURCE } from "./sdk-source.js";
@@ -48,7 +55,13 @@ export type ExpandResult =
 const Line = z.number().int().positive().optional();
 // The host does not trust the SDK: the entry shape is checked here, ops by the scene on replay.
 const EntrySchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("op"), op: z.record(z.string(), z.unknown()), line: Line }),
+  z.strictObject({
+    kind: z.literal("op"),
+    op: z.record(z.string(), z.unknown()),
+    // Set by `Composition.add`: fill the layer fields every layer shares, like `add_layer`.
+    defaults: z.literal(true).optional(),
+    line: Line,
+  }),
   z.strictObject({ kind: z.literal("animate"), input: z.unknown(), line: Line }),
   z.strictObject({ kind: z.literal("preset"), input: z.unknown(), line: Line }),
   z.strictObject({ kind: z.literal("stagger"), input: z.unknown(), line: Line }),
@@ -158,7 +171,15 @@ export async function expandScript(
     let ops: Op[];
     let raw = false;
     if (entry.kind === "op") {
-      ops = [entry.op as unknown as Op];
+      let op = entry.op;
+      if (entry.defaults) {
+        if (op.op !== "addLayer") {
+          return invalid(i, entry.line, [["op", "op"]], ["defaults apply to addLayer only"]);
+        }
+        const target = work.compositions.find((c) => c.id === op.composition);
+        op = { ...op, layer: withLayerDefaults(op.layer, target) };
+      }
+      ops = [op as unknown as Op];
       raw = true;
     } else {
       const intent = INTENTS[entry.kind];

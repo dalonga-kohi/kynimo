@@ -58,6 +58,22 @@ for (const layer of comp.layers) layer.parent(null);
 const first: string = comp.layers[0]?.id ?? "";
 `;
 
+const MINIMAL = `
+const comp = kynimo.composition();
+comp.add("text", {
+  name: "T", content: { value: "Hi" }, box: { mode: "point" },
+  font: { family: "Inter", weight: 400, size: { value: 48 } },
+  tracking: { value: 0 }, leading: { value: 1.2 }, align: "left", textCase: "none",
+  fill: { value: "#ffffff" },
+});
+comp.add("solid", { name: "S", width: 10, height: 10, color: "#ff0000", transform: { opacity: { value: 0.5 } } });
+comp.add("shape", { name: "Sh", contents: [] });
+comp.add("null", { name: "N" });
+comp.add("image", { name: "I", assetId: "logo" });
+comp.add("audio", { name: "A", assetId: "tone" });
+comp.add("solid", { name: "S", width: 10, height: 10, color: "#ff0000", outFrame: 30 });
+`;
+
 const BAD = `
 const comp = kynimo.composition();
 const title = comp.add("text", { name: "Headline" });
@@ -124,6 +140,7 @@ describe("sdkDeclarations", () => {
       for (const [name, source] of [
         ["valid", VALID],
         ["valid2", VALID_2],
+        ["minimal", MINIMAL],
       ] as const) {
         const ok = run(dir, name, source);
         expect(`${ok.stdout}${ok.stderr}`).toBe("");

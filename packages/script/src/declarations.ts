@@ -119,9 +119,9 @@ interface Layer {
   readonly inFrame: number;
   readonly outFrame: number;
   readonly startFrame: number;
-  /** Each transform property's constant value at the start of the run, else \`null\` (keyframed). */
+  /** Each transform property's constant value at the start of the run, else \`null\` (keyframed). Empty for a layer this script added. */
   readonly transform: { readonly [property in TransformProperty]?: unknown };
-  /** Transform properties that had keyframes at the start of the run. */
+  /** Transform properties that had keyframes at the start of the run. Empty for a layer this script added. */
   readonly animated: readonly TransformProperty[];
   /** The string of a text layer. */
   readonly text: string | undefined;
@@ -164,7 +164,7 @@ interface Composition {
   layer(selector: LayerSelector | Layer): Layer;
   /** Every layer matching the selector in this composition. */
   find(selector: LayerSelector | Layer): Layer[];
-  /** Adds a layer of the given type. The id is \`options.id\` or \`layer-<n>\`. \`index\` 0 (default) is the top. */
+  /** Adds a layer of the given type; shared fields you leave out get the add_layer defaults. The id is \`options.id\` or \`layer-<n>\`. \`index\` 0 (default) is the top. */
   add<T extends LayerType>(
     type: T,
     props: LayerProps<T>,
@@ -214,8 +214,19 @@ interface AssetInfo {
 type TransformProperty = "anchorPoint" | "position" | "scale" | "rotation" | "skew" | "opacity";
 type AddLayerOp = Extract<Op, { op: "addLayer" }>;
 type LayerType = AddLayerOp["layer"]["type"];
-/** The fields of a layer of that type, without \`type\` (the id is \`options.id\`). */
-type LayerProps<T extends LayerType> = Omit<Extract<AddLayerOp["layer"], { type: T }>, "type">;
+/** The fields every layer shares, which \`add\` fills in when left out (as the add_layer tool does). */
+type DefaultedField =
+  | "inFrame" | "outFrame" | "startFrame" | "hidden" | "solo" | "editor" | "markers" | "parent"
+  | "blendMode" | "matte" | "masks" | "animators" | "volume";
+type WithDefaults<L> = Omit<L, DefaultedField | "transform"> &
+  Partial<Pick<L, DefaultedField & keyof L>> &
+  ("transform" extends keyof L ? { transform?: Partial<L["transform"]> } : unknown);
+/**
+ * The fields of a layer of that type, without \`type\` (the id is \`options.id\`). Only the type's
+ * own fields are required. Left out: the frame range is the whole composition, the transform
+ * is centered at scale 1, nothing else is set.
+ */
+type LayerProps<T extends LayerType> = WithDefaults<Omit<Extract<AddLayerOp["layer"], { type: T }>, "type">>;
 type BehaviorArg = Extract<Op, { op: "addBehavior" }>["behavior"] extends infer B
   ? B extends unknown
     ? Omit<B, "name" | "enabled"> & { name?: string; enabled?: boolean }

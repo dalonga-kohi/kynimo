@@ -1,4 +1,4 @@
-import type { Composition } from "@kynimo/scene";
+import type { Composition } from "./composition.js";
 
 type Obj = Record<string, unknown>;
 

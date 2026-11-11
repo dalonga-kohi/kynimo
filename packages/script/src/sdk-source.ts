@@ -295,7 +295,10 @@ const __collect = (() => {
           op.index = options.index;
           at = options.index;
         }
-        record({ kind: "op", op });
+        // The host fills the fields every layer shares (as add_layer does); kynimo.op stays raw.
+        record({ kind: "op", op, defaults: true });
+        // The local view reports what was given, else the defaults' frame range; the transform
+        // of an added layer is not mirrored (empty), see the Layer JSDoc.
         const rec = {
           id,
           name: typeof body.name === "string" ? body.name : "",

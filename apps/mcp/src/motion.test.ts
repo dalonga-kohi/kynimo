@@ -3,9 +3,9 @@ import {
   ProjectSchema,
   SCENE_FORMAT_VERSION,
   springSettleFrames,
+  withLayerDefaults,
 } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
-import { withLayerDefaults } from "./defaults.js";
 import { describeMotion, type MotionOptions, summarizeValue } from "./motion.js";
 
 const SIZE = { width: 1920, height: 1080, durationFrames: 90 } as never;

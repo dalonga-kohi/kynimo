@@ -9,12 +9,17 @@ import {
   StaggerInputSchema,
   stagger,
 } from "@kynimo/intent";
-import { LayerSelectorSchema, type Op, type Project, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  LayerSelectorSchema,
+  type Op,
+  type Project,
+  SCENE_FORMAT_VERSION,
+  withLayerDefaults,
+} from "@kynimo/scene";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
-import { withLayerDefaults } from "./defaults.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
 import { compactToolListing } from "./listing.js";
 import {

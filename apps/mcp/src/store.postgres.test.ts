@@ -1,5 +1,5 @@
+import { withLayerDefaults } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { withLayerDefaults } from "./defaults.js";
 import { KynimoService } from "./service.js";
 import { connectPostgres, type Database, PostgresStore } from "./store-postgres.js";
 

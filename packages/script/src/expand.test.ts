@@ -1,5 +1,5 @@
 import { animate, mulberry32, stagger } from "@kynimo/intent";
-import { applyOps, MAX_BATCH_OPS, type Op, type Project } from "@kynimo/scene";
+import { applyOps, MAX_BATCH_OPS, type Op, type Project, withLayerDefaults } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { opNames } from "./declarations.js";
 import { type ExpandResult, expandScript } from "./expand.js";
@@ -69,6 +69,93 @@ kynimo.stagger({ layers: [headline, card], offset: "base" });
       easing: "enter",
     });
     expect(r.ops.slice(4, 4 + expected.ops.length)).toEqual(expected.ops);
+  });
+
+  it("fills the shared layer fields of a minimal add like add_layer, and applies", async () => {
+    const asset = (id: string, over: Record<string, unknown>) => ({
+      id,
+      name: id,
+      uri: `assets/${id}.bin`,
+      sha256: "a".repeat(64),
+      ...over,
+    });
+    const doc = baseDoc({
+      assets: [
+        asset("img", { type: "image", width: 8, height: 8 }),
+        asset("aud", { type: "audio", durationMs: 1000 }),
+      ],
+    });
+    const minimal: Record<string, Record<string, unknown>> = {
+      text: {
+        name: "T",
+        content: { value: "Hi" },
+        box: { mode: "point" },
+        font: { family: "Inter", weight: 400, size: { value: 48 } },
+        tracking: { value: 0 },
+        leading: { value: 1.2 },
+        align: "left",
+        textCase: "none",
+        fill: { value: "#ffffff" },
+      },
+      solid: { name: "S", width: 10, height: 10, color: "#ff0000" },
+      shape: { name: "Sh", contents: [] },
+      null: { name: "N" },
+      image: { name: "I", assetId: "img" },
+      adjustment: { name: "Adj" },
+      audio: { name: "A", assetId: "aud" },
+    };
+    for (const [type, props] of Object.entries(minimal)) {
+      const source = `kynimo.composition().add("${type}", ${JSON.stringify(props)});`;
+      const r = okOf(await expand(source, doc));
+      const op = r.ops[0] as Extract<Op, { op: "addLayer" }>;
+      expect(op.layer).toEqual(
+        withLayerDefaults({ type, ...props }, doc.compositions[0]) as typeof op.layer,
+      );
+      const layer = apply(doc, r.ops).compositions[0]?.layers[0];
+      expect(layer?.type).toBe(type);
+      expect(layer?.outFrame).toBe(300);
+    }
+  });
+
+  it("keeps what a minimal add sets and merges a partial transform per property", async () => {
+    const r = okOf(
+      await expand(`kynimo.composition().add("solid", {
+  name: "S", width: 10, height: 10, color: "#ff0000", outFrame: 30, parent: "bg",
+  transform: { opacity: { value: 0.5 } },
+});`),
+    );
+    const layer = (r.ops[0] as Extract<Op, { op: "addLayer" }>).layer as unknown as {
+      outFrame: number;
+      parent: string;
+      transform: { opacity: unknown; position: unknown };
+    };
+    expect(layer.outFrame).toBe(30);
+    expect(layer.parent).toBe("bg");
+    expect(layer.transform.opacity).toEqual({ value: 0.5 });
+    expect(layer.transform.position).toEqual({ value: [960, 540] });
+  });
+
+  it("uses the size of the composition the layer is added to", async () => {
+    const r = okOf(
+      await expand(
+        `kynimo.composition("other").add("solid", { name: "S", width: 1, height: 1, color: "#ff0000" });`,
+      ),
+    );
+    const layer = (r.ops[0] as Extract<Op, { op: "addLayer" }>).layer as unknown as {
+      outFrame: number;
+      transform: { position: unknown };
+    };
+    expect(layer.outFrame).toBe(48);
+    expect(layer.transform.position).toEqual({ value: [400, 300] });
+  });
+
+  it("leaves kynimo.op raw: no defaults are filled", async () => {
+    const e = errOf(
+      await expand(
+        `kynimo.op({ op: "addLayer", composition: "main", id: "raw", layer: { type: "null", name: "N" } });`,
+      ),
+    );
+    expect(e.kind).toBe("invalid");
   });
 
   it("matches direct intent expansion for the stagger step", async () => {

@@ -1,5 +1,5 @@
+import { withLayerDefaults } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
-import { withLayerDefaults } from "./defaults.js";
 import { KynimoService, ToolError } from "./service.js";
 import { MemoryStore } from "./store.js";
 
