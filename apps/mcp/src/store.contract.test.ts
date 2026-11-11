@@ -113,6 +113,40 @@ async function rejection(p: Promise<unknown>): Promise<ToolError> {
   throw new Error("expected a ToolError");
 }
 
+/** Commits through the store directly: a version bump (or not) with an optional script. */
+const commitScript = (
+  store: ProjectStore,
+  id: string,
+  key: string,
+  options: { bump: boolean; script?: { source: string; seed: number }; omitProject?: boolean },
+) =>
+  store.transact(id, async (tx) => {
+    const version = tx.project.version + (options.bump ? 1 : 0);
+    const result = {
+      project_id: id,
+      version,
+      changed: options.bump,
+      layers_added: [],
+      layers_removed: [],
+      layers_changed: [],
+      markers_added: [],
+      markers_removed: [],
+    };
+    return {
+      value: version,
+      commit: {
+        record: {
+          actor: "agent",
+          key,
+          fingerprint: key,
+          outcome: { status: "applied" as const, version, result },
+        },
+        ...(options.omitProject ? {} : { project: { ...tx.project, version } }),
+        ...(options.script ? { script: options.script } : {}),
+      },
+    };
+  });
+
 for (const [name, make] of Object.entries(backends)) {
   describe(`ProjectStore contract: ${name}`, () => {
     let backend: Backend | undefined;
@@ -154,6 +188,50 @@ for (const [name, make] of Object.entries(backends)) {
       expect(await store.getVersion(id, 4)).toBeUndefined();
       expect(await store.getVersion(id, 0)).toBeUndefined();
       expect(await store.getVersion("p-0000", 1)).toBeUndefined();
+    });
+
+    it("keeps the script that wrote a version, and lists script versions newest first", async () => {
+      const { store, id } = await setup();
+      await commitScript(store, id, "s2", { bump: true, script: { source: "a()", seed: 7 } });
+      await commitScript(store, id, "n3", { bump: true });
+      await commitScript(store, id, "s4", {
+        bump: true,
+        script: { source: "b()", seed: 4294967295 },
+      });
+      expect(await store.getScript(id, 2)).toEqual({ version: 2, source: "a()", seed: 7 });
+      expect(await store.getScript(id)).toEqual({ version: 4, source: "b()", seed: 4294967295 });
+      expect(await store.getScript(id, 3)).toBeUndefined();
+      expect(await store.scriptVersions(id, 10)).toEqual([4, 2]);
+      expect(await store.scriptVersions(id, 1)).toEqual([4]);
+    });
+
+    it("saves no script for a commit that did not change the version", async () => {
+      const { store, id } = await setup();
+      const script = { source: "x()", seed: 0 };
+      await commitScript(store, id, "same", { bump: false, script });
+      await commitScript(store, id, "keyonly", { bump: false, omitProject: true, script });
+      expect(await store.getScript(id)).toBeUndefined();
+      expect(await store.scriptVersions(id, 10)).toEqual([]);
+    });
+
+    it("reads no script for a missing project, a bad id or version, or no script", async () => {
+      const { store, id } = await setup();
+      await commitScript(store, id, "s2", { bump: true, script: { source: "a()", seed: 1 } });
+      expect(await store.getScript("p-0000")).toBeUndefined();
+      expect(await store.getScript("../x", 2)).toBeUndefined();
+      expect(await store.getScript(`p-${"0".repeat(32)}`, 2)).toBeUndefined();
+      for (const v of [0, -1, 1.5, 9]) expect(await store.getScript(id, v)).toBeUndefined();
+      expect(await store.scriptVersions("p-0000", 5)).toEqual([]);
+      expect(await store.scriptVersions(`p-${"0".repeat(32)}`, 5)).toEqual([]);
+    });
+
+    it("keeps scripts across a restart", async () => {
+      const { id, store } = await setup();
+      await commitScript(store, id, "s2", { bump: true, script: { source: "a()", seed: 3 } });
+      if (!backend) throw new Error("no backend");
+      const reopened = await backend.open();
+      expect(await reopened.getScript(id)).toEqual({ version: 2, source: "a()", seed: 3 });
+      expect(await reopened.scriptVersions(id, 5)).toEqual([2]);
     });
 
     it("keeps documents, undo history and keys across a restart", async () => {
@@ -266,6 +344,15 @@ for (const [name, make] of Object.entries(accountBackends)) {
       expect((await rejection(b.getWriteOutcome("c", id))).kind).toBe("not_found");
     });
 
+    it("hides another account's scripts", async () => {
+      const { alice, bob, id } = await setup();
+      await commitScript(alice, id, "s2", { bump: true, script: { source: "a()", seed: 1 } });
+      expect(await alice.getScript(id)).toMatchObject({ version: 2 });
+      expect(await bob.getScript(id)).toBeUndefined();
+      expect(await bob.getScript(id, 2)).toBeUndefined();
+      expect(await bob.scriptVersions(id, 5)).toEqual([]);
+    });
+
     it("scopes create_project keys to the account", async () => {
       const { a, b, id } = await setup();
       expect(await b.getWriteOutcome("c")).toEqual({ status: "unknown" });
@@ -338,6 +425,25 @@ describe("PostgresStore", () => {
       ...settings,
     });
     expect(replay).toEqual({ id: made.id, name: "Old", version: 1, replayed: true });
+  });
+
+  it("adds the scripts table to a database at migration 2, and drops scripts with their project", async () => {
+    db = await freshDatabase();
+    await db.query("create table kynimo_schema_migrations (version integer primary key)");
+    for (const [i, statements] of MIGRATIONS.slice(0, 2).entries()) {
+      for (const sql of statements) await db.query(sql);
+      await db.query("insert into kynimo_schema_migrations (version) values ($1)", [i + 1]);
+    }
+    const store = await PostgresStore.open(db);
+    const { id } = await new KynimoService(store, "agent").createProject({
+      name: "Demo",
+      idempotency_key: "c",
+      ...settings,
+    });
+    await commitScript(store, id, "s2", { bump: true, script: { source: "a()", seed: 5 } });
+    expect(await store.getScript(id)).toEqual({ version: 2, source: "a()", seed: 5 });
+    await db.query("delete from kynimo_projects where id = $1", [id]);
+    expect(await db.query("select 1 from kynimo_project_scripts")).toEqual([]);
   });
 
   it("refuses a database migrated by a newer build", async () => {

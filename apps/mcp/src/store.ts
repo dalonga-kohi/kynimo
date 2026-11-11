@@ -103,10 +103,22 @@ export interface ProjectTx extends KeyReader {
   readonly project: ProjectState;
 }
 
-/** What one write saves: always its key record, and the new state when the project changed. */
+/** The run_script program that wrote a version (ADR-0036, ADR-0044). The document never depends on it. */
+export interface ScriptRecord {
+  version: number;
+  source: string;
+  seed: number;
+}
+
+/**
+ * What one write saves: always its key record, and the new state when the project changed.
+ * `script` is saved only with a `project` whose version differs from the current one, against the
+ * new version; otherwise it is ignored.
+ */
 export interface Commit {
   record: WriteRecord;
   project?: ProjectState;
+  script?: { source: string; seed: number };
 }
 
 /** A transaction's result; its commit, if any, is saved atomically before the call returns. */
@@ -126,6 +138,14 @@ export interface ProjectStore {
   get(id: string): Promise<ProjectState | undefined>;
   /** The document as it was at `version`, or undefined if the store has no such version. */
   getVersion(id: string, version: number): Promise<Project | undefined>;
+  /**
+   * The script that wrote `version`; with `version` undefined, the script of the highest version
+   * that has one. Undefined if there is no such project (or it is another account's), the id or
+   * version is invalid, or no script was saved.
+   */
+  getScript(id: string, version?: number): Promise<ScriptRecord | undefined>;
+  /** Versions that have a script, newest first, at most `limit`. Empty for a missing project. */
+  scriptVersions(id: string, limit: number): Promise<number[]>;
   /** A key's record outside a transaction. `projectId` undefined: `create_project` keys. */
   lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup>;
   /** Runs `fn` with the project locked and saves its commit. Undefined if there is no project. */
@@ -200,6 +220,8 @@ interface MemoryEntry {
   writes: WriteRecord[];
   /** Superseded versions; the current one is `state.doc`. */
   versions: Map<number, Project>;
+  /** The script that wrote each version, where there is one. */
+  scripts: Map<number, { source: string; seed: number }>;
 }
 
 /** What every account view of one `MemoryStore` shares. */
@@ -258,6 +280,21 @@ export class MemoryStore implements AccountStore {
     const doc = version === entry.state.version ? entry.state.doc : entry.versions.get(version);
     return doc && copy(doc);
   }
+  async getScript(id: string, version?: number): Promise<ScriptRecord | undefined> {
+    const entry = this.entry(id);
+    if (!entry) return undefined;
+    if (version === undefined) {
+      const latest = Math.max(0, ...entry.scripts.keys());
+      return this.getScript(id, latest);
+    }
+    const script = entry.scripts.get(version);
+    return script && { version, ...copy(script) };
+  }
+  async scriptVersions(id: string, limit: number): Promise<number[]> {
+    const entry = this.entry(id);
+    if (!entry) return [];
+    return [...entry.scripts.keys()].sort((a, b) => b - a).slice(0, Math.max(0, limit));
+  }
   async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
     if (projectId === undefined) return find(this.data.creates.get(this.account) ?? [], actor, key);
     return find(this.entry(projectId)?.writes ?? [], actor, key);
@@ -274,10 +311,12 @@ export class MemoryStore implements AccountStore {
         lookup: async (actor, key) => find(entry.writes, actor, key),
       });
       if (step.commit) {
-        const { record, project } = copy(step.commit);
+        const { record, project, script } = copy(step.commit);
         if (project) {
-          if (project.version !== entry.state.version)
+          if (project.version !== entry.state.version) {
             entry.versions.set(entry.state.version, entry.state.doc);
+            if (script) entry.scripts.set(project.version, script);
+          }
           entry.state = project;
         }
         entry.writes = [...entry.writes, record].slice(-this.data.maxWriteKeys);
@@ -298,6 +337,7 @@ export class MemoryStore implements AccountStore {
             state: project,
             writes: [],
             versions: new Map(),
+            scripts: new Map(),
           });
         this.data.creates.set(this.account, [...creates, record].slice(-this.data.maxWriteKeys));
       }
@@ -333,8 +373,9 @@ const isMissing = (e: unknown) =>
   typeof e === "object" && e !== null && (e as { code?: unknown }).code === "ENOENT";
 
 /**
- * A single-account store (LOCAL_ACCOUNT) for one local process: one JSON file per project under `<dir>/projects`, superseded versions under
- * `<dir>/versions/<id>/<n>.json`, and `<dir>/create-keys.json`. Documents are migrated on load
+ * A single-account store (LOCAL_ACCOUNT) for one local process: one JSON file per project under
+ * `<dir>/projects`, superseded versions under `<dir>/versions/<id>/<n>.json`, the script that wrote
+ * a version under `<dir>/scripts/<id>/<n>.json`, and `<dir>/create-keys.json`. Documents are migrated on load
  * (`migrateLoaded`).
  */
 export class FileStore implements ProjectStore {
@@ -401,6 +442,7 @@ export class FileStore implements ProjectStore {
   private projectPath = (id: string) => join(this.projectsDir(), `${id}.json`);
   private versionPath = (id: string, version: number) =>
     join(this.dir, "versions", id, `${version}.json`);
+  private scriptDir = (id: string) => join(this.dir, "scripts", id);
   private createKeysPath = () => join(this.dir, "create-keys.json");
 
   async list(): Promise<ProjectMeta[]> {
@@ -470,6 +512,40 @@ export class FileStore implements ProjectStore {
     return doc === undefined ? undefined : migrateLoaded(id, doc, {}).doc;
   }
 
+  /** Version numbers that have a script file, newest first. Empty if the project is not here. */
+  private async listScripts(id: string): Promise<number[]> {
+    if (!PROJECT_ID_PATTERN.test(id) || !(await this.read(id))) return [];
+    let names: string[];
+    try {
+      names = await readdir(this.scriptDir(id));
+    } catch (e) {
+      if (isMissing(e)) return [];
+      throw e;
+    }
+    return names
+      .filter((n) => /^\d+\.json$/.test(n))
+      .map((n) => Number.parseInt(n, 10))
+      .filter((v) => Number.isSafeInteger(v))
+      .sort((a, b) => b - a);
+  }
+
+  async getScript(id: string, version?: number): Promise<ScriptRecord | undefined> {
+    if (!PROJECT_ID_PATTERN.test(id)) return undefined;
+    let v = version;
+    if (v === undefined) v = (await this.listScripts(id))[0];
+    else if (!Number.isInteger(v) || v < 1 || !(await this.read(id))) return undefined;
+    if (v === undefined) return undefined;
+    const script = (await this.readJson(
+      join(this.scriptDir(id), `${v}.json`),
+      `project ${id} script ${v}`,
+    )) as { source: string; seed: number } | undefined;
+    return script && { version: v, source: script.source, seed: script.seed };
+  }
+
+  async scriptVersions(id: string, limit: number): Promise<number[]> {
+    return (await this.listScripts(id)).slice(0, Math.max(0, limit));
+  }
+
   async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
     if (projectId === undefined) return find(await this.createRecords(), actor, key);
     return find((await this.read(projectId))?.writes ?? [], actor, key);
@@ -482,8 +558,10 @@ export class FileStore implements ProjectStore {
   }
 
   /**
-   * Saves the superseded version's snapshot first, then the project file. A crash between the two
-   * leaves a snapshot of a version that really existed, which the next write overwrites.
+   * Saves the superseded version's snapshot first, then the project file, then the script. A crash
+   * between the first two leaves a snapshot of a version that really existed, which the next write
+   * overwrites. The script goes last so a crash can lose it but never leave one at a version that
+   * was never committed; the document never depends on it.
    */
   async transact<T>(
     id: string,
@@ -504,6 +582,14 @@ export class FileStore implements ProjectStore {
           await writeAtomic(this.versionPath(id, state.version), JSON.stringify(state.doc));
         }
         await this.put({ ...project, id, writes: [...writes, record].slice(-MAX_WRITE_KEYS) });
+        if (project.version !== state.version && step.commit.script) {
+          const { source, seed } = step.commit.script;
+          await mkdir(this.scriptDir(id), { recursive: true });
+          await writeAtomic(
+            join(this.scriptDir(id), `${project.version}.json`),
+            JSON.stringify({ source, seed }),
+          );
+        }
       }
       return { value: step.value };
     });
