@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
-import { evaluateFrame, type ResolvedComposition } from "@kynimo/engine";
+import { createComponentHost } from "@kynimo/components";
+import { evaluateFrame, type ResolvedComposition, type ResolvedLayer } from "@kynimo/engine";
 import { IntentError } from "@kynimo/intent";
 import {
   AssetInfoError,
@@ -928,6 +929,7 @@ export class KynimoService {
     const families = new Set<string>();
     const seen = new Set<string>();
     const walk = [compositionId];
+    let hasComponents = false;
     for (let id = walk.pop(); id !== undefined; id = walk.pop()) {
       if (seen.has(id)) continue;
       seen.add(id);
@@ -935,8 +937,15 @@ export class KynimoService {
         if (l.type === "image") images.add(l.assetId);
         else if (l.type === "text") families.add(l.font.family);
         else if (l.type === "precomp") walk.push(l.compositionId);
+        else if (l.type === "component") hasComponents = true;
       }
     }
+    // A component's subtree only exists once evaluated: collect what those frames draw.
+    if (hasComponents)
+      walkEvaluated(doc, compositionId, frames, (l) => {
+        if (l.type === "image") images.add(l.assetId);
+        else if (l.type === "text") families.add(l.font.family);
+      });
     const used = doc.assets.filter((a) =>
       a.type === "image" ? images.has(a.id) : a.type === "font" && families.has(a.family),
     );
@@ -1748,8 +1757,39 @@ export class KynimoService {
 }
 
 /**
+ * Calls `onLayer` for every layer of the evaluated trees of `frames`, precomps, component
+ * subtrees and matte sources included. Evaluation errors are left for the renderer to report.
+ */
+function walkEvaluated(
+  doc: Project,
+  compositionId: string,
+  frames: readonly number[],
+  onLayer: (layer: ResolvedLayer) => void,
+): void {
+  const components = createComponentHost(doc);
+  const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
+    if (seen.has(comp)) return;
+    seen.add(comp);
+    const stack = [...comp.layers];
+    for (let l = stack.pop(); l !== undefined; l = stack.pop()) {
+      if (l.matte?.source) stack.push(l.matte.source);
+      onLayer(l);
+      if ((l.type === "precomp" || l.type === "component") && l.composition !== null)
+        visit(l.composition, seen);
+    }
+  };
+  for (const f of frames) {
+    try {
+      visit(evaluateFrame(doc, f, compositionId, { components }), new Set());
+    } catch {
+      // The renderer evaluates again and reports the same error with its own message.
+    }
+  }
+}
+
+/**
  * Source frames of each video asset that `frames` of the composition show, from the evaluated
- * layer trees (precomps and matte sources included), so a render loads exactly those frames.
+ * layer trees (precomps, components and matte sources included), so a render loads exactly those frames.
  */
 export function shownVideoFrames(
   doc: Project,
@@ -1758,26 +1798,12 @@ export function shownVideoFrames(
 ): Map<string, Set<number>> {
   const shown = new Map<string, Set<number>>();
   if (!doc.assets.some((a) => a.type === "video")) return shown;
-  const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
-    if (seen.has(comp)) return;
-    seen.add(comp);
-    const stack = [...comp.layers];
-    for (let l = stack.pop(); l !== undefined; l = stack.pop()) {
-      if (l.matte?.source) stack.push(l.matte.source);
-      if (l.type === "video" && l.sourceFrame !== null) {
-        const set = shown.get(l.assetId) ?? new Set<number>();
-        set.add(l.sourceFrame);
-        shown.set(l.assetId, set);
-      } else if (l.type === "precomp" && l.composition !== null) visit(l.composition, seen);
-    }
-  };
-  for (const f of frames) {
-    try {
-      visit(evaluateFrame(doc, f, compositionId), new Set());
-    } catch {
-      // The renderer evaluates again and reports the same error with its own message.
-    }
-  }
+  walkEvaluated(doc, compositionId, frames, (l) => {
+    if (l.type !== "video" || l.sourceFrame === null) return;
+    const set = shown.get(l.assetId) ?? new Set<number>();
+    set.add(l.sourceFrame);
+    shown.set(l.assetId, set);
+  });
   return shown;
 }
 

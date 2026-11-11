@@ -52,20 +52,6 @@ beforeAll(async () => {
       ],
     },
   });
-  await call("add_layer", {
-    project_id: project,
-    base_version: 3,
-    idempotency_key: "fx",
-    composition: "main",
-    layer: {
-      type: "component",
-      name: "Badge",
-      componentId: "badge",
-      componentVersion: "1.0.0",
-      props: {},
-    },
-    id: "badge",
-  });
 }, 60_000);
 
 afterAll(async () => {
@@ -273,7 +259,7 @@ describe("render tools with the capture renderer", () => {
     expect(sum(looked.at(1, 1))).toBeLessThan(sum(plain.at(1, 1)));
   }, 60_000);
 
-  it("returns downscaled PNG frames, lists skipped layers, and caches by document", async () => {
+  it("returns downscaled PNG frames and caches by document", async () => {
     const r = await call("render_frames", { project_id: project, frames: [0, 29], max_size: 160 });
     const imgs = images(r);
     expect(imgs.map((i) => [i.mimeType, ...pngSize(i.data)])).toEqual([
@@ -290,14 +276,7 @@ describe("render tools with the capture renderer", () => {
     ]);
     // The box moved, so the frames differ.
     expect(s.frames[0]?.pixels_sha256).not.toBe(s.frames[1]?.pixels_sha256);
-    expect(s.skipped).toEqual([
-      {
-        layer: "badge",
-        type: "component",
-        reason: "component evaluation arrives in M6",
-        frames: [0, 29],
-      },
-    ]);
+    expect(s.skipped).toEqual([]);
     const again = await call("render_frames", { project_id: project, frames: [29], max_size: 160 });
     const cached = again.structuredContent as typeof s;
     expect(cached.frames[0]).toEqual({ ...s.frames[1], cached: true });

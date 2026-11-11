@@ -91,7 +91,9 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
     "custom GLSL shaders (define_shader) arrive in M6; built-in generators and looks render now",
   ),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
-  components: unavailable("components and their catalog arrive in M6"),
+  components: unavailable(
+    "no built-in components yet; the library and add_component arrive next in M6",
+  ),
   catalogs: unavailable(
     "the token catalog arrives in M5, the component and shader catalogs in M6; the preset catalog is the resource kynimo://presets (tool list_presets)",
   ),

@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@kynimo/components": "workspace:*",
     "@kynimo/engine": "workspace:*",
     "@kynimo/renderer": "workspace:*",
     "@kynimo/scene": "workspace:*",

@@ -187,6 +187,9 @@ importers:
       '@kynimo/capture':
         specifier: workspace:*
         version: link:../../packages/capture
+      '@kynimo/components':
+        specifier: workspace:*
+        version: link:../../packages/components
       '@kynimo/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -261,6 +264,9 @@ importers:
 
   packages/capture:
     dependencies:
+      '@kynimo/components':
+        specifier: workspace:*
+        version: link:../components
       '@kynimo/engine':
         specifier: workspace:*
         version: link:../engine
