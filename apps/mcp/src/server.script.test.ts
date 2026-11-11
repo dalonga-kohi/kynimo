@@ -2,7 +2,7 @@ import { sdkDeclarations } from "@kynimo/script";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { beforeEach, describe, expect, it } from "vitest";
+import { it as base, describe, expect } from "vitest";
 import { TITLE_CARD_SCRIPT, titleCardReference } from "./script.test-util.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -48,9 +48,11 @@ b.keyframes("position", [
 ]);
 `;
 
-describe("run_script", () => {
-  let client: Client;
-  let project_id: string;
+async function createProject(client: Client) {
+  const { id: project_id } = (await call(client, "create_project", {
+    name: "P",
+    idempotency_key: "c",
+  })) as { id: string };
   const meta = (v: number, key: string) => ({ project_id, base_version: v, idempotency_key: key });
   const run = (v: number, key: string, source: string, extra: Structured = {}) =>
     call(client, "run_script", { ...meta(v, key), source, ...extra });
@@ -58,22 +60,31 @@ describe("run_script", () => {
     callError(client, "run_script", { ...meta(v, key), source, ...extra });
   const version = async () =>
     ((await call(client, "get_project", { project_id })) as { version: number }).version;
-  const layerIds = async () =>
+  const layerIds = async (id = project_id) =>
     (
-      (await call(client, "find_layers", { project_id, selector: { name: "*" } })) as {
+      (await call(client, "find_layers", { project_id: id, selector: { name: "*" } })) as {
         layers: { id: string }[];
       }
     ).layers.map((l) => l.id);
 
-  beforeEach(async () => {
-    client = await connect();
-    ({ id: project_id } = (await call(client, "create_project", {
-      name: "P",
-      idempotency_key: "c",
-    })) as { id: string });
-  });
+  return { project_id, meta, run, runError, version, layerIds };
+}
 
-  it("applies a script as one version, and undo reverts all of it", async () => {
+const it = base.extend<{ client: Client; project: Awaited<ReturnType<typeof createProject>> }>({
+  client: async ({ onTestFinished }, use) => {
+    const client = await connect();
+    onTestFinished(() => client.close());
+    await use(client);
+  },
+  project: async ({ client }, use) => {
+    await use(await createProject(client));
+  },
+});
+
+// Each call starts a worker and a WASM instance. Allow time for several calls under CI load.
+describe("run_script", { timeout: 30_000 }, () => {
+  it("applies a script as one version, and undo reverts all of it", async ({ client, project }) => {
+    const { run, meta, layerIds } = project;
     const r = await run(1, "s1", TWO_LAYERS);
     expect(r).toMatchObject({
       version: 2,
@@ -91,7 +102,7 @@ describe("run_script", () => {
     expect(await layerIds()).toEqual([]);
   });
 
-  it("is deterministic in the seed", async () => {
+  it("is deterministic in the seed", async ({ project: { run } }) => {
     const dry = (key: string, seed?: number) =>
       run(1, key, TWO_LAYERS, { dry_run: true, ...(seed === undefined ? {} : { seed }) });
     const a = await dry("k1");
@@ -99,7 +110,10 @@ describe("run_script", () => {
     expect((await dry("k3", 7)).ops).not.toEqual(a.ops);
   });
 
-  it("dry_run returns the ops and the motion, and writes nothing; the real run gives the same ops", async () => {
+  it("dry_run returns the ops and the motion, and writes nothing; the real run gives the same ops", async ({
+    client,
+    project: { run, version, layerIds, project_id },
+  }) => {
     const dry = await run(1, "s1", TWO_LAYERS, { dry_run: true });
     expect(dry).toMatchObject({ version: 1, dry_run: true, changed: true, op_count: 4 });
     expect((dry.ops as unknown[]).length).toBe(4);
@@ -138,7 +152,9 @@ describe("run_script", () => {
     expect(await layersOf(twin.id)).toEqual(await layersOf(project_id));
   });
 
-  it("replays the same key and input, rejects a different source, and conflicts on a stale base", async () => {
+  it("replays the same key and input, rejects a different source, and conflicts on a stale base", async ({
+    project: { run, runError, version },
+  }) => {
     const first = await run(1, "s1", TWO_LAYERS);
     const again = await run(1, "s1", TWO_LAYERS);
     expect(again).toMatchObject({ version: 2, replayed: true });
@@ -154,24 +170,40 @@ describe("run_script", () => {
     expect(await version()).toBe(2);
   });
 
-  it("reports script faults with where they happened, and writes nothing", async () => {
+  it("reports syntax faults with their location and allows a corrected retry", async ({
+    project: { run, runError, version },
+  }) => {
     const syntax = await runError(1, "e1", "const a = 1;\nexport const b = 2;");
     expect(syntax).toMatchObject({
       error: "invalid",
       script_error: { kind: "syntax", line: 2 },
       errors: [{ path: ["source"] }],
     });
+    expect(await version()).toBe(1);
+    expect(await run(1, "e1", TWO_LAYERS)).toMatchObject({ version: 2 });
+  });
 
+  it("reports runtime faults with their location and writes nothing", async ({
+    project: { runError, version },
+  }) => {
     const runtime = await runError(1, "e2", "const x = 1;\n\nthrow new Error('boom');\n");
     expect(runtime).toMatchObject({
       error: "invalid",
       script_error: { kind: "runtime", line: 3 },
     });
     expect(String(runtime.message)).toContain("boom");
+    expect(await version()).toBe(1);
+  });
 
+  it("reports the CPU limit and writes nothing", async ({ project: { runError, version } }) => {
     const cpu = await runError(1, "e3", "while (true) {}");
     expect(cpu).toMatchObject({ error: "invalid", script_error: { kind: "cpu_limit" } });
+    expect(await version()).toBe(1);
+  });
 
+  it("reports rejected operations with their location and writes nothing", async ({
+    project: { runError, version },
+  }) => {
     const rejected = await runError(
       1,
       "e4",
@@ -186,7 +218,12 @@ kynimo.op({ op: "removeLayer", layer: "missing" });
       expanded_ops: [{ op: "removeLayer", layer: "missing" }],
       errors: [{ path: expect.arrayContaining(["entries", 1]) }],
     });
+    expect(await version()).toBe(1);
+  });
 
+  it("reports the operation limit and writes nothing", async ({
+    project: { runError, version },
+  }) => {
     const many = await runError(
       1,
       "e5",
@@ -194,13 +231,10 @@ kynimo.op({ op: "removeLayer", layer: "missing" });
 for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
     );
     expect(many).toMatchObject({ error: "invalid", script_error: { kind: "too_many_ops" } });
-
     expect(await version()).toBe(1);
-    // A fault is not recorded against its key: the corrected script writes with the same key.
-    expect(await run(1, "e1", TWO_LAYERS)).toMatchObject({ version: 2 });
   });
 
-  it("checks the input before running anything", async () => {
+  it("checks the input before running anything", async ({ client, project: { meta } }) => {
     const r = (await client.callTool({
       name: "run_script",
       arguments: { ...meta(1, "bad"), source: "", seed: -1 },
@@ -213,7 +247,10 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
     expect(missing.isError).toBe(true);
   });
 
-  it("rebuilds the title-card reference scene from one script", async () => {
+  it("rebuilds the title-card reference scene from one script", async ({
+    client,
+    project: { layerIds },
+  }) => {
     const reference = titleCardReference();
     const main = reference.compositions[0];
     if (main === undefined) throw new Error("no composition");
@@ -226,16 +263,23 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
       duration_frames: main.durationFrames,
       background: main.background,
     })) as { id: string };
-    project_id = created.id;
-    const r = await run(1, "tc-script", TITLE_CARD_SCRIPT);
+    const r = await call(client, "run_script", {
+      project_id: created.id,
+      base_version: 1,
+      idempotency_key: "tc-script",
+      source: TITLE_CARD_SCRIPT,
+    });
     expect(r).toMatchObject({ version: 2, replayed: false });
     expect((r.resolved as { layers_created: string[] }).layers_created).toHaveLength(6);
 
-    const ids = await layerIds();
+    const ids = await layerIds(created.id);
     expect(ids).toEqual(main.layers.map((l) => l.id));
     const built = await Promise.all(
       ids.map(async (layer) => {
-        const got = (await call(client, "get_layer", { project_id, layer })) as { layer: unknown };
+        const got = (await call(client, "get_layer", {
+          project_id: created.id,
+          layer,
+        })) as { layer: unknown };
         return got.layer;
       }),
     );
@@ -243,7 +287,9 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
     expect(built).toEqual(main.layers);
   });
 
-  it("serves the SDK declarations as a resource and declares scripts in the capabilities", async () => {
+  it("serves the SDK declarations as a resource and declares scripts in the capabilities", async ({
+    client,
+  }) => {
     const { resources } = await client.listResources();
     expect(resources.map((r) => r.uri)).toContain("kynimo://sdk");
     const first = (await client.readResource({ uri: "kynimo://sdk" })).contents[0];
@@ -260,14 +306,16 @@ for (let i = 0; i < 600; i++) c.add("null", { name: "n" + i });`,
     });
   });
 
-  it("leads the instructions with the script hint", () => {
+  it("leads the instructions with the script hint", ({ client }) => {
     const text = client.getInstructions() ?? "";
     expect(text.split("\n")[1]).toMatch(
       /^For anything beyond a few edits, write a script: run_script/,
     );
   });
 
-  it("refuses too many intent calls with their own error kind", async () => {
+  it("refuses too many intent calls with their own error kind", async ({
+    project: { runError, version },
+  }) => {
     const e = await runError(
       1,
       "many",
