@@ -26,6 +26,7 @@
     "playwright": "1.63.0"
   },
   "devDependencies": {
+    "@kynimo/svg": "workspace:*",
     "vite": "8.3.5"
   }
 }

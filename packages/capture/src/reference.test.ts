@@ -21,6 +21,7 @@ const SCENES = [
   "product-card",
   "path-operators",
   "text-animators",
+  "svg-import",
 ] as const;
 
 interface Reference {

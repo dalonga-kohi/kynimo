@@ -277,6 +277,9 @@ importers:
         specifier: 1.63.0
         version: 1.63.0
     devDependencies:
+      '@kynimo/svg':
+        specifier: workspace:*
+        version: link:../svg
       vite:
         specifier: 8.3.5
         version: 8.3.5(@types/node@26.6.6)

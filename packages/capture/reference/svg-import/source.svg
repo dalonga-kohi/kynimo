@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <title>Orbit logo</title>
+  <defs>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7a45"/>
+      <stop offset="1" stop-color="#b5179e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffd6a5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="trail" gradientUnits="userSpaceOnUse" x1="30" y1="100" x2="170" y2="100">
+      <stop offset="0" stop-color="#4cc9f0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#4cc9f0"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="180" height="180" rx="44" fill="url(#badge)"/>
+  <g transform="translate(100 100) rotate(-25)">
+    <path fill-rule="evenodd" fill="#ffffff" d="M -52 0 A 52 52 0 1 0 52 0 A 52 52 0 1 0 -52 0 Z M -36 0 A 36 36 0 1 1 36 0 A 36 36 0 1 1 -36 0 Z"/>
+    <path d="M -64 22 A 66 66 0 0 0 64 -22" fill="none" stroke="url(#trail)" stroke-width="6" stroke-linecap="round" transform="rotate(25)"/>
+    <circle cx="52" cy="0" r="11" fill="#0b0d17"/>
+    <circle cx="52" cy="0" r="5" fill="#4cc9f0"/>
+  </g>
+  <circle cx="100" cy="100" r="22" fill="url(#glow)"/>
+  <path d="M 100 84 L 104 96 L 116 100 L 104 104 L 100 116 L 96 104 L 84 100 L 96 96 Z" fill="#ffffff"/>
+</svg>

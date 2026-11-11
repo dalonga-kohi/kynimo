@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <title>paths</title>
+  <path d="M 10 10 L 90 10 H 90 V 60 h -80 v -50 z" fill="#d94f30"/>
+  <path d="M 110 10 C 150 -10 190 40 150 60 S 110 40 130 30 Q 160 90 190 60 T 230 60" fill="none" stroke="#1d6fa5" stroke-width="3"/>
+  <path d="M 250 20 a 25 25 0 1 1 50 0 a 25 25 0 1 1 -50 0 z" fill="#3a9d5d"/>
+  <path d="M 20 100 A 40 30 20 0 1 100 120 A 40 30 -30 1 0 60 160" fill="none" stroke="#7a3fa0" stroke-width="4"/>
+  <path fill-rule="evenodd" fill="#e0a21b" d="M 130 90 h 90 v 90 h -90 z M 150 110 h 50 v 50 h -50 z M 165 125 h 20 v 20 h -20 z"/>
+  <path fill-rule="nonzero" fill="#2c3e50" d="M 240 90 h 70 v 90 h -70 z M 255 105 h 40 v 60 h -40 z"/>
+  <path d="m 20 200 l 40 -30 l 40 30 z m 10 5 l 30 -22 l 30 22 z" fill="#c0392b" fill-opacity="0.8"/>
+  <path d="M 120 200 L 200 200 L 160 300 Z M 140 215 L 180 215 L 160 270 Z" fill="#16a085" fill-rule="evenodd"/>
+  <path d="M 230 200 Q 270 190 310 220 T 310 300 L 230 300 Z" fill="#8e44ad"/>
+  <path d="M 20 230 C 20 290 100 290 100 230 M 30 300 L 90 300" fill="none" stroke="#000" stroke-width="2"/>
+</svg>

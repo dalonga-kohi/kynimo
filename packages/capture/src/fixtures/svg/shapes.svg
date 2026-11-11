@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="320" viewBox="0 0 320 320">
+  <title>shapes</title>
+  <defs>
+    <g id="badge">
+      <circle cx="0" cy="0" r="18" fill="currentColor"/>
+      <rect x="-8" y="-8" width="16" height="16" fill="white"/>
+    </g>
+  </defs>
+  <g color="#8e44ad">
+    <use xlink:href="#badge" x="30" y="30"/>
+    <use xlink:href="#badge" x="80" y="30" transform="scale(1.2)"/>
+  </g>
+  <use href="#badge" x="170" y="30" color="teal"/>
+  <rect x="10" y="70" width="90" height="60" rx="14" ry="8" fill="coral" stroke="darkred" stroke-width="3"/>
+  <rect x="110" y="70" width="60" height="60" rx="20" fill="steelblue"/>
+  <circle cx="220" cy="100" r="30" fill="gold" stroke="olive" stroke-width="4"/>
+  <ellipse cx="290" cy="100" rx="25" ry="35" fill="mediumseagreen"/>
+  <polygon points="40,150 90,150 110,200 65,230 20,200" fill="crimson"/>
+  <polyline points="130,150 160,210 190,160 220,230 250,150" fill="none" stroke="navy" stroke-width="4"/>
+  <polyline points="260,160 290,160 290,220" fill="lightyellow" stroke="peru" stroke-width="3"/>
+  <line x1="20" y1="250" x2="130" y2="300" stroke="indigo" stroke-width="6"/>
+  <line x1="150" y1="300" x2="300" y2="250" stroke="#ff69b4" stroke-width="3"/>
+  <g fill="#228b22" stroke="currentColor" color="rebeccapurple" stroke-width="2">
+    <circle cx="170" cy="270" r="14"/>
+    <rect x="195" y="258" width="26" height="26"/>
+  </g>
+</svg>
