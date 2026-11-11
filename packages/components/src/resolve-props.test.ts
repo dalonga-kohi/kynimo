@@ -3,7 +3,7 @@ import type { Json } from "@kynimo/scene";
 import { ProjectSchema } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import { audioAsset, imageAsset, kf } from "./fixtures.test-util.js";
-import type { PropDescriptor } from "./props.js";
+import { MAX_NUMBER, type PropDescriptor, PropDescriptorSchema } from "./props.js";
 import { type ResolveEnv, resolveProps } from "./resolve-props.js";
 
 const d = "A prop.";
@@ -319,5 +319,63 @@ describe("resolveProps: hostile input", () => {
   it("does not treat inherited names as props", () => {
     expect(() => resolve({ n: num }, JSON.parse('{"__proto__": 1}'))).toThrow(/not a prop/);
     expect(() => resolve({ n: num }, { constructor: 1 })).toThrow(/not a prop/);
+  });
+});
+
+describe("resolveProps: finite numbers", () => {
+  const free: PropDescriptor = { type: "number", description: d, default: 0, animatable: true };
+
+  it("keeps overshooting keyframes at the extremes finite and within bounds", () => {
+    const overshoot = { type: "bezier", x1: 0.3, y1: 5, x2: 0.7, y2: -5 };
+    for (let frame = 0; frame <= 10; frame++) {
+      const v = resolve(
+        { n: free },
+        { n: { keyframes: [kf(0, -MAX_NUMBER, overshoot), kf(10, MAX_NUMBER)] } },
+        { frame },
+      ).n as number;
+      expect(Number.isFinite(v)).toBe(true);
+      expect(Math.abs(v)).toBeLessThanOrEqual(MAX_NUMBER);
+    }
+    const bounded = { ...free, min: 0, max: 5 } as PropDescriptor;
+    for (let frame = 0; frame <= 10; frame++) {
+      const v = resolve(
+        { n: bounded },
+        { n: { keyframes: [kf(0, 0, overshoot), kf(10, 5)] } },
+        { frame },
+      ).n as number;
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("rejects values beyond the range, plain and in keyframes", () => {
+    expect(() => resolve({ n: free }, { n: 1.7e308 })).toThrow(
+      /props\.n must be a number from -1000000000 to 1000000000/,
+    );
+    expect(() => resolve({ n: free }, { n: { keyframes: [kf(0, 1.7e308)] } })).toThrow(
+      /props\.n\.keyframes\[0\]\.value/,
+    );
+  });
+
+  it("rejects descriptor numbers beyond the range", () => {
+    expect(PropDescriptorSchema.safeParse({ ...free, default: 1.7e308 }).success).toBe(false);
+    expect(PropDescriptorSchema.safeParse({ ...free, max: 2e9 }).success).toBe(false);
+    expect(PropDescriptorSchema.safeParse({ ...free, min: -2e9 }).success).toBe(false);
+  });
+});
+
+describe("resolveProps: bounded errors", () => {
+  it("truncates a huge unknown key", () => {
+    const key = "k".repeat(1_000_000);
+    let message = "";
+    expect(() => {
+      try {
+        resolve({ n: num }, { [key]: 1 });
+      } catch (e) {
+        message = (e as Error).message;
+        throw e;
+      }
+    }).toThrow(/not a prop/);
+    expect(message.length).toBeLessThan(400);
   });
 });

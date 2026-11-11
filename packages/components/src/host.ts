@@ -98,7 +98,6 @@ export function createComponentHost(
       try {
         output = def.evaluate(props, evalCtx);
       } catch (e) {
-        if (e instanceof RangeError) throw e;
         throw new RangeError(
           `${who} failed: ${truncate(e instanceof Error ? e.message : String(e), MAX_FAILURE_MESSAGE)}`,
         );
@@ -114,6 +113,9 @@ export function createComponentHost(
       if (Array.isArray(output.layers)) {
         const audio = output.layers.findIndex((l) => (l as Layer | null)?.type === "audio");
         if (audio >= 0) invalid(`layers[${audio}].type`, "components cannot output audio layers");
+        const precomp = output.layers.findIndex((l) => (l as Layer | null)?.type === "precomp");
+        if (precomp >= 0)
+          invalid(`layers[${precomp}].type`, "components cannot output precomp layers");
       }
 
       const parsed = ProjectSchema.safeParse({

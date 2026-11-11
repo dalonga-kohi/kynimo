@@ -11,7 +11,7 @@ export interface ComponentContext {
   /** Size of the containing composition. */
   width: number;
   height: number;
-  /** uint32 seed derived from the document: hashWords(0, UTF-16 code units of layer.id). */
+  /** uint32 seed derived from the document: hashWords(parentSeed, UTF-16 code units of layer.id); parentSeed is 0 in a document composition, else the enclosing instance's seed. */
   seed: number;
   /** Component nesting depth of this instance: 1 for an instance in a document composition. */
   depth: number;
@@ -31,3 +31,10 @@ export interface ComponentHost {
 
 /** Most component instances that may nest inside one another (an instance in a component's output). */
 export const MAX_COMPONENT_DEPTH = 4;
+
+/**
+ * A component's output costs this many times what a plain evaluated layer does, because the host
+ * validates it with the scene schema on top of evaluating it. Measured: about 17.5 ms per
+ * 1000-layer instance against about 1.2 ms for a precomp of the same size.
+ */
+export const COMPONENT_COST_WEIGHT = 16;

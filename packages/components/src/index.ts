@@ -9,6 +9,7 @@ export { createComponentHost } from "./host.js";
 export {
   type ColorValue,
   ColorValueSchema,
+  MAX_NUMBER,
   MAX_POINT,
   MAX_PROPS_PER_COMPONENT,
   PROP_NAME_PATTERN,

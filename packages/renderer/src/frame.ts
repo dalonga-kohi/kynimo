@@ -222,7 +222,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       skipped.push({
         id: layer.id,
         type: layer.type,
-        reason: `its track matte source '${blocker.id}' is a ${blocker.type} layer, which cannot be drawn yet`,
+        reason: `its track matte source '${blocker.id}' is a component layer that was not evaluated (no component host)`,
       });
       planned.set(layer.id, null);
       return null;

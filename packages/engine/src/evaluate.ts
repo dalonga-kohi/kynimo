@@ -14,7 +14,7 @@ import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import { type Affine, multiply } from "./affine.js";
 import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
-import { type ComponentHost, MAX_COMPONENT_DEPTH } from "./component.js";
+import { COMPONENT_COST_WEIGHT, type ComponentHost, MAX_COMPONENT_DEPTH } from "./component.js";
 import { resolveEffects } from "./effect.js";
 import { resolveGenerator } from "./generator.js";
 import { hashWords } from "./hash.js";
@@ -126,6 +126,8 @@ interface Context {
   components: ComponentHost | undefined;
   /** Component instances currently being evaluated inside one another. */
   componentDepth: number;
+  /** Seed of the component instance being evaluated; 0 in a document composition. */
+  componentSeed: number;
 }
 
 /**
@@ -430,11 +432,15 @@ function resolveLayer(
   }
 }
 
-/** Seed for a component instance: a hash of the layer id's UTF-16 code units, so it is stable in the document. */
-function componentSeed(layerId: string): number {
+/**
+ * Seed for a component instance: a hash of the layer id's UTF-16 code units, chained from the
+ * enclosing instance's seed (0 in a document composition), so it is stable in the document and
+ * differs between same-named layers inside different instances.
+ */
+function deriveComponentSeed(parentSeed: number, layerId: string): number {
   const words: number[] = [];
   for (let i = 0; i < layerId.length; i++) words.push(layerId.charCodeAt(i));
-  return hashWords(0, words);
+  return hashWords(parentSeed, words);
 }
 
 /**
@@ -454,6 +460,7 @@ function resolveComponent(
       `component layer '${layer.id}' nests components deeper than ${MAX_COMPONENT_DEPTH} levels (via ${[...ctx.chain, layer.id].join(" > ")})`,
     );
   const host = ctx.components;
+  const seed = deriveComponentSeed(ctx.componentSeed, layer.id);
   return withChain(ctx, layer.id, () => {
     const out = host.evaluate(layer, {
       frame: layerFrame,
@@ -461,7 +468,7 @@ function resolveComponent(
       durationFrames: layer.outFrame - layer.startFrame,
       width: parent.width,
       height: parent.height,
-      seed: componentSeed(layer.id),
+      seed,
       depth,
     });
     if (out.fps.num !== parent.fps.num || out.fps.den !== parent.fps.den)
@@ -472,16 +479,20 @@ function resolveComponent(
       throw new RangeError(
         `component layer '${layer.id}' ('${layer.componentId}@${layer.componentVersion}') returned a subtree of ${out.durationFrames} frames, too short for its local frame ${layerFrame}`,
       );
-    ctx.budget -= compositionCost(out);
+    // Each output layer also cost the host a schema validation, so it is charged COMPONENT_COST_WEIGHT times.
+    ctx.budget -= compositionCost(out) * COMPONENT_COST_WEIGHT;
     if (ctx.budget < 0)
       throw new RangeError(
-        `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, effects, masks, path and mask vertices, gradient stops); it ran out in component layer '${layer.id}' via layers ${ctx.chain.join(" > ")}. Components placed many times multiply: place fewer instances, or use components with fewer layers`,
+        `evaluating this frame needs more than ${MAX_EVALUATION_UNITS} units of work (layers, shape items, effects, masks, path and mask vertices, gradient stops; a component's output counts ${COMPONENT_COST_WEIGHT} times because the host validates it); it ran out in component layer '${layer.id}' via layers ${ctx.chain.join(" > ")}. Components placed many times multiply: place fewer instances, or use components with fewer layers`,
       );
+    const parentSeed = ctx.componentSeed;
     ctx.componentDepth = depth;
+    ctx.componentSeed = seed;
     try {
       return evaluateComposition(ctx, out, layerFrame, "component");
     } finally {
       ctx.componentDepth = depth - 1;
+      ctx.componentSeed = parentSeed;
     }
   });
 }
@@ -525,6 +536,7 @@ export function evaluateFrame(
     chain: [],
     components: options.components,
     componentDepth: 0,
+    componentSeed: 0,
   };
   return evaluateComposition(ctx, comp, frame, "root");
 }

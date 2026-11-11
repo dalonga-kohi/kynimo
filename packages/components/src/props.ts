@@ -4,6 +4,8 @@ import { z } from "zod";
 
 /** Each axis of a point prop lies within this many units of the origin. */
 export const MAX_POINT = 65536;
+/** Number props, their bounds and their keyframe values lie within this many units of zero. */
+export const MAX_NUMBER = 1e9;
 export const MAX_PROPS_PER_COMPONENT = 64;
 export const MAX_STRING_LENGTH = 10_000;
 export const MAX_ENUM_VALUES = 32;
@@ -12,7 +14,7 @@ export const MAX_ENUM_VALUES = 32;
 export const PROP_NAME_PATTERN = /^[a-z][a-zA-Z0-9]{0,63}$/;
 
 const description = z.string().min(1).max(200);
-const finite = z.number();
+const finite = z.number().min(-MAX_NUMBER).max(MAX_NUMBER);
 const axis = z.number().min(-MAX_POINT).max(MAX_POINT);
 
 export const ColorValueSchema = z.union([

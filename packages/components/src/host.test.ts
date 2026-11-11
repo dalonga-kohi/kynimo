@@ -117,31 +117,55 @@ describe("component host: lookup", () => {
 });
 
 describe("component host: evaluate", () => {
-  it("wraps errors thrown by evaluate, keeps RangeErrors", () => {
-    const boom = hostFor(
-      probe(() => {
-        throw new TypeError("x is undefined");
-      }),
+  it("wraps every error thrown by evaluate, bounded", () => {
+    const wrapped = (thrown: unknown): string => {
+      const h = hostFor(
+        probe(() => {
+          throw thrown;
+        }),
+      );
+      let message = "";
+      expect(() => {
+        try {
+          h.host.evaluate(h.target, ctx());
+        } catch (e) {
+          expect(e).toBeInstanceOf(RangeError);
+          message = (e as Error).message;
+          throw e;
+        }
+      }).toThrow();
+      return message;
+    };
+    expect(wrapped(new TypeError("x is undefined"))).toBe(
+      "component 'probe@1.0.0' on layer 'inst' failed: x is undefined",
     );
-    expect(() => boom.host.evaluate(boom.target, ctx())).toThrow(
-      new RangeError("component 'probe@1.0.0' on layer 'inst' failed: x is undefined"),
+    expect(wrapped(new RangeError("mine"))).toBe(
+      "component 'probe@1.0.0' on layer 'inst' failed: mine",
     );
-    const long = hostFor(
-      probe(() => {
-        throw new Error("z".repeat(1000));
-      }),
+    expect(wrapped("plain string")).toBe(
+      "component 'probe@1.0.0' on layer 'inst' failed: plain string",
     );
-    try {
-      long.host.evaluate(long.target, ctx());
-    } catch (e) {
-      expect((e as Error).message.length).toBeLessThan(300);
-    }
-    const range = hostFor(
-      probe(() => {
-        throw new RangeError("mine");
-      }),
+    expect(wrapped(new Error("z".repeat(1000))).length).toBeLessThan(300);
+    const huge = wrapped(new RangeError("r".repeat(100_000)));
+    expect(huge.length).toBeLessThan(400);
+    expect(huge).toMatch(/component 'probe@1\.0\.0' on layer 'inst'/);
+  });
+
+  it("bounds the error for a huge unknown prop key", () => {
+    const { host, target } = hostFor(
+      probe(() => empty),
+      [inst({}, { ["k".repeat(1_000_000)]: 1 })],
     );
-    expect(() => range.host.evaluate(range.target, ctx())).toThrow(new RangeError("mine"));
+    let message = "";
+    expect(() => {
+      try {
+        host.evaluate(target, ctx());
+      } catch (e) {
+        message = (e as Error).message;
+        throw e;
+      }
+    }).toThrow(/not a prop/);
+    expect(message.length).toBeLessThan(400);
   });
 
   it("gives the same random sequence for the same seed, in [0, 1)", () => {
@@ -271,7 +295,7 @@ describe("component host: output validation", () => {
   it("rejects precomp layers", () => {
     expect(
       outputOf({ ...empty, layers: [layer("p", "precomp", { compositionId: "main" })] }),
-    ).toThrow(/invalid subtree: .*composition/);
+    ).toThrow(/layers\[0\]\.type: components cannot output precomp layers/);
   });
 
   it("rejects audio layers", () => {

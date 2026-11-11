@@ -1,8 +1,14 @@
 import { type ComponentLayer, type Composition, CompositionSchema } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
-import { type ComponentContext, type ComponentHost, MAX_COMPONENT_DEPTH } from "./component.js";
+import {
+  COMPONENT_COST_WEIGHT,
+  type ComponentContext,
+  type ComponentHost,
+  MAX_COMPONENT_DEPTH,
+} from "./component.js";
 import { evaluateFrame, MAX_EVALUATION_UNITS } from "./evaluate.js";
 import { composition, layer, type Obj, project, prop, solid } from "./fixtures.test-util.js";
+import { hashWords } from "./hash.js";
 import type { ResolvedComponentLayer, ResolvedComposition } from "./resolved.js";
 
 const instance = (id: string, over: Obj = {}) =>
@@ -99,6 +105,23 @@ describe("evaluateFrame: component layers", () => {
     expect(Number.isInteger(seeds.a?.[0])).toBe(true);
   });
 
+  it("chains seeds through nesting, leaving root instances on the plain derivation", () => {
+    const seen: { id: string; depth: number; seed: number }[] = [];
+    const { host } = fakeHost((l, ctx) => {
+      seen.push({ id: l.id, depth: ctx.depth, seed: ctx.seed });
+      return ctx.depth === 1 ? out([instance("i1")]) : out([]);
+    });
+    const doc = project([composition("main", [instance("a"), instance("b")])]);
+    evaluateFrame(doc, 0, undefined, { components: host });
+    const inner = seen.filter((c) => c.id === "i1");
+    expect(inner).toHaveLength(2);
+    expect(inner[0]?.seed).not.toBe(inner[1]?.seed);
+    // A root instance's seed is hashWords(0, code units of its id).
+    expect(seen.find((c) => c.id === "a")?.seed).toBe(hashWords(0, [97]));
+    expect(seen.find((c) => c.id === "b")?.seed).toBe(hashWords(0, [98]));
+    expect(inner[0]?.seed).toBe(hashWords(hashWords(0, [97]), [105, 49]));
+  });
+
   it("returns null without calling the host before the instance has started", () => {
     const { host, calls } = fakeHost(() => out([]));
     const doc = project([
@@ -168,5 +191,34 @@ describe("evaluateFrame: component layers", () => {
     );
     const shallow: ComponentHost = { evaluate: () => hidden };
     expect(() => evaluateFrame(doc, 0, undefined, { components: shallow })).not.toThrow();
+  });
+
+  it("charges a prop-driven component by its output size, weighted by COMPONENT_COST_WEIGHT", () => {
+    const outputs = new Map<number, Composition>();
+    const host: ComponentHost = {
+      evaluate(l) {
+        const count = l.props.count as number;
+        let c = outputs.get(count);
+        if (c === undefined) {
+          c = CompositionSchema.parse(
+            out(Array.from({ length: count }, (_, i) => solid(`s${i}`, { hidden: true }))),
+          );
+          outputs.set(count, c);
+        }
+        return c;
+      },
+    };
+    // Unweighted, 100 x 1000 layers is 100k units; weighted by 16 it is 1.6M and exceeds the budget.
+    const place = (n: number, count: number) =>
+      project([
+        composition(
+          "main",
+          Array.from({ length: n }, (_, i) => instance(`c${i}`, { props: { count } })),
+        ),
+      ]);
+    expect(() => evaluateFrame(place(100, 1000), 0, undefined, { components: host })).toThrow(
+      new RegExp(`more than ${MAX_EVALUATION_UNITS} units of work.*${COMPONENT_COST_WEIGHT} times`),
+    );
+    expect(() => evaluateFrame(place(10, 1000), 0, undefined, { components: host })).not.toThrow();
   });
 });

@@ -13,7 +13,7 @@ import {
 } from "@kynimo/scene";
 import { z } from "zod";
 import type { ResolvedProps } from "./define.js";
-import { MAX_POINT, type PropDescriptor } from "./props.js";
+import { MAX_NUMBER, MAX_POINT, type PropDescriptor } from "./props.js";
 
 /** Where a resolution happens and what it needs: the instance, the document's assets and pack, and the frame. */
 export interface ResolveEnv {
@@ -39,6 +39,10 @@ function echo(value: unknown): string {
   return text.length > MAX_ECHO ? `${text.slice(0, MAX_ECHO - 3)}...` : text;
 }
 
+/** A prop name for an error message: the raw text, cut to {@link MAX_ECHO} characters. */
+const echoKey = (key: string): string =>
+  key.length > MAX_ECHO ? `${key.slice(0, MAX_ECHO - 3)}...` : key;
+
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -49,12 +53,13 @@ function numberProblem(d: NumberDescriptor): string {
   if (d.min !== undefined && d.max !== undefined) return `${kind} from ${d.min} to ${d.max}`;
   if (d.min !== undefined) return `${kind} of at least ${d.min}`;
   if (d.max !== undefined) return `${kind} of at most ${d.max}`;
-  return kind;
+  return `${kind} from -${MAX_NUMBER} to ${MAX_NUMBER}`;
 }
 
 const numberOk = (d: NumberDescriptor, v: unknown): v is number =>
   typeof v === "number" &&
   Number.isFinite(v) &&
+  Math.abs(v) <= MAX_NUMBER &&
   (d.integer !== true || Number.isInteger(v)) &&
   (d.min === undefined || v >= d.min) &&
   (d.max === undefined || v <= d.max);
@@ -96,7 +101,7 @@ export function resolveProps(
   for (const key of Object.keys(given)) {
     if (!Object.hasOwn(descriptors, key))
       fail(
-        key,
+        echoKey(key),
         `is not a prop of this component; its props are: ${Object.keys(descriptors).join(", ") || "none"}`,
       );
   }
@@ -138,8 +143,11 @@ export function resolveProps(
         if (track !== null) {
           if (d.animatable !== true) notAnimatable();
           const sampled = sampleNumber(track, env.frame, env.fps);
-          const rounded = d.integer === true ? Math.round(sampled) : sampled;
-          out[name] = clamp(rounded, d.min ?? -Infinity, d.max ?? Infinity);
+          const lo = Math.max(d.min ?? -MAX_NUMBER, -MAX_NUMBER);
+          const hi = Math.min(d.max ?? MAX_NUMBER, MAX_NUMBER);
+          const bounded = clamp(sampled, lo, hi);
+          // Rounding can step outside a fractional bound, so clamp again.
+          out[name] = d.integer === true ? clamp(Math.round(bounded), lo, hi) : bounded;
         } else if (numberOk(d, value)) out[name] = value;
         else wrongType(problem);
         break;
