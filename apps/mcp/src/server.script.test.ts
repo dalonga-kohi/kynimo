@@ -11,7 +11,10 @@ import { MemoryStore } from "./store.js";
 type Structured = Record<string, unknown>;
 
 async function connect(): Promise<Client> {
-  const server = createServer(new KynimoService(new MemoryStore(), "agent"));
+  const server = createServer(
+    // The counted limits are what is tested; a loaded CI runner can outlast the 5 s backstop.
+    new KynimoService(new MemoryStore(), "agent", { scriptLimits: { deadlineMs: 60_000 } }),
+  );
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: "test", version: "0.0.0" });

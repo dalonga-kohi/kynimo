@@ -33,7 +33,7 @@ import {
   type StepResult,
   undo,
 } from "@kynimo/scene";
-import { type ExpandError, expandScript } from "@kynimo/script";
+import { type ExpandError, expandScript, type ScriptLimits } from "@kynimo/script";
 import type { z } from "zod";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import { fingerprint } from "./hash.js";
@@ -326,6 +326,8 @@ export interface ServiceOptions {
   mediaUnavailable?: string;
   /** Override of RENDER_LIMITS.maxAssetBytes, for tests. */
   maxRenderAssetBytes?: number;
+  /** Overrides of SCRIPT_LIMITS, for tests. */
+  scriptLimits?: Partial<ScriptLimits>;
 }
 
 /** Uploads FFmpeg decodes at once; the rest wait their turn. */
@@ -609,6 +611,7 @@ export class ServiceRuntime {
   readonly media: MediaTools | undefined;
   readonly decodeSlots = new Slots(MEDIA_CONCURRENCY);
   readonly maxRenderAssetBytes: number;
+  readonly scriptLimits: Partial<ScriptLimits>;
   readonly mediaUnavailable: string;
 
   constructor(options: ServiceOptions = {}) {
@@ -620,6 +623,7 @@ export class ServiceRuntime {
     this.assetBytes = new RenderCache(options.assetCacheBytes ?? 128 * 1024 * 1024);
     this.media = options.media;
     this.maxRenderAssetBytes = options.maxRenderAssetBytes ?? RENDER_LIMITS.maxAssetBytes;
+    this.scriptLimits = options.scriptLimits ?? {};
     this.mediaUnavailable =
       options.mediaUnavailable ?? "this server has no FFmpeg (install ffmpeg and ffprobe)";
   }
@@ -1461,7 +1465,11 @@ export class KynimoService {
       dryRun,
       async (doc, input, ctx): Promise<IntentExpansion> => {
         const seed = input.seed ?? 0;
-        const r = await expandScript(doc, { source: input.source, seed }, ctx);
+        const r = await expandScript(
+          doc,
+          { source: input.source, seed },
+          { ...ctx, limits: this.rt.scriptLimits },
+        );
         if (!r.ok) throw scriptFault(r.error);
         return {
           ops: r.ops,

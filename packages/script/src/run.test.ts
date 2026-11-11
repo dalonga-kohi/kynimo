@@ -16,6 +16,12 @@ const __collect = () => JSON.stringify(__out);
 const run = (source: string, seed = 1, data: unknown = null, limits = {}) =>
   runScript({ source, seed, sdk: SDK, data }, limits);
 
+/**
+ * The limit tests check the counted limits, not the wall-clock backstop: under a loaded CI runner
+ * (every package's suite in parallel) a run can take longer than the 5 s production deadline.
+ */
+const COUNTED = { deadlineMs: 60_000 };
+
 const errorOf = (r: RunResult) => {
   if (r.ok) throw new Error(`expected an error, got ${JSON.stringify(r.output)}`);
   return r.error;
@@ -90,8 +96,8 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
   });
 
   it("interrupts an endless loop at the same count every time", async () => {
-    const a = await run("for (;;) {}");
-    const b = await run("for (;;) {}");
+    const a = await run("for (;;) {}", 1, null, COUNTED);
+    const b = await run("for (;;) {}", 1, null, COUNTED);
     expect(errorOf(a).kind).toBe("cpu_limit");
     expect(errorOf(b).kind).toBe("cpu_limit");
     expect(a.interrupts).toBe(b.interrupts);
@@ -101,9 +107,14 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
   it("stops memory blowups and runaway recursion, and later runs are unaffected", async () => {
     const source = "rec.push(rec.data().n);";
     const before = await run(source, 1, { n: 5 });
-    const mem = await run("const a = []; for (;;) a.push(new Array(1e5).fill(1));");
+    const mem = await run(
+      "const a = []; for (;;) a.push(new Array(1e5).fill(1));",
+      1,
+      null,
+      COUNTED,
+    );
     expect(errorOf(mem).kind).toBe("memory_limit");
-    const deep = await run("const f = () => f(); f();");
+    const deep = await run("const f = () => f(); f();", 1, null, COUNTED);
     expect(errorOf(deep).kind).toBe("stack_limit");
     const after = await run(source, 1, { n: 5 });
     expect(before.ok && after.ok).toBe(true);
