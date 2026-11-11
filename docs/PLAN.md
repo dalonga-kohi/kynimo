@@ -26,13 +26,6 @@ Animated text draws each cluster as its own paragraph: about 0.25 ms per glyph, 
    - Reuse shaped clusters across frames in the render cache (M7).
 3. Constraint: a layer with an active animator must stay pixel-identical to the plain layer when the animator changes nothing visible; the parity tests in `packages/renderer/src/text-animator.test.ts` and the `text-animators` reference frames are the gate. Raise the budgets only with the measured numbers.
 
-## Behaviors (M4)
-
-1. One list per property, applied after keyframes in a fixed order. Each behavior is a pure function of (frame, base track, params, seed).
-2. Wiggle uses seeded value noise sampled by frame; no accumulated state, so any frame evaluates alone.
-3. Follow/link reads another property's resolved value: validate no cycles at op time, like parenting.
-4. Inertia needs the base track's velocity at its last keyframe: derive it analytically from the segment, never by sampling earlier frames.
-
 ## Intent tools (M4)
 
 The tools agents should reach for first. Each expands to one `apply_ops` batch and returns the ops it produced, so the agent can inspect and adjust.

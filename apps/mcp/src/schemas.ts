@@ -50,23 +50,102 @@ export const MaskBodySchema = z
     `A mask without its id: { name, mode: ${MASK_MODES.join(" | ")}, inverted, path, feather, opacity, expansion }. ${MASK_TRACKS}`,
   );
 
+/** Behavior bodies are loose in `apply_ops` too; the server validates them in full (ADR-0039). */
+export const BehaviorBodySchema = z
+  .looseObject({})
+  .describe(
+    "A behavior without its id: { name, enabled, property, type: wiggle | oscillate | loop | inertia | link, ...parameters of that type }.",
+  );
+
+/**
+ * Layer selectors in `apply_ops` ops are declared as one described id-or-selector: the full
+ * selector schema is 436 characters and every op repeated it (ADR-0030 amendment). The server still
+ * validates each op against the full `OpSchema`, so a bad selector is rejected with its exact path.
+ */
+export const CompactLayerSelectorSchema = z
+  .union([z.string(), z.looseObject({})])
+  .describe(
+    "A layer: its id, or a selector { name, type, composition } matching exactly one layer (name may use * as a wildcard).",
+  );
+
+/**
+ * Rebuilds `schema` with every `LayerSelectorSchema` inside it swapped for the compact one, found by
+ * walking objects, unions, arrays, nullable and optional wrappers, so a new op with a selector is
+ * covered without a list. Anything else passes through unchanged.
+ */
+function compactSelectors<T extends z.ZodType>(schema: T): z.ZodType {
+  const s: z.ZodType = schema;
+  if (s === (LayerSelectorSchema as z.ZodType)) return CompactLayerSelectorSchema;
+  const walked = walk(s);
+  // Only paths that hold a selector are rebuilt; every other schema is returned as it is.
+  return walked === s ? s : withMeta(s, walked);
+}
+
+/** Zod 4 keeps `.describe()` and `.meta()` in a registry keyed by instance, so a rebuild drops them. */
+function withMeta(from: z.ZodType, to: z.ZodType): z.ZodType {
+  const meta = z.globalRegistry.get(from);
+  return meta === undefined ? to : to.meta(meta);
+}
+
+/** One rebuild step: the same schema (identical instance) when no selector is inside it. */
+function walk(s: z.ZodType): z.ZodType {
+  if (s instanceof z.ZodObject) {
+    const fields = Object.entries(s.shape as z.ZodRawShape) as [string, z.ZodType][];
+    const swapped = fields.map(([key, field]) => [key, compactSelectors(field)] as const);
+    if (swapped.every(([key, next]) => next === s.shape[key])) return s;
+    // safeExtend keeps the object's refinements; the field types change only for selectors.
+    return (s as z.ZodObject<z.ZodRawShape>).safeExtend(Object.fromEntries(swapped));
+  }
+  if (s instanceof z.ZodNullable) {
+    const inner = compactSelectors(s.unwrap() as z.ZodType);
+    return inner === s.unwrap() ? s : inner.nullable();
+  }
+  if (s instanceof z.ZodOptional) {
+    const inner = compactSelectors(s.unwrap() as z.ZodType);
+    return inner === s.unwrap() ? s : inner.optional();
+  }
+  if (s instanceof z.ZodArray) {
+    const element = compactSelectors(s.element as z.ZodType);
+    if (element === s.element) return s;
+    return z.array(element).check(...((s.def.checks ?? []) as never[]));
+  }
+  if (s instanceof z.ZodUnion) {
+    const options = (s.options as z.ZodType[]).map(compactSelectors);
+    if (options.every((o, i) => o === (s.options as z.ZodType[])[i])) return s;
+    const tuple = options as [z.ZodType, z.ZodType, ...z.ZodType[]];
+    // A discriminated union stays one (same discriminator), so it lists as before.
+    const discriminator = (s.def as { discriminator?: string }).discriminator;
+    return discriminator === undefined
+      ? z.union(tuple)
+      : z.discriminatedUnion(discriminator, tuple as unknown as [z.ZodObject, ...z.ZodObject[]]);
+  }
+  return s;
+}
+
 type AnyOp = (typeof OpSchema.options)[number];
 /** The op name of an option; setTransformTrack is itself a union of per-property variants. */
 const opName = (o: AnyOp): string =>
   "shape" in o ? o.shape.op.value : (o.options[0]?.shape.op.value ?? "");
-const compactOptions = OpSchema.options.map((o: AnyOp) => {
+const compactOptions = OpSchema.options.map((o: AnyOp) => compactSelectors(compactBody(o)));
+
+function compactBody(o: AnyOp) {
   const name = opName(o);
   // setTransformTrack: one variant per property, collapsed to one with a loose track.
   if (name === "setTransformTrack")
     return z.strictObject({
       op: z.literal("setTransformTrack"),
-      layer: LayerSelectorSchema,
+      layer: CompactLayerSelectorSchema,
       property: z.enum(TRANSFORM_PROPERTIES),
       track: TrackBodySchema,
     });
   const obj = o as z.ZodObject<z.ZodRawShape>;
   if (name === "addLayer") return obj.extend({ layer: LayerBodySchema });
   if (name === "addMask") return obj.extend({ mask: MaskBodySchema });
+  if (name === "addBehavior") return obj.extend({ behavior: BehaviorBodySchema });
+  if (name === "updateBehavior")
+    return obj.extend({
+      set: z.looseObject({}).describe("Behavior fields to replace (not id or type)."),
+    });
   if (name === "addAsset")
     return obj.extend({
       asset: z
@@ -80,14 +159,18 @@ const compactOptions = OpSchema.options.map((o: AnyOp) => {
       set: z.looseObject({}).describe("Any mask fields to replace (not id); see addMask.mask."),
     });
   return o;
-}) as unknown as [AnyOp, ...AnyOp[]];
+}
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set` and `addAsset.asset`,
- * which the server validates in full against `OpSchema` before anything is applied.
+ * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`
+ * and every layer selector (`layer`, `parent`, `matte.layer`, `layers[]`, `target.layer`, ...), which
+ * the server validates in full against `OpSchema` before anything is applied.
  */
-export const CompactOpSchema = z.discriminatedUnion("op", compactOptions);
+export const CompactOpSchema = z.discriminatedUnion(
+  "op",
+  compactOptions as unknown as [AnyOp, ...AnyOp[]],
+);
 
 export const ProjectIdSchema = z
   .string()
@@ -545,6 +628,8 @@ export const DescribeMotionOutput = z.looseObject({
         .looseObject({ composition: z.string(), time_offset: z.number().int(), fps: Fps })
         .optional(),
       parent_of_listed: z.literal(true).optional(),
+      animators: z.array(z.string()).optional(),
+      behaviors: z.array(z.string()).optional(),
       properties: z.array(
         z.looseObject({
           property: z.string(),

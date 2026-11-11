@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BehaviorSchema, MAX_BEHAVIORS } from "./behavior.js";
 import { BlendModeSchema, MAX_MASKS, MaskSchema, TrackMatteSchema } from "./compositing.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { AssetIdSchema, CompositionIdSchema, ID_PATTERN, LayerIdSchema } from "./ids.js";
@@ -54,6 +55,11 @@ const visual = {
   ...common,
   parent: LayerIdSchema.nullable(),
   transform: TransformSchema,
+  /**
+   * Motion on transform properties that keyframes don't describe: wiggle, loops, links (ADR-0039).
+   * Absent means none, so layers written before format 7 still validate (ADR-0024).
+   */
+  behaviors: z.array(BehaviorSchema).max(MAX_BEHAVIORS).default([]),
 };
 
 /**

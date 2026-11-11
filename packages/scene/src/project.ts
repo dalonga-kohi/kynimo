@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AssetSchema } from "./asset.js";
+import { type Behavior, isVectorTransformProperty } from "./behavior.js";
 import { CompositionSchema, isValidFrameRate } from "./composition.js";
 import { BUNDLED_FONT_FAMILIES, isBundledFontFamily } from "./fonts.js";
 import { CompositionIdSchema, ID_PATTERN } from "./ids.js";
@@ -9,6 +10,7 @@ import { SPRING_DAMPING, SPRING_RESPONSE } from "./limits.js";
 import { NameSchema, SemverSchema } from "./primitives.js";
 import type { ShapeItem } from "./shape.js";
 import { type FrameRate, springSettleFrames } from "./spring.js";
+import { TRANSFORM_PROPERTIES } from "./transform.js";
 import { SCENE_FORMAT_VERSION } from "./version.js";
 
 /**
@@ -216,6 +218,196 @@ function checkChainCycles(
   }
 }
 
+/** `a.position`-style name of a (layer, property) node in a link cycle. */
+const linkNode = (layer: string, property: string) => `${layer}.${property}`;
+
+/**
+ * Behavior rules a field-level schema cannot express (ADR-0039): unique ids, value kinds that match
+ * the property, one link / inertia / loop per direction per property, and link sources. Every
+ * message names the layer and behavior and says how to fix it.
+ */
+function checkBehaviors(
+  layer: Exclude<Layer, { type: "audio" }>,
+  layerById: ReadonlyMap<string, Layer>,
+  compOf: ReadonlyMap<string, string>,
+  compId: string,
+  at: (...rest: (string | number)[]) => Path,
+  issue: Issue,
+): void {
+  const seen = new Set<string>();
+  const perProperty = new Map<
+    string,
+    { link: number; inertia: number; loopIn: number; loopOut: number }
+  >();
+  const kindOf = (property: string) =>
+    isVectorTransformProperty(property) ? "[x, y]" : "a number";
+  const matches = (value: unknown, property: string) =>
+    Array.isArray(value) === isVectorTransformProperty(property);
+  const who = (b: Behavior) => `behavior '${b.id}' of layer '${layer.id}'`;
+
+  layer.behaviors.forEach((b, bi) => {
+    if (seen.has(b.id))
+      issue(
+        at("behaviors", bi, "id"),
+        `duplicate behavior id '${b.id}' in layer '${layer.id}'; behavior ids are unique within a layer, rename one`,
+      );
+    seen.add(b.id);
+
+    // Values that add to the property have the property's kind.
+    const wrongKind = (path: Path, got: unknown, field: string) =>
+      issue(
+        at("behaviors", bi, ...path),
+        `${who(b)} drives ${b.property}, so ${field} must be ${kindOf(b.property)}, not ${Array.isArray(got) ? "[x, y]" : "a number"}`,
+      );
+    if (b.type === "wiggle" || b.type === "oscillate") {
+      const track = b.amplitude;
+      if ("value" in track) {
+        if (!matches(track.value, b.property))
+          wrongKind(["amplitude", "value"], track.value, "amplitude");
+      } else
+        track.keyframes.forEach((kf, ki) => {
+          if (!matches(kf.value, b.property))
+            wrongKind(["amplitude", "keyframes", ki, "value"], kf.value, "amplitude");
+        });
+    }
+    if (b.type === "link" && !matches(b.offset, b.property))
+      wrongKind(["offset"], b.offset, "offset");
+    if (b.type === "wiggle" && b.linked && !isVectorTransformProperty(b.property))
+      issue(
+        at("behaviors", bi, "linked"),
+        `${who(b)} drives ${b.property}, which is a single number; 'linked' applies to anchorPoint, position and scale only, set it to false`,
+      );
+
+    const counts = perProperty.get(b.property) ?? { link: 0, inertia: 0, loopIn: 0, loopOut: 0 };
+    perProperty.set(b.property, counts);
+    const again = (what: string) =>
+      issue(
+        at("behaviors", bi, "type"),
+        `${who(b)} is a second ${what} on ${b.property}; a property takes at most one, remove or change one`,
+      );
+    if (b.type === "link" && counts.link++ > 0) again("link");
+    if (b.type === "inertia" && counts.inertia++ > 0) again("inertia");
+    if (b.type === "loop") {
+      if (b.direction === "in" ? counts.loopIn++ > 0 : counts.loopOut++ > 0)
+        again(`loop ${b.direction}`);
+    }
+
+    if (b.type !== "link") return;
+    const sourcePath = (...rest: string[]) => at("behaviors", bi, "source", ...rest);
+    const source = layerById.get(b.source.layer);
+    if (source === undefined) {
+      const elsewhere = compOf.get(b.source.layer);
+      issue(
+        sourcePath("layer"),
+        elsewhere === undefined
+          ? `layer '${layer.id}' has a link behavior '${b.id}' whose source layer '${b.source.layer}' does not exist (was it removed?); remove the behavior or point source.layer at an existing layer of composition '${compId}'`
+          : `layer '${layer.id}' has a link behavior '${b.id}' whose source layer '${b.source.layer}' is in composition '${elsewhere}', not '${compId}'; a link source must be a layer of the same composition`,
+      );
+    } else if (source.type === "audio")
+      issue(
+        sourcePath("layer"),
+        `${who(b)} links to '${source.id}', an audio layer, which has no transform; link to a layer that has one`,
+      );
+    if (isVectorTransformProperty(b.source.property) !== isVectorTransformProperty(b.property))
+      issue(
+        sourcePath("property"),
+        `${who(b)} drives ${b.property} (${kindOf(b.property)}) from ${b.source.property} (${kindOf(b.source.property)}); link properties of the same kind`,
+      );
+    if (b.source.layer === layer.id && b.source.property === b.property)
+      issue(
+        sourcePath("property"),
+        `${who(b)} reads its own ${b.property}; link to another property or another layer`,
+      );
+  });
+
+  // A link replaces the property's value, so a loop or inertia on the same property would be hidden.
+  layer.behaviors.forEach((b, bi) => {
+    if ((b.type !== "loop" && b.type !== "inertia") || !perProperty.get(b.property)?.link) return;
+    issue(
+      at("behaviors", bi, "property"),
+      `${who(b)} (${b.type}) is on ${b.property}, which also has a link; the link would hide the ${b.type}, so remove one of them or move this ${b.type} to another property`,
+    );
+  });
+}
+
+/**
+ * Link cycles over (layer, property) nodes, linear time, iterative. Every link counts, enabled or
+ * not and whatever its delay. A cycle is reported once, on the outgoing link of its first member
+ * (layer order, then property order), with the loop listed.
+ */
+function checkLinkCycles(
+  layers: readonly Layer[],
+  at: (layerIndex: number, ...rest: (string | number)[]) => Path,
+  issue: Issue,
+): void {
+  type Edge = { to: string; path: Path };
+  const rank = new Map<string, number>(); // layer order, then property order
+  const edges = new Map<string, Edge[]>();
+  const ids = new Set(layers.map((l) => l.id as string));
+  layers.forEach((layer, li) => {
+    if (!hasTransform(layer)) return;
+    for (const property of TRANSFORM_PROPERTIES) rank.set(linkNode(layer.id, property), rank.size);
+    layer.behaviors.forEach((b, bi) => {
+      // A self-read is reported by checkBehaviors, a missing source by the source check.
+      if (b.type !== "link" || !ids.has(b.source.layer)) return;
+      if (b.source.layer === layer.id && b.source.property === b.property) return;
+      const from = linkNode(layer.id, b.property);
+      const list = edges.get(from) ?? [];
+      list.push({
+        to: linkNode(b.source.layer, b.source.property),
+        path: at(li, "behaviors", bi, "source"),
+      });
+      edges.set(from, list);
+    });
+  });
+
+  const state = new Map<string, 1 | 2>(); // 1 = on the current path, 2 = finished
+  for (const root of rank.keys()) {
+    if (state.has(root) || !edges.has(root)) continue;
+    const path: string[] = [root];
+    const cursor: number[] = [0];
+    state.set(root, 1);
+    while (path.length > 0) {
+      const node = path[path.length - 1] as string;
+      const index = cursor[cursor.length - 1] as number;
+      const out = edges.get(node) ?? [];
+      if (index >= out.length) {
+        state.set(node, 2);
+        path.pop();
+        cursor.pop();
+        continue;
+      }
+      cursor[cursor.length - 1] = index + 1;
+      const edge = out[index] as Edge;
+      const seen = state.get(edge.to);
+      if (seen === 1) {
+        const start = path.indexOf(edge.to);
+        const loop = path.slice(start);
+        // The edge leaving loop[k] is the one the walk took from path[start + k].
+        let first = 0;
+        loop.forEach((n, k) => {
+          if ((rank.get(n) ?? 0) < (rank.get(loop[first] as string) ?? 0)) first = k;
+        });
+        const leave = (k: number) => {
+          const from = path[start + k] as string;
+          const taken = (cursor[start + k] as number) - 1;
+          return (edges.get(from) as Edge[])[taken] as Edge;
+        };
+        const rotated = [...loop.slice(first), ...loop.slice(0, first)];
+        const shown = rotated.slice(0, 6).join(" -> ");
+        issue(
+          leave(first).path,
+          `link cycle (${loop.length} ${loop.length === 1 ? "property" : "properties"}): ${rotated.length > 6 ? `${shown} -> ... -> ` : `${shown} -> `}${rotated[0]}; remove the link from one of these, even a delayed or disabled link counts`,
+        );
+      } else if (seen === undefined) {
+        state.set(edge.to, 1);
+        path.push(edge.to);
+        cursor.push(0);
+      }
+    }
+  }
+}
+
 /**
  * Cross-reference checks that a field-level schema cannot express. Every message
  * names the location and the change that fixes it, so an agent can act on it.
@@ -280,6 +472,10 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       `main composition '${project.mainCompositionId}' does not exist; set it to one of: ${[...compositionIds].join(", ")}`,
     );
 
+  const compOf = new Map<string, string>(); // layer id -> composition id (first one wins)
+  for (const comp of project.compositions)
+    for (const l of comp.layers) if (!compOf.has(l.id)) compOf.set(l.id, comp.id);
+
   const seenLayerIds = new Set<string>();
   const seenMarkerIds = new Set<string>();
 
@@ -317,6 +513,8 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
             `parent '${layer.parent}' is an audio layer; audio layers cannot be parents`,
           );
       }
+
+      if (hasTransform(layer)) checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
 
       if (isDrawn(layer)) {
         const seenMasks = new Set<string>();
@@ -436,6 +634,11 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
           ["compositions", ci, "layers", li, "matte", "layerId"],
           `track matte cycle: ${ids.join(" -> ")}; set matte to null on one of these layers`,
         ),
+    );
+    checkLinkCycles(
+      comp.layers,
+      (li, ...rest) => ["compositions", ci, "layers", li, ...rest],
+      issue,
     );
   });
 

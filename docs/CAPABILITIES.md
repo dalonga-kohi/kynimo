@@ -128,6 +128,8 @@ Kinetic type is the most-requested motion graphic, so text gets the deepest mode
 
 Behaviors cover what expressions are mostly used for without arbitrary code (ADR-0001, determinism invariant). Motion that really needs code goes into a custom component or shader (§8).
 
+Behaviors today (ADR-0039, format v7): up to 16 per transform layer, on `anchorPoint`, `position`, `scale`, `rotation`, `skew` and `opacity`. Types: `wiggle` (seeded value noise, octaves, `linked` axes), `oscillate` (sine, triangle, square, sawtooth), `loop` (in or out; cycle, pingpong, offset, continue), `inertia` (overshoot and settle after a keyframe lands) and `link` (another layer's property × multiply + offset, optionally `delay` frames later; cycles refused). Ops `addBehavior`, `updateBehavior`, `removeBehavior` through `apply_ops`; `describe_motion` lists each behavior as a line and the manifest states the limits, including a per-frame budget of 100 000 link steps. The `add_behavior` intent tool and behavior presets are still M4-later.
+
 Spring note: a spring segment runs from its keyframe toward the next keyframe's value, and its length is set by the spring's settle time. The next keyframe must sit at or after that settle frame. Placing it earlier is a validation error, and the error suggests a fix op: move the keyframe to the settle frame, or switch the segment to bezier. Every stored keyframe value is therefore the value rendered at its frame, and no velocity carries into the next segment. `animate` places keyframes at settle frames automatically.
 
 ## 7. Effects

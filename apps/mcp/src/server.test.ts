@@ -3,6 +3,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { type CallToolResult, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  BehaviorBodySchema,
+  CompactLayerSelectorSchema,
+  LayerBodySchema,
+  MaskBodySchema,
+  TrackBodySchema,
+} from "./schemas.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
 import { MemoryStore } from "./store.js";
@@ -91,6 +98,39 @@ describe("MCP server", () => {
   it("keeps the tool listing compact enough for a model's context", async () => {
     const { tools } = await client.listTools();
     expect(JSON.stringify(tools).length).toBeLessThan(60_000);
+  });
+
+  it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
+    const { tools } = await client.listTools();
+    const input = tools.find((t) => t.name === "apply_ops")?.inputSchema as unknown as {
+      properties: { ops: { items: { oneOf: Record<string, unknown>[] } } };
+    };
+    const variants = input.properties.ops.items.oneOf;
+    // The op union is still a discriminated one: oneOf with a literal `op` on every variant.
+    expect(variants.length).toBeGreaterThan(10);
+    for (const v of variants)
+      expect((v.properties as Record<string, { const?: string }>).op?.const).toBeTypeOf("string");
+    const prop = (op: string, name: string): Record<string, unknown> => {
+      const v = variants.find(
+        (x) => (x.properties as Record<string, { const?: string }>).op?.const === op,
+      );
+      const props = (v?.properties ?? {}) as Record<string, Record<string, unknown>>;
+      return props[name] ?? {};
+    };
+    expect(prop("addLayer", "layer").description).toBe(LayerBodySchema.description);
+    expect(prop("addMask", "mask").description).toBe(MaskBodySchema.description);
+    expect(prop("updateMask", "set").description).toMatch(/^Any mask fields to replace/);
+    expect(prop("addBehavior", "behavior").description).toBe(BehaviorBodySchema.description);
+    expect(prop("updateBehavior", "set").description).toMatch(/^Behavior fields to replace/);
+    expect(prop("addAsset", "asset").description).toMatch(/^An asset entry without its id/);
+    expect(prop("setTransformTrack", "track").description).toBe(TrackBodySchema.description);
+    expect(prop("setTransformTrack", "layer").description).toBe(
+      CompactLayerSelectorSchema.description,
+    );
+    // Selectors elsewhere (matte.layer, parent) are the compact described one too.
+    expect(
+      JSON.stringify(variants).split(CompactLayerSelectorSchema.description as string).length - 1,
+    ).toBeGreaterThan(5);
   });
 
   it("describes motion with output the client validates", async () => {
@@ -229,6 +269,35 @@ describe("MCP server", () => {
       ops: [{ op: "addMask", layer: "s", mask: { name: "m", mode: "add" } }],
     });
     expect(JSON.stringify(bad.errors)).toContain('"ops",0,"mask","inverted"');
+  });
+
+  it("validates layer selectors in apply_ops on the server, though the listing declares them loosely", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    const bad = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      ops: [{ op: "updateLayer", layer: { nme: "s" }, set: { hidden: true } }],
+    });
+    expect(JSON.stringify(bad.errors)).toContain('"ops",0,"layer"');
+    const badParent = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w3",
+      ops: [{ op: "setParent", layer: "s", parent: { type: "bogus" } }],
+    });
+    expect(JSON.stringify(badParent.errors)).toContain('"ops",0,"parent"');
   });
 
   it("builds and animates a layer end to end", async () => {

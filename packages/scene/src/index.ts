@@ -1,5 +1,6 @@
 export * from "./apply.js";
 export * from "./asset.js";
+export * from "./behavior.js";
 export type { Change, MarkerOwner } from "./changes.js";
 export * from "./compositing.js";
 export * from "./composition.js";

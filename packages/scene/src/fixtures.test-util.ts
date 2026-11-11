@@ -33,12 +33,14 @@ export const visual = (id: string, parent: string | null = null): Obj => ({
   blendMode: "normal",
   matte: null,
   masks: [],
+  behaviors: [],
 });
 
 export const nullLayer = (id: string, parent: string | null = null): Obj => ({
   ...common(id),
   parent,
   transform: transform(),
+  behaviors: [],
   type: "null",
 });
 

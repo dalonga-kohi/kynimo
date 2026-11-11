@@ -1,4 +1,6 @@
 import {
+  BEHAVIOR_LIMITS,
+  BEHAVIOR_SUPPORT,
   BLEND_MODE_SUPPORT,
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
@@ -57,9 +59,8 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   effects: unavailable(
     "blur, drop shadow, glow, color effects and adjustment layers that use them arrive in M4",
   ),
-  behaviors: unavailable("wiggle, loop, inertia, follow and oscillate arrive in M4"),
   intent_tools: unavailable(
-    "animate, apply_preset, stagger and retime arrive in M4; use set_keyframes or apply_ops",
+    "animate, apply_preset, stagger, retime and add_behavior arrive in M4; use set_keyframes or apply_ops (addBehavior)",
   ),
   svg_import: unavailable("SVG import arrives in M4; draw with shape layers"),
   shaders: unavailable("built-in shader effects arrive in M4; custom GLSL in M6"),
@@ -97,8 +98,9 @@ export function capabilityManifest(server: { name: string; version: string }) {
       mask_modes: MASK_MODE_SUPPORT,
       track_matte_modes: MATTE_MODE_SUPPORT,
       text_animator_properties: TEXT_ANIMATOR_SUPPORT,
+      behaviors: BEHAVIOR_SUPPORT,
     },
-    limits: { text_animators: TEXT_ANIMATOR_LIMITS },
+    limits: { text_animators: TEXT_ANIMATOR_LIMITS, behaviors: BEHAVIOR_LIMITS },
     assets: ASSET_SUPPORT,
     render: {
       tools: ["render_frames", "render_contact_sheet"],

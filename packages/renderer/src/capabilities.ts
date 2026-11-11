@@ -1,11 +1,14 @@
-import type {
-  AnimatorProperties,
-  BlendMode,
-  LayerType,
-  MaskMode,
-  Paint,
-  ShapeItem,
-  TrackMatte,
+import { MAX_FRAME_LINK_STEPS } from "@kynimo/engine";
+import {
+  type AnimatorProperties,
+  type BehaviorType,
+  type BlendMode,
+  type LayerType,
+  MAX_BEHAVIORS,
+  type MaskMode,
+  type Paint,
+  type ShapeItem,
+  type TrackMatte,
 } from "@kynimo/scene";
 import { MAX_FRAME_SHAPE_WORK, MAX_SHAPE_LAYER_WORK } from "./binding.js";
 import { BLEND_MODE_IDS } from "./compositor/pipeline.js";
@@ -99,6 +102,24 @@ export const TEXT_ANIMATOR_SUPPORT: Readonly<Record<keyof AnimatorProperties, Su
 export const TEXT_ANIMATOR_LIMITS = {
   glyphsPerLayer: MAX_ANIMATED_CLUSTERS,
   glyphsPerFrame: MAX_FRAME_ANIMATED_CLUSTERS,
+} as const;
+
+/**
+ * Behavior types (ADR-0039), typed over the scene's list like the tables above: a new type does
+ * not compile until the renderer says what it does with it.
+ */
+export const BEHAVIOR_SUPPORT: Readonly<Record<BehaviorType, Support>> = {
+  wiggle: RENDERS,
+  oscillate: RENDERS,
+  loop: { status: "renders", note: "does nothing on a property with fewer than two keyframes" },
+  inertia: RENDERS,
+  link: { status: "renders", note: "reads another layer of the same composition" },
+};
+
+/** Behavior limits, stated in the manifest. */
+export const BEHAVIOR_LIMITS = {
+  behaviorsPerLayer: MAX_BEHAVIORS,
+  linkStepsPerFrame: MAX_FRAME_LINK_STEPS,
 } as const;
 
 export const PAINT_SUPPORT: Readonly<Record<Paint["type"], Support>> = {

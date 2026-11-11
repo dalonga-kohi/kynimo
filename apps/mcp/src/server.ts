@@ -51,7 +51,8 @@ Workflow: create_project or list_projects → get_scene (summary) → write with
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
-Text layers take animators (like After Effects): each has a range selector (unit characters/words/lines, start/end/offset as fractions of the text, shape, ease, order incl. seeded random) that weights each unit (0..1, times amount), and properties (position, scale, rotation, opacity, fill, tracking; blur is accepted but not drawn yet) applied at that weight. Selected units get the properties, so to reveal text set opacity 0 and sweep start from 0 to 1 (the unrevealed part stays selected); units the window cuts are selected partly.`;
+Text layers take animators (like After Effects): each has a range selector (unit characters/words/lines, start/end/offset as fractions of the text, shape, ease, order incl. seeded random) that weights each unit (0..1, times amount), and properties (position, scale, rotation, opacity, fill, tracking; blur is accepted but not drawn yet) applied at that weight. Selected units get the properties, so to reveal text set opacity 0 and sweep start from 0 to 1 (the unrevealed part stays selected); units the window cuts are selected partly.
+Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
   content: [{ type: "text", text: JSON.stringify(structured) }],
@@ -338,7 +339,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Apply operations",
       description:
-        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
+        "Applies a batch of scene operations atomically and returns the new version. Ops: addLayer, updateLayer, removeLayer, setTransformTrack, reorderLayer, setParent, addMarker, removeMarker, addMask, updateMask, removeMask, addBehavior, updateBehavior, removeBehavior, setMatte, precompose, addAsset, removeAsset (add files with upload_asset instead of addAsset). Errors name the failing op and field as a path (['ops', i, field]).",
       inputSchema: ApplyOpsInput,
       outputSchema: WriteOutput,
       annotations: DESTRUCTIVE,

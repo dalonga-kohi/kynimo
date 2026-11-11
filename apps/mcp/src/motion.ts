@@ -1,5 +1,7 @@
 import {
   type Animatable,
+  type Behavior,
+  type TransformProperty as BehaviorProperty,
   type Composition,
   type Layer,
   type Project,
@@ -72,6 +74,8 @@ export interface LayerMotion {
   properties: MotionProperty[];
   /** Text layers with animators: one line each, so a per-character reveal reads as one idea. */
   animators?: string[];
+  /** Layers with behaviors: one line each, enabled or not (disabled ones say so). */
+  behaviors?: string[];
 }
 
 export interface MotionDescription {
@@ -257,6 +261,9 @@ export function describeMotion(
       ...(layer.type === "text" && layer.animators.length > 0
         ? { animators: layer.animators.map(describeAnimator) }
         : {}),
+      ...("behaviors" in layer && layer.behaviors.length > 0
+        ? { behaviors: layer.behaviors.map((b) => describeBehavior(layer, b)) }
+        : {}),
       properties,
     });
   });
@@ -288,6 +295,66 @@ export function describeAnimator(a: TextAnimator): string {
       ? ""
       : `, ${s.order} order${s.order === "random" ? ` (seed ${s.seed})` : ""}`;
   return `${a.name}: ${changes.length > 0 ? changes.join(", ") : "no properties"} by ${s.unit.replace(/s$/, "")}, ${s.shape} range ${staticOrAnimated(s.start)}..${staticOrAnimated(s.end)}${"value" in s.offset && s.offset.value === 0 ? "" : ` offset ${staticOrAnimated(s.offset)}`}${order}`;
+}
+
+/** A behavior amount as listed: a number or `[x, y]`, rounded. */
+const amount = (v: number | readonly number[]): string =>
+  typeof v === "number" ? String(round(v)) : `[${v.map((c) => round(c)).join(", ")}]`;
+
+/** A behavior parameter when constant, else "animated". */
+const constantOrAnimated = (track: Animatable<number | number[]>): string =>
+  "value" in track ? amount(track.value) : "animated";
+
+/** Keyframes a transform property has, per axis when position is split. */
+function keyframeCounts(layer: Layer, property: BehaviorProperty): number[] {
+  if (!("transform" in layer)) return [];
+  const track = layer.transform[property] as unknown as Record<string, unknown>;
+  if ("separate" in track) {
+    const { x, y } = track.separate as Record<"x" | "y", Record<string, unknown>>;
+    return [x, y].map((t) => (Array.isArray(t.keyframes) ? t.keyframes.length : 0));
+  }
+  return [Array.isArray(track.keyframes) ? track.keyframes.length : 0];
+}
+
+/** One line per behavior: type, property, parameters; disabled ones say so. */
+export function describeBehavior(layer: Layer, b: Behavior): string {
+  const p = b.property;
+  let line: string;
+  switch (b.type) {
+    case "wiggle": {
+      const freq =
+        "value" in b.frequency ? `${amount(b.frequency.value)} Hz` : "animated frequency";
+      line = `wiggle ${p} ±${constantOrAnimated(b.amplitude)} at ${freq}, ${b.octaves} octave${b.octaves === 1 ? "" : "s"}, seed ${b.seed}${b.linked ? ", linked" : ""}`;
+      break;
+    }
+    case "oscillate": {
+      const freq =
+        "value" in b.frequency ? `${amount(b.frequency.value)} Hz` : "animated frequency";
+      line = `oscillate ${p} ±${constantOrAnimated(b.amplitude)} at ${freq}, ${b.waveform}${b.phase === 0 ? "" : `, phase ${round(b.phase)}°`}`;
+      break;
+    }
+    case "loop": {
+      const range =
+        b.span === 0
+          ? "all keyframes"
+          : `${b.direction === "out" ? "last" : "first"} ${b.span} segment${b.span === 1 ? "" : "s"}`;
+      const idle = keyframeCounts(layer, p).every((n) => n < 2);
+      line = `loop ${b.direction} on ${p}: ${b.mode}, ${range}${idle ? " — no effect: needs at least two keyframes" : ""}`;
+      break;
+    }
+    case "inertia": {
+      const idle = keyframeCounts(layer, p).every((n) => n < 2);
+      line = `inertia on ${p}: amplitude ${round(b.amplitude)} s, ${round(b.frequency)} Hz, decay ${round(b.decay)}/s${idle ? " — no effect: needs at least two keyframes" : ""}`;
+      break;
+    }
+    case "link": {
+      const neutral =
+        typeof b.offset === "number" ? b.offset === 0 : b.offset.every((c) => c === 0);
+      line = `link ${p} ← '${b.source.layer}'.${b.source.property}${b.multiply === 1 ? "" : ` × ${round(b.multiply)}`}${neutral ? "" : typeof b.offset === "number" && b.offset < 0 ? ` - ${amount(-b.offset)}` : ` + ${amount(b.offset)}`}${b.delay === 0 ? "" : `, ${b.delay} frame${b.delay === 1 ? "" : "s"} later`}`;
+      break;
+    }
+  }
+  return b.enabled ? line : `${line} (disabled)`;
 }
 
 const parentOf = (layer: Layer | undefined): string | null =>

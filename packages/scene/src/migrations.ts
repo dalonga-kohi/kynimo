@@ -72,6 +72,17 @@ function addTextAnimators(doc: Json): Json {
   return doc;
 }
 
+/** 6 → 7: layers with a transform gain an empty behavior list (ADR-0039), which changes nothing on screen. */
+function addBehaviors(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers)
+      if (isJson(layer) && layer.type !== "audio" && !("behaviors" in layer)) layer.behaviors = [];
+  }
+  return doc;
+}
+
 /**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
@@ -84,6 +95,7 @@ export const MIGRATIONS: readonly Migration[] = [
   // 4 → 5 only adds the trim, round corners and repeater shape items (ADR-0034).
   { from: 4, migrate: (doc) => doc },
   { from: 5, migrate: addTextAnimators },
+  { from: 6, migrate: addBehaviors },
 ];
 
 export interface MigrationError {

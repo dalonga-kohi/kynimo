@@ -9,6 +9,9 @@ export const ARC_LENGTH_SAMPLES = 128;
 /** A spatial path parameterized by distance: `at(p)` is the point at fraction `p` of its length. */
 export interface MotionPath<V extends Vector> {
   readonly length: number;
+  /** Unit direction of travel at the start and at the end (all zeros for a degenerate path). */
+  readonly startDir: readonly number[];
+  readonly endDir: readonly number[];
   /** `p` in 0..1 walks the path at constant speed; outside 0..1 it continues along the end tangent. */
   at(p: number): Readonly<V>;
 }
@@ -63,6 +66,8 @@ export function cubicPath<V extends Vector>(p0: V, p1: V, p2: V, p3: V): MotionP
 
   return {
     length,
+    startDir,
+    endDir,
     at(p) {
       if (p === 0 || length === 0) return p0;
       if (p === 1) return p3;
