@@ -73,7 +73,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 - Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
 - Tool groups (project, read, precise, intent, code, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
-- Scripts (ADR-0036): `run_script` runs agent-written TypeScript once in a QuickJS (WebAssembly) sandbox, one fresh instance per script, with no clock, randomness or host access and counted limits. Its output is a batch of operations the host validates and applies like any other.
+- Scripts (ADR-0036): `run_script` runs agent-written TypeScript once in a QuickJS (WebAssembly) sandbox, one worker thread and one fresh instance per script, with no clock, randomness or host access and counted limits. Its output is a batch of operations the host validates and applies like any other: the sandbox records entries (ops and intent calls), the host replays them with `@kynimo/intent` (ADR-0041).
 - Reliability contracts (ADR-0018): a capability manifest generated from code, idempotency keys and outcome lookup on writes, declared limits and a content-addressed cache on renders, cancellable jobs, fidelity reports on every import and export.
 
 ## Web app — `apps/web`
@@ -98,7 +98,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `apps/mcp`            | `@kynimo/mcp` — MCP server: tools over scene operations, project stores incl. Postgres, render tools via capture (ADR-0024, ADR-0026, ADR-0029) | M3         |
 | `packages/guidelines` | `@kynimo/guidelines` — pack format, built-in packs, token resolution (ADR-0037); quality rules in M5                                            | M4         |
 | `packages/intent`     | `@kynimo/intent` — pure expansions of intent tools (animate, stagger, retime, presets) into operations over guideline tokens (ADR-0040)         | M4         |
-| `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036)                                                                           | M4         |
+| `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036, ADR-0041)                                                                 | M4         |
 | `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
