@@ -1,9 +1,12 @@
 import { sampleNumber, samplePosition, sampleVector } from "@kynimo/engine";
+import type { GuidelinePack } from "@kynimo/guidelines";
 import {
   type Animatable,
+  type FrameRate,
   type Interpolation,
   isVectorTransformProperty,
   type Keyframe,
+  type Layer,
   type Op,
   type PositionKeyframe,
   type PositionTrack,
@@ -15,7 +18,7 @@ import {
   Vec2Schema,
 } from "@kynimo/scene";
 import { z } from "zod";
-import { IntentError } from "./errors.js";
+import { type InputPath, IntentError } from "./errors.js";
 import {
   DurationInput,
   durationFrames,
@@ -48,10 +51,13 @@ export interface AnimateResolved {
   style: { packId: string; version: string; pinned: boolean };
 }
 
-type Value = number | Vec2;
+export type Value = number | Vec2;
 
 const equal = (a: Value, b: Value): boolean =>
   typeof a === "number" || typeof b === "number" ? a === b : a[0] === b[0] && a[1] === b[1];
+
+const multiply = (a: Value, b: Value): Value =>
+  typeof a === "number" ? a * (b as number) : [a[0] * (b as Vec2)[0], a[1] * (b as Vec2)[1]];
 
 const add = (a: Value, b: Value): Value =>
   typeof a === "number" ? a + (b as number) : [a[0] + (b as Vec2)[0], a[1] + (b as Vec2)[1]];
@@ -70,9 +76,11 @@ function toValue(property: TransformProperty, raw: unknown, path: (string | numb
   throw new IntentError(path, `${property} takes a single number`);
 }
 
-interface Endpoints {
+export interface Endpoints {
   value?: Value;
   by?: Value;
+  /** Multiplies the current value (componentwise for vectors). */
+  times?: Value;
 }
 
 function parseEndpoint(
@@ -86,7 +94,7 @@ function parseEndpoint(
   return { value: toValue(property, raw, [key]) };
 }
 
-function sample(
+export function sample(
   property: TransformProperty,
   track: Animatable<number> | Animatable<Vec2> | PositionTrack,
   frame: number,
@@ -97,6 +105,91 @@ function sample(
   if (isVectorTransformProperty(property))
     return [...sampleVector(track as Animatable<Vec2>, frame, fps)] as Vec2;
   return sampleNumber(track as Animatable<number>, frame, fps);
+}
+
+export interface TransformWindow {
+  /** Composition frame the window opens at. */
+  start: number;
+  frames: number;
+  easing: Interpolation;
+  fps: Target["composition"]["fps"];
+  /** Where a refusal about the layer itself points. */
+  path: InputPath;
+  /** Where "from and to are equal" points. */
+  equalPath: InputPath;
+}
+
+/**
+ * One layer's `setTransformTrack`: keyframes inside the window `[start, start + frames]` are
+ * replaced by a start and an end keyframe, the ones outside stay. An endpoint that is omitted is
+ * the track's current value at that edge; `by` adds to it and `times` multiplies it.
+ * Shared by `animate` and the presets.
+ */
+export function expandTransformTrack(
+  layer: Layer,
+  property: TransformProperty,
+  from: Endpoints,
+  to: Endpoints,
+  window: TransformWindow,
+): Op {
+  const { frames, easing, fps } = window;
+  if (!("transform" in layer))
+    throw new IntentError(window.path, `a ${layer.type} layer has no transform to animate`);
+  const track = layer.transform[property] as Animatable<number> | Animatable<Vec2> | PositionTrack;
+  if ("separate" in track)
+    throw new IntentError(
+      window.path,
+      "position has separate X/Y tracks; set it with set_keyframes",
+    );
+  const s = window.start - layer.startFrame;
+  const e = s + frames;
+
+  const resolveEnd = (end: Endpoints, at: number): Value => {
+    if (end.value !== undefined) return end.value;
+    const current = sample(property, track, at, fps);
+    if (end.by !== undefined) return add(current, end.by);
+    if (end.times !== undefined) return multiply(current, end.times);
+    return current;
+  };
+  const fromValue = resolveEnd(from, s);
+  const toValue_ = resolveEnd(to, e);
+  if (equal(fromValue, toValue_))
+    throw new IntentError(window.equalPath, "from and to are equal; nothing would move");
+
+  const old = "keyframes" in track ? (track.keyframes as Keyframe<Value>[]) : [];
+  const kept = old.filter((k) => k.frame < s || k.frame > e);
+  const hasLater = kept.some((k) => k.frame > e);
+  const lastAtOrBefore = [...old].reverse().find((k) => k.frame <= e);
+  const endInterpolation: Interpolation = hasLater
+    ? (lastAtOrBefore?.interpolation ?? { type: "linear" })
+    : { type: "hold" };
+  const keyframes = [
+    ...kept.filter((k) => k.frame < s),
+    { frame: s, value: fromValue, interpolation: easing },
+    { frame: e, value: toValue_, interpolation: endInterpolation },
+    ...kept.filter((k) => k.frame > e),
+  ] as (Keyframe<Value> | PositionKeyframe)[];
+  return { op: "setTransformTrack", layer: layer.id, property, track: { keyframes } } as Op;
+}
+
+/** The window length for an easing: a spring's settle time, else the duration (default `fallback`). */
+export function windowFrames(
+  easing: Interpolation,
+  duration: DurationInput | undefined,
+  fallback: DurationInput,
+  pack: GuidelinePack,
+  fps: FrameRate,
+  durationPath: InputPath,
+): number {
+  if (easing.type === "spring") {
+    if (duration !== undefined)
+      throw new IntentError(
+        durationPath,
+        "a spring's settle time sets the duration; drop duration or use a bezier easing",
+      );
+    return springSettleFrames(easing, fps);
+  }
+  return Math.max(1, durationFrames(duration ?? fallback, pack, fps));
 }
 
 /**
@@ -119,66 +212,23 @@ export function animate(
 
   const fps = (targets[0] as Target).composition.fps;
   const easing = interpolation(input.easing ?? "move", pack);
-  let frames: number;
-  if (easing.type === "spring") {
-    if (input.duration !== undefined)
-      throw new IntentError(
-        ["duration"],
-        "a spring's settle time sets the duration; drop duration or use a bezier easing",
-      );
-    frames = springSettleFrames(easing, fps);
-  } else {
-    frames = Math.max(1, durationFrames(input.duration ?? "base", pack, fps));
-  }
+  const frames = windowFrames(easing, input.duration, "base", pack, fps, ["duration"]);
 
   const ops: Op[] = [];
   const starts: number[] = [];
   for (const { layer, path } of targets) {
-    if (!("transform" in layer))
-      throw new IntentError(path, `a ${layer.type} layer has no transform to animate`);
-    const track = layer.transform[property] as
-      | Animatable<number>
-      | Animatable<Vec2>
-      | PositionTrack;
-    if ("separate" in track)
-      throw new IntentError(path, "position has separate X/Y tracks; set it with set_keyframes");
     const compositionStart = input.start ?? layer.inFrame;
-    const s = compositionStart - layer.startFrame;
-    const e = s + frames;
     starts.push(compositionStart);
-
-    const resolveEnd = (end: Endpoints, at: number): Value => {
-      if (end.value !== undefined) return end.value;
-      const current = sample(property, track, at, fps);
-      return end.by !== undefined ? add(current, end.by) : current;
-    };
-    const fromValue = resolveEnd(from, s);
-    const toValue_ = resolveEnd(to, e);
-    if (equal(fromValue, toValue_))
-      throw new IntentError(
-        [input.to !== undefined ? "to" : "from"],
-        "from and to are equal; nothing would move",
-      );
-
-    const old = "keyframes" in track ? (track.keyframes as Keyframe<Value>[]) : [];
-    const kept = old.filter((k) => k.frame < s || k.frame > e);
-    const hasLater = kept.some((k) => k.frame > e);
-    const lastAtOrBefore = [...old].reverse().find((k) => k.frame <= e);
-    const endInterpolation: Interpolation = hasLater
-      ? (lastAtOrBefore?.interpolation ?? { type: "linear" })
-      : { type: "hold" };
-    const keyframes = [
-      ...kept.filter((k) => k.frame < s),
-      { frame: s, value: fromValue, interpolation: easing },
-      { frame: e, value: toValue_, interpolation: endInterpolation },
-      ...kept.filter((k) => k.frame > e),
-    ] as (Keyframe<Value> | PositionKeyframe)[];
-    ops.push({
-      op: "setTransformTrack",
-      layer: layer.id,
-      property,
-      track: { keyframes },
-    } as Op);
+    ops.push(
+      expandTransformTrack(layer, property, from, to, {
+        start: compositionStart,
+        frames,
+        easing,
+        fps,
+        path,
+        equalPath: [input.to !== undefined ? "to" : "from"],
+      }),
+    );
   }
   return {
     ops,

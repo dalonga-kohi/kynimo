@@ -5,6 +5,20 @@ export {
   animate,
 } from "./animate.js";
 export { type InputPath, IntentError } from "./errors.js";
+export {
+  ApplyPresetInput,
+  ApplyPresetInput as ApplyPresetInputSchema,
+  type ApplyPresetResolved,
+  applyPreset,
+  PRESETS,
+  type Preset,
+  type PresetContext,
+  type PresetDescription,
+  type PresetTiming,
+  presetCatalog,
+  typedCharacters,
+  VISUAL_LAYER_TYPES,
+} from "./presets.js";
 export { mulberry32 } from "./random.js";
 export {
   type RetimeInput,
