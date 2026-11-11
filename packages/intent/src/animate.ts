@@ -5,7 +5,6 @@ import {
   type FrameRate,
   type Interpolation,
   isVectorTransformProperty,
-  type Keyframe,
   type Layer,
   type Op,
   type PositionKeyframe,
@@ -19,6 +18,7 @@ import {
 } from "@kynimo/scene";
 import { z } from "zod";
 import { type InputPath, IntentError } from "./errors.js";
+import { cutSegment } from "./split.js";
 import {
   DurationInput,
   durationFrames,
@@ -55,6 +55,8 @@ export type Value = number | Vec2;
 
 const equal = (a: Value, b: Value): boolean =>
   typeof a === "number" || typeof b === "number" ? a === b : a[0] === b[0] && a[1] === b[1];
+
+const isZeroVec = (v: Vec2): boolean => v[0] === 0 && v[1] === 0;
 
 const multiply = (a: Value, b: Value): Value =>
   typeof a === "number" ? a * (b as number) : [a[0] * (b as Vec2)[0], a[1] * (b as Vec2)[1]];
@@ -156,19 +158,84 @@ export function expandTransformTrack(
   if (equal(fromValue, toValue_))
     throw new IntentError(window.equalPath, "from and to are equal; nothing would move");
 
-  const old = "keyframes" in track ? (track.keyframes as Keyframe<Value>[]) : [];
-  const kept = old.filter((k) => k.frame < s || k.frame > e);
-  const hasLater = kept.some((k) => k.frame > e);
+  const old = ("keyframes" in track ? track.keyframes : []) as PositionKeyframe[];
+  const isPosition = property === "position";
+  const sampledStart = sample(property, track, s, fps);
+  const sampledEnd = sample(property, track, e, fps);
+  const exactStart = old.find((k) => k.frame === s);
+  const exactEnd = old.find((k) => k.frame === e);
+
+  // Split the old segments the window edges cut, so the motion outside the window stays as it was.
+  const lastBefore = (frame: number) => [...old].reverse().find((k) => k.frame < frame);
+  const firstAfter = (frame: number) => old.find((k) => k.frame > frame);
+  const cutAt = (frame: number, edge: "start" | "end") => {
+    if (old.some((k) => k.frame === frame)) return undefined;
+    const a = lastBefore(frame);
+    const b = firstAfter(frame);
+    if (a === undefined || b === undefined) return undefined;
+    return { a, b, cut: cutSegment(a, b, frame, fps, edge, layer.startFrame, window.path) };
+  };
+  const startCut = cutAt(s, "start");
+  const endCut = cutAt(e, "end");
+  const fromOnTrack = equal(fromValue, sampledStart);
+  const toOnTrack = equal(toValue_, sampledEnd);
+
+  const withSpatial = (key: PositionKeyframe, inTangent?: Vec2, outTangent?: Vec2) => {
+    if (!isPosition) return key;
+    const inT = inTangent ?? key.spatial?.inTangent ?? [0, 0];
+    const outT = outTangent ?? key.spatial?.outTangent ?? [0, 0];
+    if (key.spatial === undefined && isZeroVec(inT) && isZeroVec(outT)) return key;
+    return { ...key, spatial: { inTangent: inT, outTangent: outT } };
+  };
+
+  const before = old
+    .filter((k) => k.frame < s)
+    .map((k) => {
+      if (startCut !== undefined && k === startCut.a)
+        return withSpatial(
+          { ...k, interpolation: startCut.cut.left.interpolation },
+          undefined,
+          startCut.cut.left.outTangent,
+        );
+      // Nothing follows the old track's last key; keep it flat into a window that starts after it.
+      if (isPosition && k === old[old.length - 1] && fromOnTrack)
+        return withSpatial(k, undefined, [0, 0]);
+      return k;
+    });
+  const after = old
+    .filter((k) => k.frame > e)
+    .map((k, i) => {
+      if (endCut !== undefined && k === endCut.b)
+        return withSpatial(k, endCut.cut.right.inTangent, undefined);
+      // Nothing precedes the old track's first key; keep it flat out of a window that ends before it.
+      if (isPosition && i === 0 && k === old[0] && toOnTrack)
+        return withSpatial(k, [0, 0], undefined);
+      return k;
+    });
+
   const lastAtOrBefore = [...old].reverse().find((k) => k.frame <= e);
-  const endInterpolation: Interpolation = hasLater
-    ? (lastAtOrBefore?.interpolation ?? { type: "linear" })
-    : { type: "hold" };
-  const keyframes = [
-    ...kept.filter((k) => k.frame < s),
-    { frame: s, value: fromValue, interpolation: easing },
-    { frame: e, value: toValue_, interpolation: endInterpolation },
-    ...kept.filter((k) => k.frame > e),
-  ] as (Keyframe<Value> | PositionKeyframe)[];
+  const endInterpolation: Interpolation =
+    after.length === 0
+      ? { type: "hold" }
+      : (endCut?.cut.right.interpolation ?? lastAtOrBefore?.interpolation ?? { type: "linear" });
+  const startIn = fromOnTrack
+    ? (startCut?.cut.left.inTangent ?? exactStart?.spatial?.inTangent)
+    : undefined;
+  const endOut = toOnTrack
+    ? (endCut?.cut.right.outTangent ?? exactEnd?.spatial?.outTangent)
+    : undefined;
+
+  const startKey = withSpatial(
+    { frame: s, value: fromValue, interpolation: easing } as PositionKeyframe,
+    startIn ?? [0, 0],
+    [0, 0],
+  );
+  const endKey = withSpatial(
+    { frame: e, value: toValue_, interpolation: endInterpolation } as PositionKeyframe,
+    [0, 0],
+    endOut ?? [0, 0],
+  );
+  const keyframes = [...before, startKey, endKey, ...after];
   return { op: "setTransformTrack", layer: layer.id, property, track: { keyframes } } as Op;
 }
 

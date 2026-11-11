@@ -173,7 +173,8 @@ describe("animate", () => {
       value: 0,
       interpolation: { type: "spring", damping: 1, response: 0.7 },
     };
-    const d = doc([solid("a", { transform: { opacity: keyed(spring, kf(200, 1)) } })]);
+    // The spring is the last key, so nothing cuts it; the new start key lands inside its settle time.
+    const d = doc([solid("a", { transform: { opacity: keyed(spring) } })]);
     const { ops } = animate(d, {
       layers: lid("a"),
       property: "opacity",
