@@ -265,11 +265,10 @@ describe("animate with explicit ends", () => {
       { value: 0.2 },
       { start: 30, frames: 10, easing: linear, fps, path: ["layers"], equalPath: ["to"] },
     );
-    const track = (
-      applied(d, [op]).compositions[0]?.layers[0] as unknown as {
-        transform: { opacity: PositionTrack };
-      }
-    ).transform.opacity as { keyframes: { frame: number; value: unknown }[] };
+    const out = layerOf(applied(d, [op]), "a") as unknown as {
+      transform: { opacity: { keyframes: { frame: number; value: unknown }[] } };
+    };
+    const track = out.transform.opacity;
     expect(track.keyframes.map((k) => [k.frame, k.value])).toEqual([
       [0, 0],
       [30, 0.8],
