@@ -204,7 +204,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 12. **Retry-safe writes.** Every mutating tool takes an idempotency key: a retry after a dropped connection returns the original result instead of applying twice, and `get_write_outcome` tells the agent whether a write landed (ADR-0018).
 13. **Bounded renders.** Render tools declare their limits in their schemas and reject oversized requests with values that fit. Deterministic results are cached; long renders are cancellable jobs with progress (ADR-0018).
 14. **Fidelity reports.** Imports and exports report missing assets and fonts, dropped, flattened and approximated features. Imports support a dry run (ADR-0018).
-15. **A bounded listing.** `tools/list` stays under a byte budget (60 KB, raised to 70 KB for the intent tools in ADR-0040 and to 75 KB for `run_script` in ADR-0041) as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
+15. **A bounded listing.** `tools/list` stays under a byte budget (60 KB, raised to 70 KB for the intent tools in ADR-0040 to 75 KB for `run_script` in ADR-0041 and to 77 KB for `import_svg` in ADR-0043) as tools are added (ADR-0030, ADR-0035); detail lives in on-demand schemas and resources.
 
 ### Tool groups (target)
 
@@ -215,6 +215,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
 | Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4        |
 | Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4        |
+| Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4        |
 | Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041)                                                             | M4        |
 | Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
