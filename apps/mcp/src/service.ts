@@ -79,6 +79,8 @@ export class ToolError extends Error {
     message: string,
     readonly errors: OpError[] = [],
     readonly currentVersion?: number,
+    /** Extra fields for the error body (the expanded operations of a rejected intent call). */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -244,6 +246,17 @@ async function previousUse<T>(
   const o = seen.record.outcome;
   return o.status === "rejected" ? rejectionError(o) : replay(o);
 }
+
+const EXPANSION_REJECTED_FRESH =
+  "the operations this call expands to were rejected; nothing was applied. See expanded_ops and errors";
+const EXPANSION_REJECTED_REPLAYED =
+  "the operations this call expanded to were rejected; nothing was applied. See errors";
+
+/** `["ops", i, ...]` paths of a batch rejection, renamed for the operations an intent call expanded to. */
+const expandedPaths = (errors: OpError[]): OpError[] =>
+  errors.map((e) =>
+    e.path[0] === "ops" ? { ...e, path: ["expanded_ops", ...e.path.slice(1)] } : e,
+  );
 
 /** Throws a ToolError value; returns anything else. */
 function unwrap<T>(value: T | ToolError): T {
@@ -1209,6 +1222,8 @@ export class KynimoService {
     requestPrint?: string,
     /** Only replay a stored outcome for this key; never apply (upload retries, ADR-0032). */
     replayOnly = false,
+    /** Reshapes a batch rejection before it is thrown; `fresh` is false when it is a stored one replayed. */
+    reshapeRejection: (e: ToolError, fresh: boolean) => ToolError = (e) => e,
   ): Promise<WriteReply> {
     const { project_id: projectId, base_version: base, idempotency_key: key } = meta;
     // A tool whose ops derive from its input (upload_asset) fingerprints that input instead.
@@ -1224,7 +1239,10 @@ export class KynimoService {
           "write",
           (o) => ({ ...o.result, replayed: true }),
         );
-        if (earlier !== undefined) return { value: earlier };
+        if (earlier !== undefined)
+          return {
+            value: earlier instanceof ToolError ? reshapeRejection(earlier, false) : earlier,
+          };
         if (replayOnly)
           return {
             value: new ToolError(
@@ -1251,7 +1269,10 @@ export class KynimoService {
             errors,
             currentVersion: p.version,
           };
-          return { commit: { record: record(outcome) }, value: rejectionError(outcome) };
+          return {
+            commit: { record: record(outcome) },
+            value: reshapeRejection(rejectionError(outcome), true),
+          };
         };
 
         if (base !== p.version)
@@ -1340,9 +1361,10 @@ export class KynimoService {
       if (!step.ok)
         throw new ToolError(
           "invalid",
-          "the expanded operations were rejected; nothing was applied. Fix the input and retry",
-          step.errors,
+          EXPANSION_REJECTED_FRESH,
+          expandedPaths(step.errors),
           p.version,
+          { expanded_ops: ops },
         );
       return {
         ...summarizeChanges(p.id, p.version, step.changes),
@@ -1355,7 +1377,18 @@ export class KynimoService {
     // A stale base replays the stored outcome of this key if there is one, else records the conflict.
     if (stale) return await this.write(meta, { kind: "ops", ops: [] }, print);
     const { ops, resolved } = expand();
-    const reply = await this.write(meta, { kind: "ops", ops }, print);
+    // A rejection of the expanded operations points at them, not at an `ops` input the caller never sent.
+    const reshape = (e: ToolError, fresh: boolean): ToolError =>
+      e.kind === "invalid"
+        ? new ToolError(
+            "invalid",
+            fresh ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
+            expandedPaths(e.errors),
+            e.currentVersion,
+            fresh ? { expanded_ops: ops } : undefined,
+          )
+        : e;
+    const reply = await this.write(meta, { kind: "ops", ops }, print, false, reshape);
     return reply.replayed
       ? reply
       : { ...reply, ops, ...(resolved === undefined ? {} : { resolved }) };

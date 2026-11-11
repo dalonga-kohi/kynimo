@@ -186,6 +186,104 @@ describe("intent tools", () => {
     expect(await version()).toBe(3);
   });
 
+  describe("when the expanded operations are rejected", () => {
+    // A spring that is the last key, so the window can't cut it: the new start key lands inside
+    // its settle time and batch validation, not the expansion, refuses.
+    const input = {
+      layers: "s",
+      property: "opacity",
+      from: 0.5,
+      to: 0.8,
+      start: 5,
+    };
+    beforeEach(async () => {
+      await call(client, "add_layer", {
+        ...meta(3, "add-s"),
+        composition: "main",
+        id: "s",
+        layer: {
+          type: "solid",
+          name: "s",
+          width: 100,
+          height: 100,
+          color: "#ffffff",
+          transform: {
+            opacity: {
+              keyframes: [
+                {
+                  frame: 0,
+                  value: 0,
+                  interpolation: { type: "spring", damping: 1, response: 0.7 },
+                },
+              ],
+            },
+          },
+        },
+      });
+    });
+
+    const expectExpanded = (e: Structured) => {
+      expect(e).toMatchObject({
+        error: "invalid",
+        message: expect.stringContaining("expands to were rejected"),
+        expanded_ops: [{ op: "setTransformTrack", property: "opacity" }],
+      });
+      const errors = e.errors as { path: (string | number)[]; message: string }[];
+      expect(errors.length).toBeGreaterThan(0);
+      // Integrity failures point into the resulting document ("doc", ...), as for apply_ops.
+      expect(errors[0]?.path[0]).toBe("doc");
+      expect(errors[0]?.message).toContain("settle");
+    };
+
+    it("dry_run names the operations and points the errors into them", async () => {
+      expectExpanded(
+        await callError(client, "animate", { ...meta(4, "k"), ...input, dry_run: true }),
+      );
+      expect(await version()).toBe(4);
+    });
+
+    it("a write does the same, nothing changes, and a replay keeps the shape", async () => {
+      expectExpanded(await callError(client, "animate", { ...meta(4, "k"), ...input }));
+      expect(await version()).toBe(4);
+      const outcome = await call(client, "get_write_outcome", { project_id, idempotency_key: "k" });
+      expect(outcome.status).toBe("rejected");
+      const replay = await callError(client, "animate", { ...meta(4, "k"), ...input });
+      expect(replay).toMatchObject({
+        error: "invalid",
+        message: expect.stringContaining("expanded to were rejected"),
+      });
+      // The expanded operations aren't stored, so a replay can't show them.
+      expect(replay).not.toHaveProperty("expanded_ops");
+    });
+
+    it("operation-level errors point at expanded_ops, not at an ops input", async () => {
+      for (const dry_run of [true, false]) {
+        const e = await callError(client, "animate", {
+          ...meta(4, `v${dry_run}`),
+          layers: "a",
+          property: "opacity",
+          from: 0,
+          to: 5,
+          dry_run,
+        });
+        expect(e).toMatchObject({ error: "invalid", expanded_ops: [{ op: "setTransformTrack" }] });
+        const errors = e.errors as { path: (string | number)[] }[];
+        expect(errors.length).toBeGreaterThan(0);
+        for (const err of errors) expect(err.path.slice(0, 2)).toEqual(["expanded_ops", 0]);
+      }
+      expect(await version()).toBe(4);
+    });
+
+    it("other tools' errors carry no extra fields", async () => {
+      const e = await callError(client, "apply_ops", {
+        ...meta(4, "z"),
+        ops: [{ op: "removeLayer", layer: "nope" }],
+      });
+      expect(e).not.toHaveProperty("expanded_ops");
+      expect(e).toMatchObject({ error: "invalid" });
+    });
+  });
+
   it("apply_preset applies a preset to layers, staggered", async () => {
     const r = await call(client, "apply_preset", {
       ...meta(3, "p1"),

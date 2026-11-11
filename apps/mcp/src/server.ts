@@ -87,6 +87,7 @@ const errorReply = (e: unknown): CallToolResult => {
           message: e.message,
           errors: e.errors,
           ...(e.currentVersion === undefined ? {} : { current_version: e.currentVersion }),
+          ...e.details,
         }
       : { error: "internal", message: e instanceof Error ? e.message : String(e) };
   return { isError: true, content: [{ type: "text", text: JSON.stringify(body) }] };
