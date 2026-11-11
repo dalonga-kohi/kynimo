@@ -685,6 +685,47 @@ describe("raster budget", () => {
   });
 });
 
+describe("generator raster budget", () => {
+  const pattern = {
+    type: "pattern",
+    kind: "stripes",
+    size: prop(4),
+    thickness: prop(0.5),
+    angle: prop(0),
+    offset: prop([0, 0]),
+    foreground: prop("#ff0000"),
+    background: prop("#0000ff"),
+  };
+  const gen = (id: string, extra: Obj = {}) =>
+    layer(id, "generator", { width: 10, height: 10, generator: pattern, ...extra });
+
+  it("counts a generator's target against the frame's raster pixels", () => {
+    const frame = frameOf([gen("a"), gen("b")]);
+    const images = new ImageLibrary(ck);
+    expect(rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 200 }).layers).toHaveLength(2);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 199 })).toThrow(
+      /needs more than 199 raster pixels/,
+    );
+  });
+
+  it("counts a generator used as a matte source once", () => {
+    const frame = frameOf([
+      layer("t", "solid", {
+        width: 10,
+        height: 10,
+        color: "#ffffff",
+        matte: { layerId: "m", mode: "alpha" },
+      }),
+      gen("m", { hidden: true }),
+    ]);
+    const images = new ImageLibrary(ck);
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 199 })).toThrow(
+      /needs more than 199 raster pixels/,
+    );
+    expect(() => rasterizeFrame(ck, frame, res(images), { maxRasterPixels: 200 })).not.toThrow();
+  });
+});
+
 describe("determinism", () => {
   const scene = [
     shapeLayer(

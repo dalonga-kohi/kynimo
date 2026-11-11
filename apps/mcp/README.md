@@ -30,6 +30,8 @@ Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_a
 
 `add_effect` accepts a layer selector and a typed effect body, for example `{ "type": "gaussian-blur", "radius": { "value": 12 } }`. Use `dry_run: true` to preview its `setEffects` operation. Inspect the full parameter schema under `effects` in `get_layer_schema`, or use `apply_preset` with `blur-in` for a blur-to-sharp entrance.
 
+Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `aurora`, ADR-0045): add one with `apply_ops` `addLayer` (or `add_layer`) and change it with the `setGenerator` operation; `get_layer_schema` with type `generator` lists the fields. Looks (`vignette`, `grain`, `chromatic-aberration`, `posterize`, `scanlines`) are effects, so they go through `add_effect`, usually on an adjustment layer. There is no separate generator tool. `get_capabilities` lists the generators and the limits of generators and looks.
+
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
 
 Where projects live (ADR-0029):

@@ -193,6 +193,8 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           ? { ...base, type: "adjustment", effects }
           : null;
       case "generator":
+        // The GPU target is as big as a solid's raster, so it counts against the same limit.
+        reserve(layer.width, layer.height);
         return {
           ...base,
           type: "generator",

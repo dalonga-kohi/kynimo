@@ -1,3 +1,4 @@
+import { inflateSync } from "node:zlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -84,6 +85,56 @@ function pngSize(base64: string): [number, number] {
   return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
 }
 
+/** RGBA pixels of an 8-bit, non-interlaced RGB or RGBA PNG (what the capture renderer writes). */
+function decodePng(base64: string): {
+  width: number;
+  height: number;
+  at: (x: number, y: number) => number[];
+} {
+  const bytes = Buffer.from(base64, "base64");
+  const [width, height] = pngSize(base64);
+  const depth = bytes[24];
+  const channels = bytes[25] === 6 ? 4 : bytes[25] === 2 ? 3 : 0;
+  expect([depth, channels > 0, bytes[28]]).toEqual([8, true, 0]);
+  const chunks: Buffer[] = [];
+  for (let at = 8; at < bytes.length; ) {
+    const length = bytes.readUInt32BE(at);
+    if (bytes.subarray(at + 4, at + 8).toString("latin1") === "IDAT")
+      chunks.push(bytes.subarray(at + 8, at + 8 + length));
+    at += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(chunks));
+  const stride = width * channels;
+  const out = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const x = raw[y * (stride + 1) + 1 + i] ?? 0;
+      const a = i >= channels ? (out[y * stride + i - channels] ?? 0) : 0;
+      const b = y > 0 ? (out[(y - 1) * stride + i] ?? 0) : 0;
+      const c = y > 0 && i >= channels ? (out[(y - 1) * stride + i - channels] ?? 0) : 0;
+      const p = a + b - c;
+      const [pa, pb, pc] = [Math.abs(p - a), Math.abs(p - b), Math.abs(p - c)];
+      const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      const predictor = [0, a, b, (a + b) >> 1, paeth][filter ?? 0] ?? 0;
+      out[y * stride + i] = (x + predictor) & 255;
+    }
+  }
+  return {
+    width,
+    height,
+    at: (x, y) => {
+      const o = y * stride + x * channels;
+      return [
+        out[o] ?? 0,
+        out[o + 1] ?? 0,
+        out[o + 2] ?? 0,
+        channels === 4 ? (out[o + 3] ?? 0) : 255,
+      ];
+    },
+  };
+}
+
 const images = (r: CallToolResult) => r.content.flatMap((c) => (c.type === "image" ? [c] : []));
 
 describe("render tools with the capture renderer", () => {
@@ -139,6 +190,87 @@ describe("render tools with the capture renderer", () => {
     expect(middle).not.toBe(empty);
     expect(middle).not.toBe(graded);
     expect(end).toBe(graded);
+  }, 60_000);
+
+  it("renders a generator layer and a vignette look end to end", async () => {
+    const created = await call("create_project", {
+      name: "Generators",
+      idempotency_key: "generators",
+      width: 96,
+      height: 64,
+      duration_frames: 30,
+      background: null,
+    });
+    const project_id = created.structuredContent?.id as string;
+    const meta = (base_version: number, idempotency_key: string) => ({
+      project_id,
+      base_version,
+      idempotency_key,
+    });
+    const render = async () => {
+      const result = await call("render_frames", { project_id, frames: [0] });
+      expect(result.structuredContent?.skipped).toEqual([]);
+      const [image] = images(result);
+      return decodePng(image?.data ?? "");
+    };
+    const gradient = (end: string) => ({
+      type: "gradient",
+      kind: "linear",
+      start: { value: [0, 0] },
+      end: { value: [96, 0] },
+      stops: {
+        value: [
+          { offset: 0, color: "#ffffff" },
+          { offset: 1, color: end },
+        ],
+      },
+    });
+    await call("add_layer", {
+      ...meta(1, "backdrop"),
+      id: "backdrop",
+      composition: "main",
+      layer: {
+        type: "generator",
+        name: "Backdrop",
+        width: 96,
+        height: 64,
+        transform: { position: { value: [0, 0] } },
+        generator: gradient("#000000"),
+      },
+    });
+    const dark = await render();
+    expect(dark.at(90, 32)[0]).toBeLessThan(40);
+    await call("apply_ops", {
+      ...meta(2, "restyle"),
+      ops: [{ op: "setGenerator", layer: "backdrop", generator: gradient("#c0c0ff") }],
+    });
+    const plain = await render();
+    expect(plain.at(48, 32)[3]).toBe(255);
+    expect(plain.at(48, 32)[0]).toBeGreaterThan(200);
+    expect(plain.at(2, 2)[0]).toBeGreaterThan(240);
+    await call("add_layer", {
+      ...meta(3, "look"),
+      id: "look",
+      composition: "main",
+      index: 0,
+      layer: { type: "adjustment", name: "Look" },
+    });
+    await call("add_effect", {
+      ...meta(4, "vignette"),
+      layer: "look",
+      effect: {
+        type: "vignette",
+        amount: { value: 0.9 },
+        radius: { value: 0.3 },
+        feather: { value: 0.6 },
+        color: { value: "#000000" },
+      },
+    });
+    const looked = await render();
+    const sum = ([r, g, b]: number[]) => (r ?? 0) + (g ?? 0) + (b ?? 0);
+    expect(looked.at(48, 32)[3]).toBe(255);
+    expect(sum(looked.at(48, 32))).toBeGreaterThan(sum(looked.at(1, 1)) + 200);
+    expect(sum(looked.at(1, 1))).toBeLessThan(sum(plain.at(1, 1)));
   }, 60_000);
 
   it("returns downscaled PNG frames, lists skipped layers, and caches by document", async () => {

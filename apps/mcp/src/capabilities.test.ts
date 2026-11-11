@@ -2,6 +2,7 @@ import {
   AssetSchema,
   BEHAVIOR_TYPES,
   EffectInputSchema,
+  GeneratorSchema,
   LayerSchema,
   MAX_BATCH_OPS,
   MAX_BEHAVIORS,
@@ -88,6 +89,34 @@ describe("capability manifest", () => {
     ).toBe(true);
     expect(manifest.limits.effects.effectsPerLayer).toBe(MAX_EFFECTS);
     expect(manifest.unavailable).not.toHaveProperty("effects");
+  });
+
+  it("lists every generator kind, the looks and their limits, and keeps custom shaders unavailable", () => {
+    expect(sorted(Object.keys(manifest.features.generators))).toEqual(
+      sorted(GeneratorSchema.options.map((option) => option.shape.type.value)),
+    );
+    expect(Object.values(manifest.features.generators).every((g) => g.status === "renders")).toBe(
+      true,
+    );
+    for (const look of ["vignette", "grain", "chromatic-aberration", "posterize", "scanlines"])
+      expect(manifest.features.effects).toHaveProperty(look);
+    expect(manifest.limits.generators).toMatchObject({
+      gradientStops: 16,
+      auroraColors: 4,
+      noiseOctaves: 6,
+      noiseScale: { min: 8, max: 4096 },
+      patternSize: { min: 2, max: 2048 },
+    });
+    expect(manifest.limits.effects).toMatchObject({
+      chromaticAberration: 32,
+      grainSize: { min: 1, max: 8 },
+      posterizeLevels: { min: 2, max: 32 },
+      scanlineSpacing: { min: 2, max: 64 },
+    });
+    expect(manifest.unavailable).not.toHaveProperty("shaders");
+    expect(manifest.unavailable.custom_shaders?.reason).toContain("M6");
+    expect(manifest.unavailable.catalogs?.reason).toContain("shader catalogs in M6");
+    expect(manifest.layer_types.generator.status).toBe("renders");
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {

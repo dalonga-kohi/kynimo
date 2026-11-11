@@ -442,7 +442,7 @@ export const AddEffectInput = z.object({
   effect: z
     .looseObject({ type: z.string() })
     .describe(
-      "Effect without id. Types: gaussian-blur, drop-shadow, glow, brightness-contrast, hue-saturation, tint, fill. Parameters are { value } or { keyframes } in layer time. See get_layer_schema (effects).",
+      "Effect without id. Types: gaussian-blur, drop-shadow, glow, brightness-contrast, hue-saturation, tint, fill, vignette, grain, chromatic-aberration, posterize, scanlines. Parameters are { value } or { keyframes } in layer time. See get_layer_schema (effects).",
     ),
   id: EffectIdSchema.optional(),
   index: z.number().int().nonnegative().optional().describe("Stack position; default appends."),

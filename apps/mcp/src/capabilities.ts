@@ -4,6 +4,7 @@ import {
   BLEND_MODE_SUPPORT,
   EFFECT_LIMITS,
   EFFECT_SUPPORT,
+  GENERATOR_SUPPORT,
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
@@ -14,7 +15,17 @@ import {
   TEXT_ANIMATOR_LIMITS,
   TEXT_ANIMATOR_SUPPORT,
 } from "@kynimo/renderer";
-import { type Asset, MAX_BATCH_OPS, SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import {
+  type Asset,
+  MAX_ABERRATION,
+  MAX_AURORA_COLORS,
+  MAX_BATCH_OPS,
+  MAX_GENERATOR_EVOLUTION,
+  MAX_GENERATOR_OFFSET,
+  MAX_GENERATOR_STOPS,
+  MAX_NOISE_OCTAVES,
+  SCENE_FORMAT_VERSION,
+} from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { RENDER_LIMITS } from "./render.js";
 import { SCRIPT_CONCURRENCY } from "./service.js";
@@ -62,7 +73,9 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  shaders: unavailable("built-in shader effects arrive in M4; custom GLSL in M6"),
+  custom_shaders: unavailable(
+    "custom GLSL shaders (define_shader) arrive in M6; built-in generators and looks render now",
+  ),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
   components: unavailable("components and their catalog arrive in M6"),
   catalogs: unavailable(
@@ -83,6 +96,24 @@ const STATUSES = {
   unavailable: "not in the format or the server yet; the reason says when",
 } as const;
 
+/** Generator and look limits (ADR-0045): the scene schema's bounds, stated for agents. */
+const GENERATOR_LIMITS = {
+  gradientStops: MAX_GENERATOR_STOPS,
+  auroraColors: MAX_AURORA_COLORS,
+  noiseOctaves: MAX_NOISE_OCTAVES,
+  noiseScale: { min: 8, max: 4096 },
+  evolution: { min: -MAX_GENERATOR_EVOLUTION, max: MAX_GENERATOR_EVOLUTION },
+  offset: { min: -MAX_GENERATOR_OFFSET, max: MAX_GENERATOR_OFFSET },
+  patternSize: { min: 2, max: 2048 },
+} as const;
+
+const LOOK_LIMITS = {
+  chromaticAberration: MAX_ABERRATION,
+  grainSize: { min: 1, max: 8 },
+  posterizeLevels: { min: 2, max: 32 },
+  scanlineSpacing: { min: 2, max: 64 },
+} as const;
+
 /** The capability manifest (ADR-0018), built from the renderer's tables, so it cannot drift from them. */
 export function capabilityManifest(server: { name: string; version: string }) {
   return {
@@ -99,11 +130,13 @@ export function capabilityManifest(server: { name: string; version: string }) {
       text_animator_properties: TEXT_ANIMATOR_SUPPORT,
       behaviors: BEHAVIOR_SUPPORT,
       effects: EFFECT_SUPPORT,
+      generators: GENERATOR_SUPPORT,
     },
     limits: {
       text_animators: TEXT_ANIMATOR_LIMITS,
       behaviors: BEHAVIOR_LIMITS,
-      effects: EFFECT_LIMITS,
+      effects: { ...EFFECT_LIMITS, ...LOOK_LIMITS },
+      generators: GENERATOR_LIMITS,
     },
     assets: ASSET_SUPPORT,
     render: {
