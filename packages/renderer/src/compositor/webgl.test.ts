@@ -1,4 +1,4 @@
-import type { ResolvedEffect } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator } from "@kynimo/engine";
 import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -123,16 +123,24 @@ function onStep(mode: BlendMode, backdrop: RasterImage, source: RasterImage, i: 
  * channels of pixels `allowed` says sit on a step.
  */
 async function expectMatches(p: FramePlan, allowed: (pixel: number) => boolean = () => false) {
+  const { bad } = await compare(p, p, allowed);
+  expect(bad.slice(0, 8)).toEqual([]);
+}
+
+/** The reference of `p` against the GPU result of `gpuPlan`: the bytes out of tolerance, and the largest gap. */
+async function compare(p: FramePlan, gpuPlan: FramePlan, allowed: (pixel: number) => boolean) {
   const ref = compositeReference(p);
-  const out = await gpu.composite(p);
+  const out = await gpu.composite(gpuPlan);
   expect([out.width, out.height]).toEqual([ref.width, ref.height]);
   const bad: number[] = [];
+  let gap = 0;
   for (let i = 0; i < ref.pixels.length; i++) {
-    if (Math.abs((ref.pixels[i] ?? 0) - (out.pixels[i] ?? 0)) <= 2) continue;
+    const d = Math.abs((ref.pixels[i] ?? 0) - (out.pixels[i] ?? 0));
     if (i % 4 !== 3 && allowed(Math.floor(i / 4))) continue;
-    bad.push(i);
+    gap = Math.max(gap, d);
+    if (d > 2) bad.push(i);
   }
-  expect(bad.slice(0, 8)).toEqual([]);
+  return { bad, gap };
 }
 
 describe("WebGL2 compositor on SwiftShader", () => {
@@ -357,6 +365,355 @@ describe("WebGL2 compositor on SwiftShader", () => {
     ]);
     expect(precompUses(p).get(inner)).toBe(4);
     await expectMatches(p);
+  });
+
+  const rgba = (r: number, g: number, b: number, a = 1) => ({ r, g, b, a });
+  const generatorLayer = (
+    id: string,
+    width: number,
+    height: number,
+    generator: ResolvedGenerator,
+    overrides: Partial<PlannedLayer> = {},
+  ): PlannedLayer =>
+    ({
+      id,
+      type: "generator",
+      space: "layer",
+      opacity: 1,
+      blendMode: "normal",
+      mask: null,
+      matte: null,
+      matrix: [1, 0, 0, 1, 0, 0],
+      width,
+      height,
+      generator,
+      ...overrides,
+    }) as PlannedLayer;
+
+  const stops = [
+    { offset: 0, color: rgba(0.9, 0.2, 0.1, 1) },
+    { offset: 0.35, color: rgba(0.2, 0.7, 0.3, 0.6) },
+    { offset: 0.8, color: rgba(0.1, 0.2, 0.9, 1) },
+    { offset: 1, color: rgba(1, 1, 0.2, 0.9) },
+  ];
+  const generators: Record<string, ResolvedGenerator> = {
+    "linear gradient": {
+      type: "gradient",
+      kind: "linear",
+      start: [7.5, 5.25],
+      end: [58.25, 40.5],
+      stops,
+    },
+    "radial gradient": {
+      type: "gradient",
+      kind: "radial",
+      start: [30.5, 20.25],
+      end: [60, 38],
+      stops,
+    },
+    "conic gradient": {
+      type: "gradient",
+      kind: "conic",
+      start: [30.25, 22.75],
+      end: [50, 10],
+      stops: [
+        { offset: 0, color: rgba(0.9, 0.2, 0.1, 1) },
+        { offset: 0.5, color: rgba(0.1, 0.4, 0.9, 0.7) },
+        { offset: 1, color: rgba(0.9, 0.2, 0.1, 1) },
+      ],
+    },
+    "noise, 1 octave": {
+      type: "noise",
+      seed: 0xdeadbeef,
+      scale: 14.5,
+      octaves: 1,
+      evolution: 0.37,
+      offset: [-3.25, 11.5],
+      low: rgba(0.05, 0.1, 0.3, 1),
+      high: rgba(0.9, 0.8, 0.5, 0.9),
+    },
+    "noise, 6 octaves": {
+      type: "noise",
+      seed: 77,
+      scale: 40,
+      octaves: 6,
+      evolution: -2.6,
+      offset: [123.75, -48.5],
+      low: rgba(0.05, 0.1, 0.3, 1),
+      high: rgba(0.9, 0.8, 0.5, 1),
+    },
+    "stripes pattern": pattern("stripes", 7.5, 0.35, 0.6),
+    "checker pattern": pattern("checker", 6, 0.5, 0.6),
+    "dots pattern": pattern("dots", 8.25, 0.55, 0.6),
+    "grid pattern": pattern("grid", 9, 0.15, 0.6),
+    "aurora, 2 colors": {
+      type: "aurora",
+      colors: [rgba(0.9, 0.2, 0.4, 1), rgba(0.1, 0.5, 0.9, 1)],
+      points: [
+        [14, 10],
+        [50, 36],
+      ],
+      sigma: 14,
+    },
+    "aurora, 4 colors": {
+      type: "aurora",
+      colors: [
+        rgba(0.9, 0.2, 0.4, 1),
+        rgba(0.1, 0.5, 0.9, 0.8),
+        rgba(0.2, 0.9, 0.4, 1),
+        rgba(0.9, 0.9, 0.1, 1),
+      ],
+      points: [
+        [14, 10],
+        [50, 36],
+        [30, 40],
+        [5, 35],
+      ],
+      sigma: 12,
+    },
+  };
+
+  function pattern(
+    kind: "stripes" | "checker" | "dots" | "grid",
+    size: number,
+    thickness: number,
+    angle: number,
+  ): ResolvedGenerator {
+    return {
+      type: "pattern",
+      kind,
+      size,
+      thickness,
+      rotation: [Math.cos(angle), Math.sin(angle)],
+      offset: [3.5, -2.25],
+      foreground: rgba(0.95, 0.85, 0.2, 1),
+      background: rgba(0.1, 0.15, 0.4, 0.8),
+    };
+  }
+
+  for (const [name, generator] of Object.entries(generators))
+    it(`matches the reference for a ${name} generator`, async () => {
+      const p = plan([generatorLayer("g", W, H, generator)], {
+        background: rgba(0.3, 0.3, 0.3, 1),
+      });
+      await expectMatches(p);
+      const flat = plan([solid("flat", gradient(W, H, 1))]);
+      expect((await gpu.composite(p)).pixels).not.toEqual((await gpu.composite(flat)).pixels);
+    });
+
+  it("places generators with a minifying rotation, a mask, effects and as a luma matte source", async () => {
+    const source = generators["noise, 6 octaves"] as ResolvedGenerator;
+    const rotated = generatorLayer("g", 128, 96, source, {
+      matrix: [0.3, 0.05, -0.05, 0.3, 14, 9],
+    });
+    await expectMatches(plan([rotated]));
+    const pat = generators["dots pattern"] as ResolvedGenerator;
+    const masked = generatorLayer("m", W, H, pat, {
+      mask: coverage(W, H),
+      matrix: [0.8, 0.3, -0.3, 0.8, 8, 2],
+      effects: [
+        { type: "gaussian-blur", radius: 2.5 },
+        { type: "drop-shadow", radius: 2, offset: [3, 2], color, opacity: 0.8 },
+      ],
+    });
+    await expectMatches(plan([masked], { background: rgba(0.2, 0.3, 0.2, 1) }));
+    const matte = generatorLayer("matte", W, H, generators["radial gradient"] as ResolvedGenerator);
+    for (const mode of ["luma", "luma-inverted", "alpha"] as const) {
+      const t = solid("t", gradient(W, H, 5), { matte: { layerId: "matte", mode, source: matte } });
+      await expectMatches(plan([t, solid("bg", gradient(W, H, 6))]));
+    }
+  });
+
+  const looks: Record<string, ResolvedEffect> = {
+    vignette: {
+      type: "vignette",
+      amount: 0.8,
+      radius: 0.4,
+      feather: 0.5,
+      color: rgba(0.1, 0.1, 0.3, 0.9),
+    },
+    grain: { type: "grain", amount: 0.5, size: 2, seed: 12345, frame: 3, monochrome: false },
+    "monochrome grain": {
+      type: "grain",
+      amount: 0.6,
+      size: 3,
+      seed: 0xfffffff0,
+      frame: 41,
+      monochrome: true,
+    },
+    "chromatic-aberration": { type: "chromatic-aberration", amount: 5.5 },
+    posterize: { type: "posterize", levels: 5 },
+    scanlines: {
+      type: "scanlines",
+      amount: 0.7,
+      spacing: 5.5,
+      thickness: 0.4,
+      offset: 1.25,
+      color: rgba(0.05, 0.05, 0.2, 0.9),
+    },
+  };
+
+  /** Whether nudging a channel of the straight color of pixel `i` by 3/255 crosses a posterize step. */
+  const onPosterizeStep = (raster: RasterImage, levels: number, i: number): boolean => {
+    const a = raster.pixels[i * 4 + 3] ?? 0;
+    if (a === 0) return false;
+    const steps = levels - 1;
+    for (let k = 0; k < 3; k++) {
+      const v = (raster.pixels[i * 4 + k] ?? 0) / a;
+      const levelOf = (x: number) => Math.floor(Math.min(1, Math.max(0, x)) * steps + 0.5);
+      if (levelOf(v - 3 / 255) !== levelOf(v + 3 / 255)) return true;
+    }
+    return false;
+  };
+
+  for (const [name, effect] of Object.entries(looks)) {
+    it(`matches the reference for ${name} on an image layer and on an adjustment layer`, async () => {
+      const raster = gradient(W, H, 3);
+      const allowed = (i: number) =>
+        effect.type === "posterize" && onPosterizeStep(raster, effect.levels, i);
+      // Posterize steps are located in raster pixels, so that layer is placed without resampling.
+      const matrix = effect.type === "posterize" ? [1, 0, 0, 1, 0, 0] : [1.1, 0.1, -0.1, 1.1, 6, 4];
+      const layer = solid("image", raster, { effects: [effect], matrix: matrix as never });
+      const plain = plan([{ ...layer, effects: [] }]);
+      await expectMatches(plan([layer]), allowed);
+      expect((await gpu.composite(plan([layer]))).pixels).not.toEqual(
+        (await gpu.composite(plain)).pixels,
+      );
+      const vector = {
+        id: "v",
+        type: "shape",
+        space: "composition",
+        x: 9,
+        y: 4,
+        opacity: 0.9,
+        blendMode: "normal",
+        mask: coverage(30, 20),
+        matte: null,
+        raster: gradient(30, 20, 8),
+        effects: [effect],
+      } as PlannedLayer;
+      const shape = vector.type === "shape" ? vector.raster : raster;
+      await expectMatches(plan([vector]), (i) => {
+        const x = (i % W) - 9;
+        const y = Math.floor(i / W) - 4;
+        return (
+          effect.type === "posterize" &&
+          x >= 0 &&
+          y >= 0 &&
+          x < 30 &&
+          y < 20 &&
+          onPosterizeStep(shape, effect.levels, y * 30 + x)
+        );
+      });
+      const adjustment: PlannedAdjustmentLayer = {
+        type: "adjustment",
+        id: "look",
+        blendMode: "normal",
+        opacity: 0.85,
+        effects: [effect],
+        mask: coverage(W, H),
+        matte: null,
+      };
+      const backdrop = solid("bg", raster);
+      await expectMatches(
+        plan([adjustment, backdrop]),
+        (i) => effect.type === "posterize" && onPosterizeStep(raster, effect.levels, i),
+      );
+    });
+  }
+
+  it("animates grain with its frame and keeps static grain still", async () => {
+    const grain = (frame: number): ResolvedEffect => ({
+      type: "grain",
+      amount: 0.6,
+      size: 2,
+      seed: 9,
+      frame,
+      monochrome: false,
+    });
+    const at = (frame: number) =>
+      plan([solid("s", gradient(W, H, 2), { effects: [grain(frame)] })]);
+    const a = await gpu.composite(at(0));
+    expect((await gpu.composite(at(0))).pixels).toEqual(a.pixels);
+    expect((await gpu.composite(at(4))).pixels).not.toEqual(a.pixels);
+    await expectMatches(at(0));
+    await expectMatches(at(4));
+  });
+
+  it("pads for chromatic aberration so the shifted channels reach past the raster edge", async () => {
+    const white = { width: 20, height: 20, pixels: new Uint8Array(20 * 20 * 4).fill(255) };
+    const p = plan([
+      solid("w", white, {
+        matrix: [1, 0, 0, 1, 20, 14],
+        effects: [{ type: "chromatic-aberration", amount: 6 }],
+      }),
+    ]);
+    await expectMatches(p);
+    const { pixels } = await gpu.composite(p);
+    const at = (x: number, y: number) => [...pixels.subarray((y * W + x) * 4, (y * W + x) * 4 + 4)];
+    const left = at(19, 24);
+    expect(left[3]).toBeGreaterThan(0);
+    // Outside the edge only the channel shifted inwards still sees the layer: blue on every side.
+    expect(left[2]).toBeGreaterThan(left[0] ?? 255);
+    expect(at(40, 24)[2]).toBeGreaterThan(at(40, 24)[0] ?? 255);
+  });
+
+  it("catches a mismatched hash: another grain or noise seed on the GPU fails the comparison", async () => {
+    const grain = {
+      type: "grain",
+      amount: 0.6,
+      size: 2,
+      seed: 9,
+      frame: 1,
+      monochrome: false,
+    } as const;
+    const p = plan([solid("s", gradient(W, H, 2), { effects: [grain] })]);
+    expect((await compare(p, p, () => false)).bad).toEqual([]);
+    const other = plan([solid("s", gradient(W, H, 2), { effects: [{ ...grain, seed: 10 }] })]);
+    expect((await compare(p, other, () => false)).bad.length).toBeGreaterThan(100);
+    const noise = generators["noise, 1 octave"] as Extract<ResolvedGenerator, { type: "noise" }>;
+    const n = plan([generatorLayer("n", W, H, noise)]);
+    const wrong = plan([generatorLayer("n", W, H, { ...noise, seed: noise.seed + 1 })]);
+    expect((await compare(n, wrong, () => false)).bad.length).toBeGreaterThan(100);
+  });
+
+  it("refuses a generator over the frame budget or the texture size limit and stays usable", async () => {
+    const noise = generators["noise, 6 octaves"] as ResolvedGenerator;
+    const huge = plan([generatorLayer("huge-noise", 8192, 8192, noise)]);
+    expect(() => compositeReference(huge)).toThrow(/huge-noise.*frame budget/);
+    await expect(gpu.composite(huge)).rejects.toThrow(/huge-noise.*frame budget/);
+    const limit = await gpu.page.evaluate(() =>
+      (
+        document.createElement("canvas").getContext("webgl2") as WebGL2RenderingContext
+      ).getParameter(WebGL2RenderingContext.MAX_TEXTURE_SIZE),
+    );
+    const wide = generatorLayer(
+      "wide",
+      limit + 1,
+      1,
+      generators["linear gradient"] as ResolvedGenerator,
+    );
+    await expect(gpu.composite(plan([wide]))).rejects.toThrow(/texture size limit/);
+    await expectMatches(
+      plan([generatorLayer("ok", W, H, generators["linear gradient"] as ResolvedGenerator)]),
+    );
+  });
+
+  it("returns identical bytes for every generator and look in one frame", async () => {
+    const layers = ["linear gradient", "noise, 6 octaves", "stripes pattern", "aurora, 4 colors"]
+      .map((name) => generators[name] as ResolvedGenerator)
+      .map((g, i) =>
+        generatorLayer(`g${i}`, W, H, g, {
+          opacity: 0.8,
+          blendMode: i % 2 === 0 ? "normal" : "screen",
+          matrix: [0.9, 0.05 * i, -0.05, 0.9, i * 2, 1],
+          effects: i === 0 ? Object.values(looks) : [],
+        }),
+      );
+    const p = plan(layers);
+    const first = await gpu.composite(p);
+    expect((await gpu.composite(p)).pixels).toEqual(first.pixels);
+    expect(compositeReference(p).pixels.length).toBe(first.pixels.length);
   });
 
   it("refuses an image larger than the GPU's texture size limit", async () => {

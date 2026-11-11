@@ -1,4 +1,4 @@
-import type { ResolvedEffect, Rgba } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator, Rgba } from "@kynimo/engine";
 import type {
   CoverageImage,
   FramePlan,
@@ -10,6 +10,7 @@ import {
   effectPadding,
   effectSamples,
   gaussianWeights,
+  generatorSamples,
   MAX_FRAME_EFFECT_SAMPLES,
 } from "./effects.js";
 import {
@@ -22,7 +23,17 @@ import {
   placement,
   precompUses,
 } from "./pipeline.js";
-import { BLEND, DOWNSAMPLE, EFFECT, FINAL, GAUSSIAN, PLACE, PREPARE, VERTEX } from "./shaders.js";
+import {
+  BLEND,
+  DOWNSAMPLE,
+  EFFECT,
+  FINAL,
+  GAUSSIAN,
+  GENERATOR,
+  PLACE,
+  PREPARE,
+  VERTEX,
+} from "./shaders.js";
 
 /** Thrown when the WebGL2 context cannot run the compositor (missing float render targets, sizes). */
 export class CompositorError extends Error {
@@ -70,7 +81,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     return p;
   };
   let programs: Record<
-    "prepare" | "gaussian" | "effect" | "downsample" | "place" | "blend" | "final",
+    "prepare" | "gaussian" | "effect" | "generator" | "downsample" | "place" | "blend" | "final",
     Program
   >;
   try {
@@ -78,6 +89,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       prepare: program(PREPARE),
       gaussian: program(GAUSSIAN),
       effect: program(EFFECT),
+      generator: program(GENERATOR),
       downsample: program(DOWNSAMPLE),
       place: program(PLACE),
       blend: program(BLEND),
@@ -155,19 +167,24 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     const nested = new Map<FramePlan, Target>();
     const uses = precompUses(plan);
     let remainingEffectSamples = MAX_FRAME_EFFECT_SAMPLES;
+    const chargeSamples = (id: string, samples: number, reduce: string) => {
+      remainingEffectSamples -= samples;
+      if (remainingEffectSamples < 0)
+        throw new CompositorError(
+          `layer '${id}' exceeds the frame budget of ${MAX_FRAME_EFFECT_SAMPLES} effect samples; reduce the ${reduce}`,
+        );
+    };
     const chargeEffects = (
       width: number,
       height: number,
       effects: readonly ResolvedEffect[],
       id: string,
-    ) => {
-      const samples = effects.reduce((sum, effect) => sum + effectSamples(effect), 0);
-      remainingEffectSamples -= width * height * samples;
-      if (remainingEffectSamples < 0)
-        throw new CompositorError(
-          `layer '${id}' exceeds the frame budget of ${MAX_FRAME_EFFECT_SAMPLES} effect samples; reduce the radius, layer size or number of effects`,
-        );
-    };
+    ) =>
+      chargeSamples(
+        id,
+        width * height * effects.reduce((sum, effect) => sum + effectSamples(effect), 0),
+        "radius, layer size or number of effects",
+      );
 
     const uploadMask = (mask: CoverageImage | null): Target | null =>
       mask === null
@@ -205,7 +222,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
 
     const applyEffect = (src: Target, effect: ResolvedEffect): Target => {
       if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
-      const blurred = "radius" in effect ? gaussian(src, effect.radius) : src;
+      const blurred =
+        effect.type === "drop-shadow" || effect.type === "glow"
+          ? gaussian(src, effect.radius)
+          : src;
       const out = target(src.width, src.height);
       pass(
         programs.effect,
@@ -250,6 +270,35 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
               color("u_color", effect.color);
               amount(effect.amount);
               break;
+            case "vignette":
+              mode(7);
+              params(effect.radius, effect.feather);
+              color("u_color", effect.color);
+              amount(effect.amount);
+              break;
+            case "grain":
+              mode(8);
+              gl.uniform1ui(u("u_seed"), effect.seed);
+              gl.uniform1i(u("u_frame"), effect.frame);
+              gl.uniform1i(u("u_size"), effect.size);
+              gl.uniform1i(u("u_monochrome"), effect.monochrome ? 1 : 0);
+              amount(effect.amount);
+              break;
+            case "chromatic-aberration":
+              mode(9);
+              amount(effect.amount);
+              break;
+            case "posterize":
+              mode(10);
+              amount(effect.levels);
+              break;
+            case "scanlines":
+              mode(11);
+              params(effect.spacing, effect.thickness);
+              gl.uniform1f(u("u_offset"), effect.offset);
+              color("u_color", effect.color);
+              amount(effect.amount);
+              break;
           }
         },
       );
@@ -268,7 +317,62 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return out;
     };
 
-    /** The masked raster or precomp, with room for effects before placement. */
+    /** Draws a generator into a fresh `width × height` layer-space target. */
+    const generate = (id: string, width: number, height: number, g: ResolvedGenerator): Target => {
+      chargeSamples(id, width * height * generatorSamples(g), "layer size or noise octaves");
+      const out = target(width, height);
+      pass(programs.generator, out, [], (u) => {
+        const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
+        const colors = (list: readonly Rgba[]) => {
+          gl.uniform4fv(
+            u("u_colors[0]"),
+            new Float32Array(list.flatMap(({ r, g, b, a }) => [r, g, b, a])),
+          );
+        };
+        gl.uniform2f(u("u_size"), width, height);
+        switch (g.type) {
+          case "gradient":
+            gl.uniform1i(u("u_type"), 0);
+            gl.uniform1i(u("u_kind"), { linear: 0, radial: 1, conic: 2 }[g.kind]);
+            gl.uniform2f(u("u_a"), ...g.start);
+            gl.uniform2f(u("u_b"), ...g.end);
+            gl.uniform1i(u("u_count"), g.stops.length);
+            gl.uniform1fv(u("u_offsets[0]"), new Float32Array(g.stops.map((s) => s.offset)));
+            colors(g.stops.map((s) => s.color));
+            break;
+          case "noise":
+            gl.uniform1i(u("u_type"), 1);
+            gl.uniform1ui(u("u_seed"), g.seed);
+            gl.uniform1f(u("u_scale"), g.scale);
+            gl.uniform1i(u("u_octaves"), g.octaves);
+            gl.uniform1f(u("u_evolution"), g.evolution);
+            gl.uniform2f(u("u_offset"), ...g.offset);
+            color("u_low", g.low);
+            color("u_high", g.high);
+            break;
+          case "pattern":
+            gl.uniform1i(u("u_type"), 2);
+            gl.uniform1i(u("u_kind"), { stripes: 0, checker: 1, dots: 2, grid: 3 }[g.kind]);
+            gl.uniform1f(u("u_scale"), g.size);
+            gl.uniform1f(u("u_thickness"), g.thickness);
+            gl.uniform2f(u("u_rotation"), ...g.rotation);
+            gl.uniform2f(u("u_offset"), ...g.offset);
+            color("u_low", g.background);
+            color("u_high", g.foreground);
+            break;
+          case "aurora":
+            gl.uniform1i(u("u_type"), 3);
+            gl.uniform1i(u("u_count"), g.colors.length);
+            gl.uniform1f(u("u_scale"), g.sigma);
+            gl.uniform2fv(u("u_points[0]"), new Float32Array(g.points.flat()));
+            colors(g.colors);
+            break;
+        }
+      });
+      return out;
+    };
+
+    /** The masked raster, generator or precomp, with room for effects before placement. */
     const prepare = (layer: PlannedLayer, padding: [number, number]): Target => {
       let src: Target;
       let owned = false;
@@ -280,6 +384,9 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         uses.set(layer.frame, left);
         owned = left <= 0;
         if (owned) nested.delete(layer.frame);
+      } else if (layer.type === "generator") {
+        src = generate(layer.id, layer.width, layer.height, layer.generator);
+        owned = true;
       } else {
         src = upload(layer.raster);
         owned = true;

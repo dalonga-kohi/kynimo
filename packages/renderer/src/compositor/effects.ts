@@ -1,4 +1,4 @@
-import type { ResolvedEffect } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator } from "@kynimo/engine";
 
 /** Per-frame texture samples, including repeated matte sources and nested compositions. */
 export const MAX_FRAME_EFFECT_SAMPLES = 500_000_000;
@@ -19,14 +19,39 @@ export function activeEffect(effect: ResolvedEffect): boolean {
       return effect.amount > 0 && (effect.black.a > 0 || effect.white.a > 0);
     case "fill":
       return effect.amount * effect.color.a > 0;
-    // Looks get their passes in the next step; until then they are no-ops (step 2 replaces this).
     case "vignette":
+      return effect.amount * effect.color.a > 0;
     case "grain":
+      return effect.amount > 0;
     case "chromatic-aberration":
+      return effect.amount > 0;
     case "posterize":
+      return true;
     case "scanlines":
-      return false;
+      return effect.amount * effect.color.a > 0 && effect.thickness > 0;
   }
+}
+
+/** The blur radius of the effects that blur (the vignette's `radius` is something else). */
+export function blurRadius(effect: ResolvedEffect): number {
+  return effect.type === "gaussian-blur" || effect.type === "drop-shadow" || effect.type === "glow"
+    ? effect.radius
+    : 0;
+}
+
+/** How far one effect spreads content beyond the raster's edge, per axis. */
+function effectReach(effect: ResolvedEffect): [number, number] {
+  if (effect.type === "chromatic-aberration") {
+    const reach = Math.ceil(effect.amount);
+    return [reach, reach];
+  }
+  const radius = Math.ceil(blurRadius(effect));
+  if (effect.type === "drop-shadow")
+    return [
+      radius + Math.ceil(Math.abs(effect.offset[0])),
+      radius + Math.ceil(Math.abs(effect.offset[1])),
+    ];
+  return [radius, radius];
 }
 
 /** Transparent pixels needed on each side so a stack's successive effects have room to spread. */
@@ -34,14 +59,10 @@ export function effectPadding(effects: readonly ResolvedEffect[]): [number, numb
   let x = 0;
   let y = 0;
   for (const effect of effects) {
-    if (!("radius" in effect) || !activeEffect(effect)) continue;
-    const radius = Math.ceil(effect.radius);
-    x += radius;
-    y += radius;
-    if (effect.type === "drop-shadow") {
-      x += Math.ceil(Math.abs(effect.offset[0]));
-      y += Math.ceil(Math.abs(effect.offset[1]));
-    }
+    if (!activeEffect(effect)) continue;
+    const [dx, dy] = effectReach(effect);
+    x += dx;
+    y += dy;
   }
   return [x, y];
 }
@@ -60,7 +81,8 @@ export function gaussianWeights(radius: number): number[] {
 }
 
 export function effectSamples(effect: ResolvedEffect): number {
-  const blur = "radius" in effect && effect.radius > 0 ? 2 * (1 + 2 * Math.ceil(effect.radius)) : 0;
+  const radius = blurRadius(effect);
+  const blur = radius > 0 ? 2 * (1 + 2 * Math.ceil(radius)) : 0;
   switch (effect.type) {
     case "gaussian-blur":
       return blur;
@@ -68,7 +90,38 @@ export function effectSamples(effect: ResolvedEffect): number {
       return blur + 5; // source + four bilinear samples from the shifted shadow
     case "glow":
       return blur + 2;
+    case "chromatic-aberration":
+      return 9; // the source plus a bilinear sample (four reads) for each of two shifted channels
     default:
       return 1;
   }
+}
+
+/** Samples per pixel a generator costs, charged like effects against the frame budget. */
+export function generatorSamples(generator: ResolvedGenerator): number {
+  switch (generator.type) {
+    case "gradient":
+    case "pattern":
+      return 1;
+    case "aurora":
+      return generator.colors.length;
+    case "noise":
+      return 8 * generator.octaves;
+  }
+}
+
+/**
+ * Coverage of a 1-px box filter centered at `x` over periodic bands of half width `hw` centered at
+ * multiples of `period` (>= 2). The JS twin of the shaders' `band`; change them together.
+ */
+export function band(x: number, hw: number, period: number): number {
+  const overlap = (v: number) => Math.max(0, Math.min(v + 0.5, hw) - Math.max(v - 0.5, -hw));
+  const u = x - period * Math.floor(x / period + 0.5);
+  return Math.min(1, overlap(u) + overlap(Math.abs(u) - period));
+}
+
+/** GLSL `smoothstep` for `edge0 < edge1`. */
+export function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }

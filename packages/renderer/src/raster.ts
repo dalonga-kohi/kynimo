@@ -1,4 +1,10 @@
-import type { Affine, ResolvedEffect, ResolvedLayer, Rgba } from "@kynimo/engine";
+import type {
+  Affine,
+  ResolvedEffect,
+  ResolvedGenerator,
+  ResolvedLayer,
+  Rgba,
+} from "@kynimo/engine";
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
 
 /**
@@ -84,7 +90,24 @@ export interface PlannedPrecompLayer extends PlannedBase {
   frame: FramePlan;
 }
 
-export type PlannedLayer = PlannedVectorLayer | PlannedLayerSpaceLayer | PlannedPrecompLayer;
+/**
+ * A generator is drawn on the GPU (or by the reference compositor) at `width × height` in layer
+ * space, so it has no CPU raster (ADR-0045), and is then placed like an image.
+ */
+export interface PlannedGeneratorLayer extends PlannedBase {
+  type: "generator";
+  space: "layer";
+  matrix: Affine;
+  width: number;
+  height: number;
+  generator: ResolvedGenerator;
+}
+
+export type PlannedLayer =
+  | PlannedVectorLayer
+  | PlannedLayerSpaceLayer
+  | PlannedPrecompLayer
+  | PlannedGeneratorLayer;
 
 export interface PlannedAdjustmentLayer extends PlannedBase {
   type: "adjustment";

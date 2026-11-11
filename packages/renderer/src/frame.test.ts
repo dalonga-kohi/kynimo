@@ -524,6 +524,57 @@ describe("precomps and unsupported layers", () => {
   });
 });
 
+describe("generator layers", () => {
+  const stripes = (thickness = 1) => ({
+    type: "pattern",
+    kind: "stripes",
+    size: prop(4),
+    thickness: prop(thickness),
+    angle: prop(0),
+    offset: prop([0, 0]),
+    foreground: prop("#ff0000"),
+    background: prop("#0000ff"),
+  });
+
+  it("plan as layer-space layers without a raster, placed by their matrix", () => {
+    const p = plan([
+      layer("g", "generator", {
+        width: 20,
+        height: 10,
+        generator: stripes(),
+        transform: transform({ position: prop([30, 40]) }),
+      }),
+    ]);
+    const l = only(p);
+    expect(p.skipped).toEqual([]);
+    expect(l.type).toBe("generator");
+    if (l.type !== "generator") return;
+    expect(l.space).toBe("layer");
+    expect([l.width, l.height]).toEqual([20, 10]);
+    expect(l.matrix).toEqual([1, 0, 0, 1, 30, 40]);
+    expect(l.generator.type).toBe("pattern");
+    expect("raster" in l).toBe(false);
+    const out = compositeReference(p);
+    expect(pixel(out, 35, 45)).toEqual(RED);
+    expect(pixel(out, 29, 45)).toEqual(CLEAR);
+  });
+
+  it("carry only the look effects that change pixels", () => {
+    const vignette = (amount: number) => ({
+      id: "v",
+      type: "vignette",
+      amount: prop(amount),
+      radius: prop(0.5),
+      feather: prop(0.5),
+      color: prop("#000000"),
+    });
+    const withLook = (effects: Obj[]) =>
+      only(plan([layer("g", "generator", { width: 8, height: 8, generator: stripes(), effects })]));
+    expect(withLook([vignette(0.5)]).effects).toHaveLength(1);
+    expect(withLook([vignette(0)]).effects).toBeUndefined();
+  });
+});
+
 describe("raster budget", () => {
   it("skips exactly the layer types the capability manifest marks accepted", async () => {
     const bytes = await encodeImage(4, 2, () => [255, 255, 255, 255], "png");

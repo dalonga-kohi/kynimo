@@ -1,12 +1,16 @@
-import type { ResolvedEffect } from "@kynimo/engine";
+import { hashWords, type ResolvedEffect } from "@kynimo/engine";
 import type { FramePlan, PlannedAdjustmentLayer, PlannedLayer, RasterImage } from "../raster.js";
 import { blendColor, blendPixel } from "./blend.js";
 import {
+  band,
   effectPadding,
   effectSamples,
   gaussianWeights,
+  generatorSamples,
   MAX_FRAME_EFFECT_SAMPLES,
+  smoothstep,
 } from "./effects.js";
+import { renderGenerator } from "./generators.js";
 import {
   type Affine,
   invert,
@@ -123,6 +127,10 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
     nested.uses.set(layer.frame, left);
     if (left <= 0) nested.cache.delete(layer.frame);
     img = { width: frame.width, height: frame.height, data: frame.data.slice() };
+  } else if (layer.type === "generator") {
+    const { width, height, generator } = layer;
+    chargeSamples(nested, layer.id, width * height * generatorSamples(generator), "layer size");
+    img = { width, height, data: renderGenerator(width, height, generator) };
   } else {
     const { width, height, pixels } = layer.raster;
     img = blank(width, height);
@@ -157,11 +165,19 @@ function charge(
   width: number,
   height: number,
 ) {
-  nested.remaining -=
-    width * height * effects.reduce((sum, effect) => sum + effectSamples(effect), 0);
+  chargeSamples(
+    nested,
+    id,
+    width * height * effects.reduce((sum, effect) => sum + effectSamples(effect), 0),
+    "radius, layer size or number of effects",
+  );
+}
+
+function chargeSamples(nested: Nested, id: string, samples: number, reduce: string) {
+  nested.remaining -= samples;
   if (nested.remaining < 0)
     throw new RangeError(
-      `layer '${id}' exceeds the frame budget of ${MAX_FRAME_EFFECT_SAMPLES} effect samples; reduce the radius, layer size or number of effects`,
+      `layer '${id}' exceeds the frame budget of ${MAX_FRAME_EFFECT_SAMPLES} effect samples; reduce the ${reduce}`,
     );
 }
 
@@ -255,6 +271,8 @@ function applyEffect(src: FloatImage, effect: ResolvedEffect): FloatImage {
       }
     return out;
   }
+  if (effect.type === "chromatic-aberration") return aberrate(src, effect.amount);
+  const look = lookShader(src, effect);
   for (let p = 0; p < src.data.length; p += 4) {
     const a = src.data[p + 3] ?? 0;
     if (a <= 0) continue;
@@ -297,15 +315,100 @@ function applyEffect(src: FloatImage, effect: ResolvedEffect): FloatImage {
           mix(rgb[k] ?? 0, v, effect.amount * effect.color.a),
         );
         break;
-      // Looks draw in the next step; `activeEffect` keeps them out of every stack until then.
       default:
-        adjusted = rgb;
+        adjusted = look?.((p / 4) % src.width, Math.floor(p / 4 / src.width), rgb) ?? rgb;
         break;
     }
     for (let k = 0; k < 3; k++) out.data[p + k] = a * clamp(adjusted[k] ?? 0);
     out.data[p + 3] = a;
   }
   return out;
+}
+
+/** Chromatic aberration: red and blue sampled from opposite shifts that grow towards the edge. */
+function aberrate(src: FloatImage, amount: number): FloatImage {
+  const out = blank(src.width, src.height);
+  const strength = Math.fround(amount);
+  const cx = src.width / 2;
+  const cy = src.height / 2;
+  const scale = 0.5 * Math.max(src.width, src.height);
+  for (let y = 0; y < src.height; y++)
+    for (let x = 0; x < src.width; x++) {
+      const ox = ((x + 0.5 - cx) / scale) * strength;
+      const oy = ((y + 0.5 - cy) / scale) * strength;
+      const p = (y * src.width + x) * 4;
+      const red = bilinear(src, x + 0.5 + ox, y + 0.5 + oy, 0);
+      const blue = bilinear(src, x + 0.5 - ox, y + 0.5 - oy, 2);
+      out.data[p] = red;
+      out.data[p + 1] = texel(src, x, y, 1);
+      out.data[p + 2] = blue;
+      out.data[p + 3] = Math.max(
+        bilinear(src, x + 0.5 + ox, y + 0.5 + oy, 3),
+        texel(src, x, y, 3),
+        bilinear(src, x + 0.5 - ox, y + 0.5 - oy, 3),
+      );
+    }
+  return out;
+}
+
+/**
+ * The per-pixel color looks (the twin of the EFFECT shader's modes 7, 8, 10 and 11) for the raster
+ * `src`, or `null` for any other effect: maps the straight color at texel (x, y) to the new color. Uniform values are rounded to
+ * float32 first, as the GPU receives them.
+ */
+function lookShader(
+  src: FloatImage,
+  effect: ResolvedEffect,
+): ((x: number, y: number, rgb: [number, number, number]) => number[]) | null {
+  const f = Math.fround;
+  switch (effect.type) {
+    case "vignette": {
+      const amount = f(effect.amount);
+      const radius = f(effect.radius);
+      const feather = f(effect.feather);
+      const { color } = effect;
+      const c = [f(color.r), f(color.g), f(color.b)];
+      const strength = amount * f(color.a);
+      return (x, y, rgb) => {
+        const d = Math.hypot(
+          (x + 0.5 - src.width / 2) / (src.width / 2),
+          (y + 0.5 - src.height / 2) / (src.height / 2),
+        );
+        const k = smoothstep(radius, radius + feather, d);
+        return rgb.map((v, i) => mix(v, c[i] ?? 0, strength * k));
+      };
+    }
+    case "grain": {
+      const amount = f(effect.amount);
+      const { seed, frame, size, monochrome } = effect;
+      return (x, y, rgb) => {
+        const cx = Math.floor(x / size);
+        const cy = Math.floor(y / size);
+        return rgb.map((v, ch) => {
+          const n = (hashWords(seed, [frame, cx, cy, monochrome ? 0 : ch]) / 4294967295) * 2 - 1;
+          return Math.min(1, Math.max(0, v + amount * 0.5 * n));
+        });
+      };
+    }
+    case "posterize": {
+      const steps = f(effect.levels) - 1;
+      return (_x, _y, rgb) => rgb.map((v) => Math.floor(v * steps + 0.5) / steps);
+    }
+    case "scanlines": {
+      const spacing = f(effect.spacing);
+      const offset = f(effect.offset);
+      const hw = (f(effect.thickness) * spacing) / 2;
+      const { color } = effect;
+      const c = [f(color.r), f(color.g), f(color.b)];
+      const strength = f(effect.amount) * f(color.a);
+      return (_x, y, rgb) => {
+        const k = band(y + 0.5 - offset, hw, spacing);
+        return rgb.map((v, i) => mix(v, c[i] ?? 0, strength * k));
+      };
+    }
+    default:
+      return null;
+  }
 }
 
 /** Next mip level: each texel is the mean of a 2×2 block; texels past the edge count as transparent. */

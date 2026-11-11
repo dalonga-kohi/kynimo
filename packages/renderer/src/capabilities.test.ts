@@ -1,7 +1,17 @@
-import { BLEND_MODES, LayerSchema, MASK_MODES, PaintSchema, TrackMatteSchema } from "@kynimo/scene";
+import {
+  BLEND_MODES,
+  EffectSchema,
+  GeneratorSchema,
+  LayerSchema,
+  MASK_MODES,
+  PaintSchema,
+  TrackMatteSchema,
+} from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import {
   BLEND_MODE_SUPPORT,
+  EFFECT_SUPPORT,
+  GENERATOR_SUPPORT,
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
@@ -25,6 +35,21 @@ describe("renderer capabilities", () => {
     expect(sorted(Object.keys(PAINT_SUPPORT))).toEqual(
       sorted(PaintSchema.options.map((o) => o.shape.type.value)),
     );
+  });
+
+  it("draws generator layers, every generator kind and every effect", () => {
+    expect(sorted(Object.keys(GENERATOR_SUPPORT))).toEqual(
+      sorted(GeneratorSchema.options.map((o) => o.shape.type.value)),
+    );
+    expect(sorted(Object.keys(EFFECT_SUPPORT))).toEqual(
+      sorted(EffectSchema.options.map((o) => o.shape.type.value)),
+    );
+    for (const support of [
+      LAYER_SUPPORT.generator,
+      ...Object.values(GENERATOR_SUPPORT),
+      ...Object.values(EFFECT_SUPPORT),
+    ])
+      expect(support.status).toBe("renders");
   });
 
   it("gives a reason for everything it accepts without rendering", () => {

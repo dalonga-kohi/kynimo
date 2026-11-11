@@ -34,7 +34,7 @@ import {
 export { RenderError };
 
 /** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
-function notYet(type: "component" | "generator"): string {
+function notYet(type: "component"): string {
   const support = LAYER_SUPPORT[type];
   if (support.status !== "accepted")
     throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
@@ -192,8 +192,17 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         return effects.length > 0 && base.opacity > 0
           ? { ...base, type: "adjustment", effects }
           : null;
-      case "component":
       case "generator":
+        return {
+          ...base,
+          type: "generator",
+          space: "layer",
+          matrix: layer.matrix,
+          width: layer.width,
+          height: layer.height,
+          generator: layer.generator,
+        };
+      case "component":
         skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
         return null;
     }
@@ -266,7 +275,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
  */
 function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
   for (let s = layer.matte?.source ?? null; s !== null; s = s.matte?.source ?? null)
-    if (s.type === "component" || s.type === "generator") return s;
+    if (s.type === "component") return s;
   return null;
 }
 
@@ -281,7 +290,8 @@ function rasterSpace(
       height: layer.raster.height,
       toRaster: multiply([1, 0, 0, 1, -layer.x, -layer.y], matrix),
     };
-  const { width, height } = layer.type === "precomp" ? layer.frame : layer.raster;
+  const { width, height } =
+    layer.type === "precomp" ? layer.frame : layer.type === "generator" ? layer : layer.raster;
   return { width, height, toRaster: [1, 0, 0, 1, 0, 0] };
 }
 
