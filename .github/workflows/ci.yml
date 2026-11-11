@@ -47,10 +47,32 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The compositor tests run in the pinned Chromium on SwiftShader (ADR-0016, ADR-0021).
-      - run: pnpm --filter @kynimo/renderer exec playwright install --with-deps chromium
+      # Runner apt mirrors fail transiently (DNS); retry each download instead of failing the run.
+      - run: echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
 
-      # Video and audio uploads decode with the system FFmpeg (ADR-0032); the media tests need it.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The compositor tests run in the pinned Chromium on SwiftShader (ADR-0016, ADR-0021).
+      # The browser is cached per Playwright version; its system libraries come from apt each run.
+      - id: playwright
+        run: echo "version=$(pnpm --filter @kynimo/renderer exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @kynimo/renderer exec playwright install chromium
+
+      # Chromium's libraries and the system FFmpeg (ADR-0032, for the media tests), with a whole-step
+      # retry for mirror outages longer than apt's own retries.
+      - run: |
+          for attempt in 1 2 3; do
+            pnpm --filter @kynimo/renderer exec playwright install-deps chromium &&
+              sudo apt-get install -y --no-install-recommends ffmpeg && exit 0
+            echo "apt attempt $attempt failed; retrying in 30 s"
+            sleep 30
+          done
+          exit 1
 
       - run: pnpm check
