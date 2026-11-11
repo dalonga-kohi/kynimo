@@ -760,6 +760,15 @@ describe("use", () => {
     );
     expect(entry(indirect, "missing-reference")).toBeDefined();
   });
+
+  it("clips a huge id in the cycle report", () => {
+    const id = "a".repeat(100_000);
+    const r = importValid(
+      svg(`<g id="${id}"><rect width="1" height="1"/><use href="#${id}"/></g>`),
+    );
+    expect(entry(r, "missing-reference")).toBeDefined();
+    expect(JSON.stringify(r.report).length).toBeLessThan(2000);
+  });
 });
 
 describe("root and title", () => {

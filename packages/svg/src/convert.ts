@@ -646,7 +646,7 @@ export class Converter {
         "dropped",
         "missing-reference",
         node,
-        `A <use> references "${href}", which contains the <use> itself (a reference cycle), so it was skipped.`,
+        `A <use> references "${href?.slice(0, 60)}", which contains the <use> itself (a reference cycle), so it was skipped.`,
       );
       return [];
     }

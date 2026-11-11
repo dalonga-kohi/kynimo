@@ -90,6 +90,7 @@ export function parseSvg(source: string): ParsedSvg {
   }
   if (source.trim() === "")
     throw new SvgImportError("not-svg", "The input is empty; pass SVG markup");
+  // Deliberately also matches "<!ENTITY" inside comments and CDATA: a false positive is the safe default.
   if (/<!ENTITY/i.test(source)) {
     throw new SvgImportError(
       "entities",

@@ -256,7 +256,8 @@ async function previousUse<T>(
 
 const EXPANSION_REJECTED_FRESH =
   "the operations this call expands to were rejected; nothing was applied. See expanded_ops and errors";
-const EXPANSION_REJECTED_REPLAYED =
+// Used for replays and any rejection that does not echo the expanded ops.
+const EXPANSION_REJECTED_NO_OPS =
   "the operations this call expanded to were rejected; nothing was applied. See errors";
 
 /** `["ops", i, ...]` paths of a batch rejection, renamed for the operations an intent call expanded to. */
@@ -1421,7 +1422,7 @@ export class KynimoService {
       if (!step.ok)
         throw new ToolError(
           "invalid",
-          echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
+          echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_NO_OPS,
           expandedPaths(step.errors),
           p.version,
           echoOps ? { expanded_ops: ops } : undefined,
@@ -1443,7 +1444,7 @@ export class KynimoService {
       e.kind === "invalid"
         ? new ToolError(
             "invalid",
-            fresh && echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
+            fresh && echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_NO_OPS,
             expandedPaths(e.errors),
             e.currentVersion,
             fresh && echoOps ? { expanded_ops: ops } : undefined,
