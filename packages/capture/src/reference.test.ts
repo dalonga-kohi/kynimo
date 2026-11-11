@@ -22,6 +22,7 @@ const SCENES = [
   "path-operators",
   "text-animators",
   "svg-import",
+  "shader-backgrounds",
 ] as const;
 
 interface Reference {

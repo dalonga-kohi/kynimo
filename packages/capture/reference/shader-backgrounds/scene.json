@@ -1,0 +1,519 @@
+{
+  "formatVersion": 9,
+  "name": "Reference: shader backgrounds",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 1280,
+      "height": 720,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 90,
+      "background": "#000000",
+      "markers": [],
+      "layers": [
+        {
+          "id": "look",
+          "name": "look",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "adjustment",
+          "effects": [
+            {
+              "id": "fx-vignette",
+              "type": "vignette",
+              "amount": {
+                "value": 0.55
+              },
+              "radius": {
+                "value": 0.55
+              },
+              "feather": {
+                "value": 0.8
+              },
+              "color": {
+                "value": "#05020f"
+              }
+            },
+            {
+              "id": "fx-grain",
+              "type": "grain",
+              "amount": {
+                "value": 0.08
+              },
+              "size": 1,
+              "seed": 11,
+              "animated": true,
+              "monochrome": true
+            },
+            {
+              "id": "fx-scanlines",
+              "type": "scanlines",
+              "amount": {
+                "value": 0.08
+              },
+              "spacing": {
+                "value": 4
+              },
+              "thickness": {
+                "value": 0.5
+              },
+              "offset": {
+                "keyframes": [
+                  {
+                    "frame": 0,
+                    "value": 0,
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  },
+                  {
+                    "frame": 90,
+                    "value": 40,
+                    "interpolation": {
+                      "type": "linear"
+                    }
+                  }
+                ]
+              },
+              "color": {
+                "value": "#000000"
+              }
+            },
+            {
+              "id": "fx-chroma",
+              "type": "chromatic-aberration",
+              "amount": {
+                "value": 1.5
+              }
+            }
+          ]
+        },
+        {
+          "id": "title",
+          "name": "title",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [120, 330]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0.6,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 20,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "text",
+          "box": {
+            "mode": "point"
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "textCase": "none",
+          "content": {
+            "value": "Shader Lab"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 800,
+            "size": {
+              "value": 104
+            }
+          },
+          "tracking": {
+            "value": -20
+          },
+          "align": "left",
+          "fill": {
+            "value": "#ffffff"
+          },
+          "animators": []
+        },
+        {
+          "id": "spotlight",
+          "name": "spotlight",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "screen",
+          "matte": null,
+          "masks": [],
+          "type": "generator",
+          "width": 1280,
+          "height": 720,
+          "generator": {
+            "type": "gradient",
+            "kind": "radial",
+            "start": {
+              "value": [930, 150]
+            },
+            "end": {
+              "value": [1630, 150]
+            },
+            "stops": {
+              "value": [
+                {
+                  "offset": 0,
+                  "color": "#ffd9a0b3"
+                },
+                {
+                  "offset": 0.5,
+                  "color": "#ff9a6a40"
+                },
+                {
+                  "offset": 1,
+                  "color": "#ff7a5900"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "dots-card",
+          "name": "dots-card",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [96, 210]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "generator",
+          "width": 560,
+          "height": 300,
+          "generator": {
+            "type": "pattern",
+            "kind": "dots",
+            "size": {
+              "value": 24
+            },
+            "thickness": {
+              "value": 0.35
+            },
+            "angle": {
+              "value": 0
+            },
+            "offset": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [0, 0],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 90,
+                  "value": [24, 24],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "foreground": {
+              "value": "#ffffffc0"
+            },
+            "background": {
+              "value": "#ffffff0d"
+            }
+          }
+        },
+        {
+          "id": "noise",
+          "name": "noise",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 0.5
+            }
+          },
+          "blendMode": "overlay",
+          "matte": null,
+          "masks": [],
+          "type": "generator",
+          "width": 1280,
+          "height": 720,
+          "generator": {
+            "type": "noise",
+            "seed": 3,
+            "scale": {
+              "value": 220
+            },
+            "octaves": 4,
+            "evolution": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 90,
+                  "value": 2,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "offset": {
+              "value": [0, 0]
+            },
+            "low": {
+              "value": "#000000"
+            },
+            "high": {
+              "value": "#ffffff"
+            }
+          }
+        },
+        {
+          "id": "aurora",
+          "name": "aurora",
+          "inFrame": 0,
+          "outFrame": 90,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "generator",
+          "width": 1280,
+          "height": 720,
+          "generator": {
+            "type": "aurora",
+            "seed": 7,
+            "colors": [
+              {
+                "value": "#1a1055"
+              },
+              {
+                "value": "#0b6e83"
+              },
+              {
+                "value": "#6b2fd6"
+              },
+              {
+                "value": "#d94f8f"
+              }
+            ],
+            "evolution": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 90,
+                  "value": 1,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "softness": {
+              "value": 0.45
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
