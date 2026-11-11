@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
-import { evaluateFrame, type ResolvedComposition } from "@kynimo/engine";
+import { createComponentHost } from "@kynimo/components";
+import { evaluateFrame, type ResolvedComposition, type ResolvedLayer } from "@kynimo/engine";
 import { IntentError } from "@kynimo/intent";
 import {
   AssetInfoError,
@@ -928,6 +929,7 @@ export class KynimoService {
     const families = new Set<string>();
     const seen = new Set<string>();
     const walk = [compositionId];
+    let hasComponents = false;
     for (let id = walk.pop(); id !== undefined; id = walk.pop()) {
       if (seen.has(id)) continue;
       seen.add(id);
@@ -935,8 +937,17 @@ export class KynimoService {
         if (l.type === "image") images.add(l.assetId);
         else if (l.type === "text") families.add(l.font.family);
         else if (l.type === "precomp") walk.push(l.compositionId);
+        else if (l.type === "component") hasComponents = true;
       }
     }
+    // Evaluate the frames once, only when a component's subtree (which only exists once evaluated)
+    // or a video's source frames are needed.
+    const evaluated =
+      hasComponents || doc.assets.some((a) => a.type === "video")
+        ? walkEvaluated(doc, compositionId, frames)
+        : undefined;
+    for (const id of evaluated?.images ?? []) images.add(id);
+    for (const family of evaluated?.families ?? []) families.add(family);
     const used = doc.assets.filter((a) =>
       a.type === "image" ? images.has(a.id) : a.type === "font" && families.has(a.family),
     );
@@ -964,7 +975,7 @@ export class KynimoService {
       out.set(a.id, bytes);
     }
     const videoFrames = new Map<string, Uint8Array>();
-    for (const [assetId, sourceFrames] of shownVideoFrames(doc, compositionId, frames)) {
+    for (const [assetId, sourceFrames] of evaluated?.videoFrames ?? []) {
       const asset = doc.assets.find((a) => a.id === assetId);
       if (asset?.type !== "video") continue;
       const failed = (why: string) =>
@@ -1747,38 +1758,65 @@ export class KynimoService {
   }
 }
 
+/** What evaluated frames draw: image ids, text font families and the source frames of each video. */
+interface EvaluatedUsage {
+  images: Set<string>;
+  families: Set<string>;
+  videoFrames: Map<string, Set<number>>;
+}
+
 /**
- * Source frames of each video asset that `frames` of the composition show, from the evaluated
- * layer trees (precomps and matte sources included), so a render loads exactly those frames.
+ * Evaluates `frames` once and collects what every layer of the evaluated trees uses, precomps,
+ * component subtrees and matte sources included. Evaluation errors are left for the renderer to report.
  */
-export function shownVideoFrames(
+function walkEvaluated(
   doc: Project,
   compositionId: string,
   frames: readonly number[],
-): Map<string, Set<number>> {
-  const shown = new Map<string, Set<number>>();
-  if (!doc.assets.some((a) => a.type === "video")) return shown;
+): EvaluatedUsage {
+  const usage: EvaluatedUsage = { images: new Set(), families: new Set(), videoFrames: new Map() };
+  const onLayer = (l: ResolvedLayer) => {
+    if (l.type === "image") usage.images.add(l.assetId);
+    else if (l.type === "text") usage.families.add(l.font.family);
+    else if (l.type === "video" && l.sourceFrame !== null) {
+      const set = usage.videoFrames.get(l.assetId) ?? new Set<number>();
+      set.add(l.sourceFrame);
+      usage.videoFrames.set(l.assetId, set);
+    }
+  };
+  const components = createComponentHost(doc);
   const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
     if (seen.has(comp)) return;
     seen.add(comp);
     const stack = [...comp.layers];
     for (let l = stack.pop(); l !== undefined; l = stack.pop()) {
       if (l.matte?.source) stack.push(l.matte.source);
-      if (l.type === "video" && l.sourceFrame !== null) {
-        const set = shown.get(l.assetId) ?? new Set<number>();
-        set.add(l.sourceFrame);
-        shown.set(l.assetId, set);
-      } else if (l.type === "precomp" && l.composition !== null) visit(l.composition, seen);
+      onLayer(l);
+      if ((l.type === "precomp" || l.type === "component") && l.composition !== null)
+        visit(l.composition, seen);
     }
   };
   for (const f of frames) {
     try {
-      visit(evaluateFrame(doc, f, compositionId), new Set());
+      visit(evaluateFrame(doc, f, compositionId, { components }), new Set());
     } catch {
       // The renderer evaluates again and reports the same error with its own message.
     }
   }
-  return shown;
+  return usage;
+}
+
+/**
+ * Source frames of each video asset that `frames` of the composition show, from the evaluated
+ * layer trees (precomps, components and matte sources included), so a render loads exactly those frames.
+ */
+export function shownVideoFrames(
+  doc: Project,
+  compositionId: string,
+  frames: readonly number[],
+): Map<string, Set<number>> {
+  if (!doc.assets.some((a) => a.type === "video")) return new Map();
+  return walkEvaluated(doc, compositionId, frames).videoFrames;
 }
 
 /** Every frame must be a whole frame of the composition; errors name the field and the range. */

@@ -119,6 +119,10 @@ describe("capability manifest", () => {
     expect(manifest.unavailable.custom_shaders?.reason).toContain("M6");
     expect(manifest.unavailable.catalogs?.reason).toContain("shader catalogs in M6");
     expect(manifest.layer_types.generator.status).toBe("renders");
+    expect(manifest.layer_types.component.status).toBe("renders");
+    expect(manifest.unavailable.components?.reason).toBe(
+      "no built-in components yet; the library and add_component arrive next in M6",
+    );
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {

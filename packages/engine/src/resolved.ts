@@ -148,12 +148,17 @@ export interface ResolvedAdjustmentLayer extends LayerBase {
   type: "adjustment";
 }
 
-/** Component evaluation arrives in M6; until then the instance is passed through unevaluated. */
+/** A component instance: its pinned reference and raw props, plus the subtree the host evaluated for it. */
 export interface ResolvedComponentLayer extends LayerBase {
   type: "component";
   componentId: string;
   componentVersion: string;
   props: Readonly<Record<string, Json>>;
+  /**
+   * The instance's subtree at its local frame (a precomp-like nested composition, never shared), or
+   * `null` when no component host was given or the instance has not started yet at this frame.
+   */
+  composition: ResolvedComposition | null;
 }
 
 export type ResolvedLayer =

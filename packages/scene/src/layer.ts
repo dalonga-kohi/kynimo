@@ -201,3 +201,4 @@ export const LayerSchema = z.discriminatedUnion("type", [
 ]);
 export type Layer = z.infer<typeof LayerSchema>;
 export type LayerType = Layer["type"];
+export type ComponentLayer = Extract<Layer, { type: "component" }>;

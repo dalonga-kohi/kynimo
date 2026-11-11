@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hashLattice } from "./behavior.js";
-import { hashWords } from "./hash.js";
+import { hashWords, mulberry32 } from "./hash.js";
 
 describe("hashWords", () => {
   it("pins known outputs (the GLSL mirror must match these)", () => {
@@ -38,5 +38,25 @@ describe("hashWords", () => {
     expect(hashLattice(7, 0, 0, 1)).toBe(1199243789);
     expect(hashLattice(7, 1, 0, 1)).toBe(2757665726);
     expect(hashLattice(7, 0, 2, 1)).toBe(172208487);
+  });
+});
+
+describe("mulberry32", () => {
+  it("pins the sequence for a seed (every platform must agree)", () => {
+    const next = mulberry32(12345);
+    expect([next(), next(), next()]).toEqual([4207900869, 1317490944, 2079646450]);
+  });
+
+  it("is deterministic in the seed and returns unsigned 32-bit integers", () => {
+    const a = mulberry32(7);
+    const b = mulberry32(7);
+    for (let i = 0; i < 50; i++) {
+      const v = a();
+      expect(v).toBe(b());
+      expect(Number.isInteger(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(0xffffffff);
+    }
+    expect(mulberry32(8)()).not.toBe(mulberry32(7)());
   });
 });

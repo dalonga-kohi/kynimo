@@ -100,7 +100,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/intent`     | `@kynimo/intent` — pure expansions of intent tools (animate, stagger, retime, presets) into operations over guideline tokens (ADR-0040)         | M4         |
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036, ADR-0041)                                                                 | M4         |
 | `packages/svg`        | `@kynimo/svg` — pure SVG-to-shape-layer converter with a fidelity report, behind `import_svg`                                                   | M4         |
-| `packages/components` | `@kynimo/components` — built-in library, component authoring types                                                                              | M6         |
+| `packages/components` | `@kynimo/components` — component model (typed props, style-aware host over the engine hook, ADR-0012), built-in library                         | M6         |
 | `apps/worker`         | render/export workers                                                                                                                           | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
 | `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9    |

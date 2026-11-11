@@ -1,3 +1,4 @@
+export { mulberry32 } from "@kynimo/engine";
 export {
   type AnimateInput,
   AnimateInput as AnimateInputSchema,
@@ -20,7 +21,6 @@ export {
   typedCharacters,
   VISUAL_LAYER_TYPES,
 } from "./presets.js";
-export { mulberry32 } from "./random.js";
 export {
   type RetimeInput,
   RetimeInput as RetimeInputSchema,

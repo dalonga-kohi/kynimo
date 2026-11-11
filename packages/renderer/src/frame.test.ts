@@ -1,5 +1,5 @@
-import { evaluateFrame } from "@kynimo/engine";
-import { AssetSchema, LayerSchema } from "@kynimo/scene";
+import { type ComponentHost, evaluateFrame } from "@kynimo/engine";
+import { AssetSchema, CompositionSchema, LayerSchema } from "@kynimo/scene";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CanvasKit } from "./canvaskit.js";
 import {
@@ -524,6 +524,77 @@ describe("precomps and unsupported layers", () => {
   });
 });
 
+describe("component layers", () => {
+  const dot = layer("dot", "solid", { width: 10, height: 10, color: "#ff0000" });
+  const nested = composition("inner", [dot], { width: 20, height: 20 });
+  const placed = transform({ position: prop([100, 30]) });
+  const instance = (id: string, over: Obj = {}) =>
+    layer(id, "component", {
+      componentId: "badge",
+      componentVersion: "1.0.0",
+      props: {},
+      transform: placed,
+      ...over,
+    });
+  // The host returns the same subtree the precomp tests show, as a component's output.
+  const host: ComponentHost = {
+    evaluate: () =>
+      CompositionSchema.parse({ ...composition("component", [dot], { width: 20, height: 20 }) }),
+  };
+  const asPlan = (layers: Obj[], components?: ComponentHost) =>
+    rasterizeFrame(
+      ck,
+      evaluateFrame(
+        project([composition("main", layers), nested]),
+        0,
+        undefined,
+        components === undefined ? {} : { components },
+      ),
+      res(),
+    );
+
+  it("plans an evaluated instance exactly like a precomp showing the same composition", () => {
+    const viaComponent = asPlan([instance("c", { blendMode: "screen" })], host);
+    const viaPrecomp = asPlan([
+      layer("c", "precomp", { compositionId: "inner", transform: placed, blendMode: "screen" }),
+    ]);
+    expect(viaComponent).toEqual(viaPrecomp);
+    expect(compositeReference(viaComponent).pixels).toEqual(compositeReference(viaPrecomp).pixels);
+    expect(pixel(compositeReference(viaComponent), 105, 35)).toEqual(RED);
+  });
+
+  it("skips an instance evaluated without a host, saying why", () => {
+    const p = asPlan([instance("c")]);
+    expect(p.layers).toEqual([]);
+    expect(p.skipped).toEqual([
+      {
+        id: "c",
+        type: "component",
+        reason: "component layer was not evaluated (no component host)",
+      },
+    ]);
+  });
+
+  it("draws an instance as a track matte source", () => {
+    const p = asPlan(
+      [
+        layer("t", "solid", {
+          width: 200,
+          height: 100,
+          color: "#00ff00",
+          matte: { layerId: "c", mode: "alpha" },
+        }),
+        instance("c", { hidden: true }),
+      ],
+      host,
+    );
+    expect(p.skipped).toEqual([]);
+    const out = compositeReference(p);
+    expect(pixel(out, 105, 35)).toEqual([0, 255, 0, 255]);
+    expect(pixel(out, 5, 5)).toEqual(CLEAR);
+  });
+});
+
 describe("generator layers", () => {
   const stripes = (thickness = 1) => ({
     type: "pattern",
@@ -646,7 +717,9 @@ describe("raster budget", () => {
       const p = rasterizeFrame(ck, evaluateFrame(doc, 0), { ...res(images), videos });
       const support = LAYER_SUPPORT[type as keyof typeof LAYER_SUPPORT];
       const skipped = p.skipped.find((s) => s.id === type);
-      expect(skipped !== undefined, type).toBe(support.status === "accepted");
+      // A component instance evaluated without a host is the one renderable type that is skipped.
+      const expectSkipped = support.status === "accepted" || type === "component";
+      expect(skipped !== undefined, type).toBe(expectSkipped);
       if (skipped !== undefined && support.status === "accepted")
         expect(skipped.reason).toBe(support.reason);
       if (type !== "null")

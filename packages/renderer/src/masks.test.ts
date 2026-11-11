@@ -332,7 +332,8 @@ describe("rasterizeFrame: blend modes and track mattes", () => {
       {
         id: "t",
         type: "solid",
-        reason: "its track matte source 'c' is a component layer, which cannot be drawn yet",
+        reason:
+          "its track matte source 'c' is a component layer that was not evaluated (no component host)",
       },
     ]);
   });

@@ -82,7 +82,10 @@ export interface PlannedLayerSpaceLayer extends PlannedBase {
   raster: RasterImage;
 }
 
-/** A precomp is composited on its own at its composition size, then placed like an image. */
+/**
+ * A precomp is composited on its own at its composition size, then placed like an image. An
+ * evaluated component instance is planned the same way.
+ */
 export interface PlannedPrecompLayer extends PlannedBase {
   type: "precomp";
   space: "layer";
@@ -118,7 +121,7 @@ export type PlannedFrameLayer = PlannedLayer | PlannedAdjustmentLayer;
 
 /**
  * A layer the renderer cannot draw yet. It is left out of the frame. That includes a component
- * layer and any layer whose track matte chain reaches one.
+ * layer evaluated without a component host and any layer whose track matte chain reaches one.
  */
 export interface SkippedLayer {
   id: string;

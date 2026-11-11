@@ -51,7 +51,10 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },
   adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
-  component: { status: "accepted", reason: "component evaluation arrives in M6" },
+  component: {
+    status: "renders",
+    note: "evaluated by @kynimo/components into a subtree, then drawn like a precomp; no built-in components exist yet",
+  },
   audio: {
     status: "accepted",
     reason: "frames have no sound; audio is mixed in at export, which arrives in M7",

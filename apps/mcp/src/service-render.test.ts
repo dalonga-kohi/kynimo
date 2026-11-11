@@ -1,4 +1,5 @@
 import type { CapturedFrame, CapturedSheet } from "@kynimo/capture";
+import { createComponentHost } from "@kynimo/components";
 import { evaluateFrame } from "@kynimo/engine";
 import {
   type Project,
@@ -272,6 +273,52 @@ describe("KynimoService: rendering", () => {
     expect(
       (await rejection(svc.renderContactSheet(project, { count: 4, cell_size: 320 }))).kind,
     ).toBe("render_failed");
+  });
+
+  it("reports a component the library does not have as a render error", async () => {
+    const doc = ProjectSchema.parse({
+      formatVersion: SCENE_FORMAT_VERSION,
+      name: "Component",
+      mainCompositionId: "main",
+      style: null,
+      assets: [],
+      compositions: [
+        {
+          id: "main",
+          name: "Main",
+          width: 100,
+          height: 100,
+          fps: { num: 30, den: 1 },
+          durationFrames: 90,
+          background: null,
+          markers: [],
+          layers: [
+            {
+              id: "cmp",
+              ...(withLayerDefaults(
+                {
+                  type: "component",
+                  name: "cmp",
+                  componentId: "nothing",
+                  componentVersion: "1.0.0",
+                  props: {},
+                },
+                { width: 100, height: 100, durationFrames: 90 } as never,
+              ) as object),
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      evaluateFrame(doc, 0, undefined, { components: createComponentHost(doc) });
+      throw new Error("expected the host to reject the unknown component");
+    } catch (e) {
+      renderer.fail = e as Error;
+    }
+    const failed = await rejection(frames([0]));
+    expect(failed.kind).toBe("render_failed");
+    expect(failed.message).toContain("no component 'nothing'");
   });
 
   describe("contact sheets", () => {

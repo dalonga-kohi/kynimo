@@ -3,6 +3,7 @@
  * loads into the pinned Chromium. The whole pipeline runs here, on the path ADR-0016 guarantees:
  * evaluate → CanvasKit raster → WebGL2 compositor → PNG.
  */
+import { createComponentHost } from "@kynimo/components";
 import { evaluateFrame } from "@kynimo/engine";
 import {
   BUNDLED_FONTS,
@@ -117,12 +118,17 @@ async function renderFrames({
       );
     }
     const out: Pixels[] = [];
+    const components = createComponentHost(project);
     for (const frame of frames) {
-      const plan = rasterizeFrame(ck, evaluateFrame(project, frame, compositionId), {
-        images,
-        fonts,
-        videos,
-      });
+      const plan = rasterizeFrame(
+        ck,
+        evaluateFrame(project, frame, compositionId, { components }),
+        {
+          images,
+          fonts,
+          videos,
+        },
+      );
       const full = compositor.composite(plan);
       const size = fitSize(full.width, full.height, maxSize);
       out.push({ frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) });

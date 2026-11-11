@@ -7,7 +7,6 @@ import {
 } from "@kynimo/engine";
 import type { CanvasKit } from "canvaskit-wasm";
 import { FrameShapeWork, MAX_FRAME_SHAPE_WORK } from "./binding.js";
-import { LAYER_SUPPORT } from "./capabilities.js";
 import { activeEffect } from "./compositor/effects.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
@@ -33,13 +32,9 @@ import {
 
 export { RenderError };
 
-/** Why a layer type is left out of frames: the capability manifest's reason, so the two never differ. */
-function notYet(type: "component"): string {
-  const support = LAYER_SUPPORT[type];
-  if (support.status !== "accepted")
-    throw new RenderError(`${type} layers are marked renders but the renderer cannot draw them`);
-  return support.reason;
-}
+/** A component instance the engine started but left unevaluated: it was given no component host. */
+const isUnevaluatedComponent = (layer: ResolvedLayer): boolean =>
+  layer.type === "component" && layer.composition === null && layer.layerFrame >= 0;
 
 /**
  * Raster pixels one frame may allocate, precomps included: 1 GiB of RGBA8, about 128 full 1080p
@@ -179,8 +174,18 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         // A decoded frame draws exactly like an image of its pixels.
         return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
       }
-      case "precomp": {
-        if (layer.composition === null) return null;
+      case "precomp":
+      case "component": {
+        // A component instance's evaluated subtree is drawn exactly like a precomp's composition.
+        if (layer.composition === null) {
+          if (isUnevaluatedComponent(layer))
+            skipped.push({
+              id,
+              type: layer.type,
+              reason: "component layer was not evaluated (no component host)",
+            });
+          return null;
+        }
         let frame = ctx.nested.get(layer.composition);
         if (frame === undefined) {
           frame = planComposition(ctx, layer.composition);
@@ -204,9 +209,6 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           height: layer.height,
           generator: layer.generator,
         };
-      case "component":
-        skipped.push({ id, type: layer.type, reason: notYet(layer.type) });
-        return null;
     }
   };
 
@@ -220,7 +222,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       skipped.push({
         id: layer.id,
         type: layer.type,
-        reason: `its track matte source '${blocker.id}' is a ${blocker.type} layer, which cannot be drawn yet`,
+        reason: `its track matte source '${blocker.id}' is a component layer that was not evaluated (no component host)`,
       });
       planned.set(layer.id, null);
       return null;
@@ -272,12 +274,12 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
 }
 
 /**
- * The first layer along `layer`'s matte chain that the renderer cannot draw yet, if any. Chains are
+ * The first layer along `layer`'s matte chain that the renderer cannot draw yet (an unevaluated component), if any. Chains are
  * finite: the schema rules out matte cycles.
  */
 function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
   for (let s = layer.matte?.source ?? null; s !== null; s = s.matte?.source ?? null)
-    if (s.type === "component") return s;
+    if (isUnevaluatedComponent(s)) return s;
   return null;
 }
 
