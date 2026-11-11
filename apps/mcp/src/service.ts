@@ -1388,7 +1388,10 @@ export class KynimoService {
     ) => IntentExpansion | Promise<IntentExpansion>,
     /** On `dryRun`, receives the document the operations would produce. */
     onDryRun?: (doc: Project) => void,
+    /** `echoOps: false` keeps the expanded operations out of the reply (and of a rejection), for tools whose operations are large. */
+    options: { echoOps?: boolean } = {},
   ): Promise<IntentReply> {
+    const echoOps = options.echoOps !== false;
     const print = fingerprint({ tool, base_version: meta.base_version, body });
     const p = await this.load(meta.project_id);
     const expand = async () => {
@@ -1418,17 +1421,17 @@ export class KynimoService {
       if (!step.ok)
         throw new ToolError(
           "invalid",
-          EXPANSION_REJECTED_FRESH,
+          echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
           expandedPaths(step.errors),
           p.version,
-          { expanded_ops: ops },
+          echoOps ? { expanded_ops: ops } : undefined,
         );
       onDryRun?.(step.state.doc);
       return {
         ...summarizeChanges(p.id, p.version, step.changes),
         replayed: false,
         dry_run: true,
-        ops,
+        ...(echoOps ? { ops } : {}),
         ...(resolved === undefined ? {} : { resolved }),
       };
     }
@@ -1440,16 +1443,16 @@ export class KynimoService {
       e.kind === "invalid"
         ? new ToolError(
             "invalid",
-            fresh ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
+            fresh && echoOps ? EXPANSION_REJECTED_FRESH : EXPANSION_REJECTED_REPLAYED,
             expandedPaths(e.errors),
             e.currentVersion,
-            fresh ? { expanded_ops: ops } : undefined,
+            fresh && echoOps ? { expanded_ops: ops } : undefined,
           )
         : e;
     const reply = await this.write(meta, { kind: "ops", ops }, print, false, reshape);
     return reply.replayed
       ? reply
-      : { ...reply, ops, ...(resolved === undefined ? {} : { resolved }) };
+      : { ...reply, ...(echoOps ? { ops } : {}), ...(resolved === undefined ? {} : { resolved }) };
   }
 
   /**

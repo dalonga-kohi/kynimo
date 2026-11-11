@@ -1,5 +1,5 @@
 import { IntentError } from "@kynimo/intent";
-import type { Op, Project } from "@kynimo/scene";
+import { type LayerInput, LayerIdSchema, type Op, type Project } from "@kynimo/scene";
 import { importSvg, SvgImportError } from "@kynimo/svg";
 import type { z } from "zod";
 import type { ImportSvgRequest } from "./schemas.js";
@@ -39,8 +39,22 @@ export function importSvgExpansion(
   const name = input.name ?? (result.title ? result.title : "SVG");
   const k = input.width === undefined ? 1 : input.width / result.size.width;
   const scale: [number, number] = [result.scale[0] * k, result.scale[1] * k];
-  const position = input.position ?? [composition.width / 2, composition.height / 2];
-  const layer = {
+  const outSize = { width: result.size.width * k, height: result.size.height * k };
+  const sized = (n: number): boolean => n >= 1e-6 && n <= 1e15;
+  if (
+    !scale.every((n) => Number.isFinite(n) && n > 0) ||
+    !sized(outSize.width) ||
+    !sized(outSize.height)
+  ) {
+    throw new IntentError(
+      ["width"],
+      "width is too large or too small for this SVG; use a normal pixel width such as 512",
+    );
+  }
+  const position: [number, number] = input.position
+    ? [input.position[0] ?? 0, input.position[1] ?? 0]
+    : [composition.width / 2, composition.height / 2];
+  const layer: Extract<LayerInput, { type: "shape" }> = {
     type: "shape",
     name,
     inFrame: 0,
@@ -62,21 +76,23 @@ export function importSvgExpansion(
     blendMode: "normal",
     matte: null,
     masks: [],
+    effects: [],
+    behaviors: [],
     contents: result.contents,
   };
-  const op = {
+  const op: Op = {
     op: "addLayer",
-    composition: compId,
-    id: layerId,
+    composition: composition.id,
+    id: LayerIdSchema.parse(layerId),
     layer,
     ...(input.index === undefined ? {} : { index: input.index }),
-  } as unknown as Op;
+  };
   return {
     ops: [op],
     resolved: {
       layer_id: layerId,
       name,
-      size: { width: result.size.width * k, height: result.size.height * k },
+      size: outSize,
       view_box: result.viewBox,
       report: result.report,
     },

@@ -523,6 +523,7 @@ export function createServer(service: KynimoService): McpServer {
     inputSchema: z.ZodObject,
     schema: z.ZodType<I>,
     run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+    options?: { echoOps?: boolean },
   ) =>
     server.registerTool(
       name,
@@ -537,6 +538,8 @@ export function createServer(service: KynimoService): McpServer {
             body,
             dry_run === true,
             run,
+            undefined,
+            options,
           )),
         };
       }),
@@ -590,10 +593,12 @@ export function createServer(service: KynimoService): McpServer {
   intentTool(
     "import_svg",
     "Import SVG",
-    "Converts SVG markup into one editable shape layer (paths, groups, fills, strokes, gradients). Returns a fidelity report of what was dropped, flattened or approximated; use dry_run to see it first.",
+    "Converts SVG markup into one editable shape layer (paths, groups, fills, strokes, gradients). Returns a fidelity report of what was dropped, flattened or approximated; use dry_run to see it first. The reply omits the layer; read it with get_scene.",
     ImportSvgInput,
     ImportSvgRequest,
     importSvgExpansion,
+    // The layer holds the whole drawing; read it with get_scene or find_layers.
+    { echoOps: false },
   );
 
   intentTool(

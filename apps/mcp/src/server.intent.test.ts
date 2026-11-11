@@ -482,7 +482,7 @@ describe("intent tools", () => {
         svg: LOGO,
         composition: "inner",
       });
-      expect(r.ops).toMatchObject([{ op: "addLayer", composition: "inner" }]);
+      expect(r.ops).toBeUndefined();
       const scene = (await call(client, "get_scene", { project_id })) as {
         compositions: { id: string; layers: { id: string }[] }[];
       };
@@ -504,7 +504,8 @@ describe("intent tools", () => {
         dry_run: true,
       });
       expect(dry).toMatchObject({ dry_run: true, version: 3, changed: true });
-      expect(dry.ops).toMatchObject([{ op: "addLayer", id: "svg" }]);
+      expect(dry.ops).toBeUndefined();
+      expect(dry.resolved).toMatchObject({ layer_id: "svg" });
       const features = (
         dry.resolved as { report: { entries: { feature: string }[] } }
       ).report.entries.map((e) => e.feature);
@@ -534,6 +535,54 @@ describe("intent tools", () => {
         const e = await callError(client, "import_svg", { ...meta(3, `bad-${i}`), svg });
         expect(e, `case ${i}`).toMatchObject({ error: "invalid" });
         expect((e.errors as { path: unknown[] }[])[0]?.path[0], `case ${i}`).toBe("svg");
+      }
+      expect(await version()).toBe(3);
+    });
+
+    it("keeps the reply small for a large SVG, written or dry-run", async () => {
+      const paths = Array.from(
+        { length: 2000 },
+        (_, i) =>
+          `<path d="M${i} 0 L${i + 5} 3 L${i} 9 Z" fill="#${(i % 4096).toString(16).padStart(3, "0")}"/>`,
+      ).join("");
+      const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 10">${paths}</svg>`;
+      const size = (r: unknown) => JSON.stringify(r).length;
+      const dry = await call(client, "import_svg", {
+        ...meta(3, "big-dry"),
+        svg: big,
+        dry_run: true,
+      });
+      expect(size(dry)).toBeLessThan(20_000);
+      expect(dry.ops).toBeUndefined();
+      expect(await version()).toBe(3);
+      expect(await ids()).not.toContain("svg");
+      const written = await call(client, "import_svg", { ...meta(3, "big"), svg: big });
+      expect(size(written)).toBeLessThan(20_000);
+      expect(written.ops).toBeUndefined();
+      expect(written).toMatchObject({ version: 4, layers_added: ["svg"] });
+      const { layer } = await getLayer("svg");
+      expect((layer.contents as unknown[]).length).toBeGreaterThan(0);
+    });
+
+    it("does not echo the expanded operations when they are rejected", async () => {
+      const e = await callError(client, "import_svg", {
+        ...meta(3, "dup"),
+        svg: LOGO,
+        layer_id: "a",
+      });
+      expect(e).toMatchObject({ error: "invalid" });
+      expect(e.expanded_ops).toBeUndefined();
+      expect(JSON.stringify(e).length).toBeLessThan(5_000);
+    });
+
+    it("refuses a width that overflows the layer scale, pointing at width", async () => {
+      for (const width of [1e308, 5e-324]) {
+        const e = await callError(client, "import_svg", {
+          ...meta(3, `w-${width}`),
+          svg: LOGO,
+          width,
+        });
+        expect(e).toMatchObject({ error: "invalid", errors: [{ path: ["width"] }] });
       }
       expect(await version()).toBe(3);
     });

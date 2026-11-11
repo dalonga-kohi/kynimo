@@ -713,8 +713,7 @@ export class Converter {
     if (
       strokePaint !== null &&
       (capRaw === "round" || capRaw === "square") &&
-      contours !== null &&
-      contours.some(isZeroLength)
+      contours?.some(isZeroLength) === true
     ) {
       this.report.add(
         "dropped",
