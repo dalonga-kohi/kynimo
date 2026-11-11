@@ -42,8 +42,20 @@ describe("component registry", () => {
     );
   });
 
-  it("starts with no built-in components", () => {
-    expect(BUILT_IN_COMPONENTS).toEqual([]);
-    expect(builtInRegistry.list()).toEqual([]);
+  it("ships the built-in components", () => {
+    const ids = builtInRegistry.list().map((d) => d.id);
+    expect(ids).toContain("kinetic-type");
+    expect(ids).toContain("lower-third");
+  });
+
+  it("describes every built-in component and every prop", () => {
+    for (const def of BUILT_IN_COMPONENTS) {
+      expect(def.version, def.id).toBe("1.0.0");
+      expect(def.description.length, def.id).toBeGreaterThan(20);
+      for (const [name, prop] of Object.entries(def.props)) {
+        expect(prop.description.length, `${def.id}.${name}`).toBeGreaterThan(0);
+        expect(prop.description.length, `${def.id}.${name}`).toBeLessThanOrEqual(200);
+      }
+    }
   });
 });

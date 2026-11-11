@@ -70,7 +70,7 @@ describe("component host: lookup", () => {
 
   it("says none are available for an empty registry", () => {
     const doc = project([inst()]);
-    const host = createComponentHost(doc);
+    const host = createComponentHost(doc, createComponentRegistry([]));
     expect(() => host.evaluate(doc.compositions[0]?.layers[0] as ComponentLayer, ctx())).toThrow(
       /no component 'probe'; available: none/,
     );
@@ -256,6 +256,43 @@ describe("component host: style helpers", () => {
     expect(style.color("accent")).toBe(keynote.color.accent);
     expect(style.pack).toBe(keynote);
     expect(sample(1920, 1080, playfulSaas).color("accent")).toBe(playfulSaas.color.accent);
+  });
+});
+
+describe("component host: assetSize", () => {
+  it("returns the pixel size of image and video assets, null otherwise", () => {
+    const seen: Record<string, unknown> = {};
+    const { host, target } = hostFor(
+      probe((_p, c) => {
+        for (const id of ["pic", "clip", "song", "ghost"]) seen[id] = c.assetSize(id);
+        return empty;
+      }),
+      [inst()],
+      {
+        assets: [
+          { ...imageAsset("pic"), width: 640, height: 360 },
+          {
+            id: "clip",
+            name: "clip",
+            type: "video",
+            uri: "assets/clip.mp4",
+            sha256: "0".repeat(64),
+            width: 1280,
+            height: 720,
+            fps: { num: 30, den: 1 },
+            frameCount: 30,
+          },
+          audioAsset("song"),
+        ],
+      },
+    );
+    host.evaluate(target, ctx());
+    expect(seen).toEqual({
+      pic: { width: 640, height: 360 },
+      clip: { width: 1280, height: 720 },
+      song: null,
+      ghost: null,
+    });
   });
 });
 

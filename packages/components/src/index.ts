@@ -1,3 +1,4 @@
+export { kineticType, lowerThird } from "./built-in/index.js";
 export {
   type ComponentDefinition,
   type ComponentEvalContext,

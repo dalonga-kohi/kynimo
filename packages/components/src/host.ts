@@ -92,6 +92,12 @@ export function createComponentHost(
         ...ctx,
         random: () => next() / 4294967296,
         style: createComponentStyle(pack, ctx, ctx.fps),
+        assetSize: (id) => {
+          const asset = project.assets.find((a) => a.id === id);
+          return asset !== undefined && (asset.type === "image" || asset.type === "video")
+            ? { width: asset.width, height: asset.height }
+            : null;
+        },
       };
 
       let output: ComponentOutput;

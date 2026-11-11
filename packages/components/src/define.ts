@@ -25,6 +25,8 @@ export interface ComponentEvalContext extends ComponentContext {
   /** A fresh seeded PRNG per evaluate call (mulberry32(ctx.seed)): unit floats in [0, 1). */
   random(): number;
   style: ComponentStyle;
+  /** The pixel size of an image or video asset of the project; null for an unknown id or another asset type. */
+  assetSize(id: string): { width: number; height: number } | null;
 }
 
 export interface ComponentDefinition {
