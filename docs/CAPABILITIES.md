@@ -76,7 +76,7 @@ Video note: frame-accurate decoding through `<video>` in Chromium isn't determin
 | Track mattes: alpha, alpha inverted, luma, luma inverted; matte from any layer                          | Track matte    | beta   |
 | Masks: path, feather, expansion, opacity, mode (add, subtract, intersect), inverted                     | Masks          | beta   |
 | Motion blur (shutter angle/phase, fixed samples): transform blur; animated contents at the center frame | Motion blur    | beta   |
-| Puppet pins with animated layer-space positions and a deformable mesh                                    | Puppet pins    | beta   |
+| Puppet pins with animated layer-space positions and a deformable mesh                                   | Puppet pins    | beta   |
 | Preserve transparency / stencils                                                                        | Stencil        | later  |
 
 ## 4. Shapes

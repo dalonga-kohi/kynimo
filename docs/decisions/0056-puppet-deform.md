@@ -29,10 +29,10 @@ Planning and compositing each have a shared 128 million-unit frame budget, inclu
 
 Warmed medians on an AMD Ryzen 5 3600 with Node 24.19.0, using two pins per layer. CPU composite times include placement and blending.
 
-| Source | Density / iterations | Triangles | Plan work | Draw work | Factor | GPU vertex buffer | Plan | CPU composite |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 256×160 alpha raster | 24 / 10 | 720 | 1,093,561 | 179,619 | 85,968 B | 34,560 B | 6.00 ms | 16.97 ms |
-| 256×256 full rectangle | 64 / 30 | 8,192 | 56,602,063 | 472,576 | 2,263,528 B | 393,216 B | 191.66 ms | 25.40 ms |
+| Source                 | Density / iterations | Triangles |  Plan work | Draw work |      Factor | GPU vertex buffer |      Plan | CPU composite |
+| ---------------------- | -------------------: | --------: | ---------: | --------: | ----------: | ----------------: | --------: | ------------: |
+| 256×160 alpha raster   |              24 / 10 |       720 |  1,093,561 |   179,619 |    85,968 B |          34,560 B |   6.00 ms |      16.97 ms |
+| 256×256 full rectangle |              64 / 30 |     8,192 | 56,602,063 |   472,576 | 2,263,528 B |         393,216 B | 191.66 ms |      25.40 ms |
 
 The CPU and pinned SwiftShader differed by at most 1/255 per channel at placement scales 1.0, 0.6 and 0.3. The shared-edge, fold and recycled-target cases matched exactly. Repeating each frame on the same compositor produced identical bytes. The `puppet-deform` reference pins a cyan ribbon with inset bands and a purple-and-amber precomp card bending in opposite directions. The ribbon casts a post-deform shadow. The card uses 3D placement and transform motion blur.
 
