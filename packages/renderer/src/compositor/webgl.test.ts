@@ -302,6 +302,33 @@ describe("WebGL2 compositor on SwiftShader", () => {
       await expectMatches(plan([solid("p", src, { matrix: [...matrix] as never })]));
   });
 
+  it("matches whole-pixel translations (texel copy), clipped at every edge, with mattes and effects", async () => {
+    const src = gradient(40, 30, 3);
+    for (const [x, y] of [
+      [0, 0],
+      [-9, 7],
+      [30, -12],
+      [-60, 5],
+      [5, 60],
+    ] as const) {
+      const matte = solid("m", gradient(40, 30, 4), { matrix: [1, 0, 0, 1, 2, 3] });
+      for (const mode of ["alpha", "luma-inverted"] as const)
+        await expectMatches(
+          plan([
+            solid("p", src, {
+              matrix: [1, 0, 0, 1, x, y],
+              opacity: 0.7,
+              matte: { mode, source: matte } as never,
+            }),
+            solid("q", src, {
+              matrix: [1, 0, 0, 1, x, y],
+              effects: [{ type: "gaussian-blur", radius: 2 }],
+            }),
+          ]),
+        );
+    }
+  });
+
   it("matches composition-space layers at whole-pixel offsets and degenerate placements", async () => {
     const vector = {
       id: "v",
@@ -836,4 +863,104 @@ describe("WebGL2 compositor on SwiftShader", () => {
       await other.close();
     }
   }, 60_000);
+  /**
+   * Runs `frames` (plans built in the page from `blendModes`/`matrices`) on a fresh compositor whose
+   * program and texture calls are counted, and reports the counts after each frame and disposal.
+   */
+  async function probe(
+    frames: { modes: string[]; matrices?: number[][]; size?: [number, number] }[],
+  ) {
+    return gpu.page.evaluate((input) => {
+      const g = globalThis as unknown as {
+        KynimoCompositor: {
+          createCompositor(gl: WebGL2RenderingContext): {
+            composite(plan: unknown): unknown;
+            dispose(): void;
+          };
+        };
+      };
+      const gl = document.createElement("canvas").getContext("webgl2") as WebGL2RenderingContext;
+      let programs = 0;
+      let deletedPrograms = 0;
+      let textures = 0;
+      const count = <
+        K extends "createProgram" | "deleteProgram" | "createTexture" | "deleteTexture",
+      >(
+        name: K,
+        by: () => void,
+      ) => {
+        const real = gl[name].bind(gl) as (...a: unknown[]) => unknown;
+        (gl as unknown as Record<string, unknown>)[name] = (...a: unknown[]) => {
+          by();
+          return real(...a);
+        };
+      };
+      count("createProgram", () => programs++);
+      count("deleteProgram", () => deletedPrograms++);
+      count("createTexture", () => textures++);
+      count("deleteTexture", () => textures--);
+      const compositor = g.KynimoCompositor.createCompositor(gl);
+      const baseTextures = textures;
+      const after: { programs: number; textures: number }[] = [];
+      for (const { modes, matrices, size = [32, 24] } of input) {
+        const [width = 32, height = 24] = size;
+        const pixels = new Uint8Array(width * height * 4).fill(160);
+        const layers = modes.map((blendMode, i) => ({
+          id: `l${i}`,
+          type: "solid",
+          space: "layer",
+          opacity: 1,
+          blendMode,
+          mask: null,
+          matte: null,
+          matrix: matrices?.[i] ?? [1, 0, 0, 1, 0, 0],
+          raster: { width, height, pixels },
+        }));
+        compositor.composite({
+          width,
+          height,
+          background: null,
+          layers,
+          skipped: [],
+          warnings: [],
+        });
+        after.push({ programs, textures: textures - baseTextures });
+      }
+      compositor.dispose();
+      return { after, deletedPrograms, programs, leftover: textures };
+    }, frames);
+  }
+
+  it("compiles one program per distinct variant, on first use, and reuses it across frames", async () => {
+    const still = [1, 0, 0, 1, 0, 0];
+    const half = [1, 0, 0, 1, 0.5, 0];
+    const frame = {
+      modes: ["normal", "multiply", "normal", "multiply"],
+      matrices: [still, still, half],
+    };
+    const normal = { modes: ["normal"] };
+    const { after, deletedPrograms, programs } = await probe([
+      normal, // prepare, place (texel copy), blend normal, final
+      frame, // + blend multiply, place (bilinear)
+      frame,
+      frame,
+      { modes: ["screen"] }, // + blend screen
+      { modes: ["screen", "normal"] },
+    ]);
+    expect(after.map((a) => a.programs)).toEqual([4, 6, 6, 6, 7, 7]);
+    expect(deletedPrograms).toBe(programs);
+  });
+
+  it("recycles render targets: rendering more frames does not grow the live textures", async () => {
+    const stack = { modes: ["normal", "multiply", "screen", "normal"] };
+    const idle = { modes: [] };
+    const { after, leftover } = await probe([stack, stack, stack, stack, stack, idle, idle, idle]);
+    const live = after.map((a) => a.textures);
+    expect(live[0]).toBeGreaterThan(0);
+    expect(live.slice(1, 5)).toEqual([live[0], live[0], live[0], live[0]]);
+    // Targets idle for two frames are released, down to what an empty frame needs.
+    expect(live[7]).toBeLessThan(live[0] as number);
+    expect(live[7]).toBe(live[6]);
+    expect(leftover).toBe(0);
+  });
 });

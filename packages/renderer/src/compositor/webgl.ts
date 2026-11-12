@@ -24,14 +24,16 @@ import {
   precompUses,
 } from "./pipeline.js";
 import {
-  BLEND,
+  blendShader,
   DOWNSAMPLE,
-  EFFECT,
+  type EffectMode,
+  effectShader,
   FINAL,
   GAUSSIAN,
-  GENERATOR,
-  PLACE,
+  generatorShader,
+  type MatteMode,
   PREPARE,
+  placeShader,
   VERTEX,
 } from "./shaders.js";
 
@@ -46,7 +48,26 @@ interface Target {
   framebuffer: WebGLFramebuffer | null;
   width: number;
   height: number;
+  /** Set on render targets that live in the pool; they are recycled, not deleted, when freed. */
+  poolKey?: string;
+  /** The frame in which a pooled target was last released. */
+  released?: number;
 }
+
+const EFFECT_MODES: Readonly<Record<ResolvedEffect["type"], EffectMode | 0>> = {
+  "gaussian-blur": 0,
+  "drop-shadow": 1,
+  glow: 2,
+  "brightness-contrast": 3,
+  "hue-saturation": 4,
+  tint: 5,
+  fill: 6,
+  vignette: 7,
+  grain: 8,
+  "chromatic-aberration": 9,
+  posterize: 10,
+  scanlines: 11,
+};
 
 type Program = { program: WebGLProgram; uniforms: Map<string, WebGLUniformLocation | null> };
 
@@ -74,35 +95,53 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     debug === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(debug.UNMASKED_RENDERER_WEBGL),
   );
   const vao = gl.createVertexArray();
-  const built: Program[] = [];
-  const program = (fragment: string) => {
-    const p = build(gl, fragment);
-    built.push(p);
+  const blendProgram = (mode: number, adjustment: boolean) =>
+    program(`blend:${mode}${adjustment ? "a" : ""}`, () => blendShader(mode, adjustment));
+  /** Programs by variant key, compiled on first use and kept until `dispose`. */
+  const programs = new Map<string, Program>();
+  const program = (key: string, fragment: () => string): Program => {
+    let p = programs.get(key);
+    if (p === undefined) {
+      p = build(gl, fragment());
+      programs.set(key, p);
+    }
     return p;
   };
-  let programs: Record<
-    "prepare" | "gaussian" | "effect" | "generator" | "downsample" | "place" | "blend" | "final",
-    Program
-  >;
-  try {
-    programs = {
-      prepare: program(PREPARE),
-      gaussian: program(GAUSSIAN),
-      effect: program(EFFECT),
-      generator: program(GENERATOR),
-      downsample: program(DOWNSAMPLE),
-      place: program(PLACE),
-      blend: program(BLEND),
-      final: program(FINAL),
-    };
-  } catch (e) {
-    for (const p of built) gl.deleteProgram(p.program);
-    gl.deleteVertexArray(vao);
-    throw e;
-  }
+  const fixed = {
+    prepare: () => program("prepare", () => PREPARE),
+    gaussian: () => program("gaussian", () => GAUSSIAN),
+    downsample: () => program("downsample", () => DOWNSAMPLE),
+    final: () => program("final", () => FINAL),
+  };
+
+  /**
+   * Render targets recycled across passes and frames, by size and format. Every pass draws a
+   * full-screen triangle over its whole target and never blends, so a recycled target needs no
+   * clearing. A target idle for two frames is deleted.
+   */
+  const idle = new Map<string, Target[]>();
+  const pooled = new Set<Target>();
+  let frameNumber = 0;
+  const deleteTarget = (t: Target) => {
+    pooled.delete(t);
+    gl.deleteTexture(t.texture);
+    if (t.framebuffer !== null) gl.deleteFramebuffer(t.framebuffer);
+  };
+  const trimPool = () => {
+    for (const [key, list] of idle) {
+      const keep = list.filter((t) => {
+        const stale = (t.released ?? 0) <= frameNumber - 2;
+        if (stale) deleteTarget(t);
+        return !stale;
+      });
+      if (keep.length === 0) idle.delete(key);
+      else idle.set(key, keep);
+    }
+  };
   const empty = makeTexture(gl, 1, 1, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
 
   const composite = (plan: FramePlan): RasterImage => {
+    frameNumber++;
     const live = new Set<Target>();
     const fits = (width: number, height: number) => {
       if (width > maxSize || height > maxSize)
@@ -112,18 +151,32 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     };
     const target = (width: number, height: number, bytes = false): Target => {
       fits(width, height);
+      const poolKey = `${width}x${height}${bytes ? "b" : "h"}`;
+      const reused = idle.get(poolKey)?.pop();
+      if (reused !== undefined) {
+        live.add(reused);
+        return reused;
+      }
       const texture = bytes
         ? makeTexture(gl, width, height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null)
         : makeTexture(gl, width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
-      const t: Target = { texture, framebuffer: null, width, height };
+      const t: Target = { texture, framebuffer: null, width, height, poolKey };
       live.add(t); // registered before attaching, so a failed attach is still freed
-      t.framebuffer = attach(gl, texture);
+      t.framebuffer = attach(gl, texture); // completeness is checked once per pooled target
+      pooled.add(t);
       return t;
     };
+    /** Pooled targets go back to the pool; textures made outside `target` are deleted. */
     const free = (t: Target) => {
       if (!live.delete(t)) return;
-      gl.deleteTexture(t.texture);
-      if (t.framebuffer !== null) gl.deleteFramebuffer(t.framebuffer);
+      if (t.poolKey === undefined) {
+        gl.deleteTexture(t.texture);
+        return;
+      }
+      t.released = frameNumber;
+      const list = idle.get(t.poolKey);
+      if (list === undefined) idle.set(t.poolKey, [t]);
+      else list.push(t);
     };
     /** Registers a texture made outside `target`, so the frame frees it on every path. */
     const track = (texture: WebGLTexture, width: number, height: number): Target => {
@@ -209,7 +262,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const tmp = target(src.width, src.height);
       const out = target(src.width, src.height);
       const blur = (from: Target, into: Target, x: number, y: number) =>
-        pass(programs.gaussian, into, [["u_src", from.texture]], (u) => {
+        pass(fixed.gaussian(), into, [["u_src", from.texture]], (u) => {
           gl.uniform2i(u("u_axis"), x, y);
           gl.uniform1i(u("u_radius"), weights.length - 1);
           gl.uniform1fv(u("u_weights[0]"), weights);
@@ -231,8 +284,9 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           ? gaussian(src, effect.radius)
           : src;
       const out = target(src.width, src.height);
+      const effectMode = EFFECT_MODES[effect.type] as EffectMode;
       pass(
-        programs.effect,
+        program(`effect:${effectMode}`, () => effectShader(effectMode)),
         out,
         [
           ["u_src", src.texture],
@@ -241,49 +295,40 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         (u) => {
           gl.uniform2i(u("u_origin"), pad[0], pad[1]);
           gl.uniform2i(u("u_inner"), src.width - 2 * pad[0], src.height - 2 * pad[1]);
-          const mode = (id: number) => gl.uniform1i(u("u_mode"), id);
           const params = (x: number, y: number) => gl.uniform2f(u("u_params"), x, y);
           const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
           const amount = (value: number) => gl.uniform1f(u("u_amount"), value);
           switch (effect.type) {
             case "drop-shadow":
-              mode(1);
               params(...effect.offset);
               color("u_color", effect.color);
               amount(effect.opacity);
               break;
             case "glow":
-              mode(2);
               color("u_color", effect.color);
               amount(effect.intensity);
               break;
             case "brightness-contrast":
-              mode(3);
               params(effect.brightness, effect.contrast);
               break;
             case "hue-saturation":
-              mode(4);
               params(effect.hue, effect.saturation);
               break;
             case "tint":
-              mode(5);
               color("u_color", effect.black);
               color("u_white", effect.white);
               amount(effect.amount);
               break;
             case "fill":
-              mode(6);
               color("u_color", effect.color);
               amount(effect.amount);
               break;
             case "vignette":
-              mode(7);
               params(effect.radius, effect.feather);
               color("u_color", effect.color);
               amount(effect.amount);
               break;
             case "grain":
-              mode(8);
               gl.uniform1ui(u("u_seed"), effect.seed);
               gl.uniform1i(u("u_frame"), effect.frame);
               gl.uniform1i(u("u_size"), effect.size);
@@ -291,15 +336,12 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
               amount(effect.amount);
               break;
             case "chromatic-aberration":
-              mode(9);
               amount(effect.amount);
               break;
             case "posterize":
-              mode(10);
               amount(effect.levels);
               break;
             case "scanlines":
-              mode(11);
               params(effect.spacing, effect.thickness);
               gl.uniform1f(u("u_offset"), effect.offset);
               color("u_color", effect.color);
@@ -331,54 +373,55 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     const generate = (id: string, width: number, height: number, g: ResolvedGenerator): Target => {
       chargeSamples(id, width * height * generatorSamples(g), "layer size or noise octaves");
       const out = target(width, height);
-      pass(programs.generator, out, [], (u) => {
-        const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
-        const colors = (list: readonly Rgba[]) => {
-          gl.uniform4fv(
-            u("u_colors[0]"),
-            new Float32Array(list.flatMap(({ r, g, b, a }) => [r, g, b, a])),
-          );
-        };
-        gl.uniform2f(u("u_size"), width, height);
-        switch (g.type) {
-          case "gradient":
-            gl.uniform1i(u("u_type"), 0);
-            gl.uniform1i(u("u_kind"), { linear: 0, radial: 1, conic: 2 }[g.kind]);
-            gl.uniform2f(u("u_a"), ...g.start);
-            gl.uniform2f(u("u_b"), ...g.end);
-            gl.uniform1i(u("u_count"), g.stops.length);
-            gl.uniform1fv(u("u_offsets[0]"), new Float32Array(g.stops.map((s) => s.offset)));
-            colors(g.stops.map((s) => s.color));
-            break;
-          case "noise":
-            gl.uniform1i(u("u_type"), 1);
-            gl.uniform1ui(u("u_seed"), g.seed);
-            gl.uniform1f(u("u_scale"), g.scale);
-            gl.uniform1i(u("u_octaves"), g.octaves);
-            gl.uniform1f(u("u_evolution"), g.evolution);
-            gl.uniform2f(u("u_offset"), ...g.offset);
-            color("u_low", g.low);
-            color("u_high", g.high);
-            break;
-          case "pattern":
-            gl.uniform1i(u("u_type"), 2);
-            gl.uniform1i(u("u_kind"), { stripes: 0, checker: 1, dots: 2, grid: 3 }[g.kind]);
-            gl.uniform1f(u("u_scale"), g.size);
-            gl.uniform1f(u("u_thickness"), g.thickness);
-            gl.uniform2f(u("u_rotation"), ...g.rotation);
-            gl.uniform2f(u("u_offset"), ...g.offset);
-            color("u_low", g.background);
-            color("u_high", g.foreground);
-            break;
-          case "aurora":
-            gl.uniform1i(u("u_type"), 3);
-            gl.uniform1i(u("u_count"), g.colors.length);
-            gl.uniform1f(u("u_scale"), g.sigma);
-            gl.uniform2fv(u("u_points[0]"), new Float32Array(g.points.flat()));
-            colors(g.colors);
-            break;
-        }
-      });
+      pass(
+        program(`generator:${g.type}`, () => generatorShader(g.type)),
+        out,
+        [],
+        (u) => {
+          const color = (name: string, { r, g, b, a }: Rgba) => gl.uniform4f(u(name), r, g, b, a);
+          const colors = (list: readonly Rgba[]) => {
+            gl.uniform4fv(
+              u("u_colors[0]"),
+              new Float32Array(list.flatMap(({ r, g, b, a }) => [r, g, b, a])),
+            );
+          };
+          gl.uniform2f(u("u_size"), width, height);
+          switch (g.type) {
+            case "gradient":
+              gl.uniform1i(u("u_kind"), { linear: 0, radial: 1, conic: 2 }[g.kind]);
+              gl.uniform2f(u("u_a"), ...g.start);
+              gl.uniform2f(u("u_b"), ...g.end);
+              gl.uniform1i(u("u_count"), g.stops.length);
+              gl.uniform1fv(u("u_offsets[0]"), new Float32Array(g.stops.map((s) => s.offset)));
+              colors(g.stops.map((s) => s.color));
+              break;
+            case "noise":
+              gl.uniform1ui(u("u_seed"), g.seed);
+              gl.uniform1f(u("u_scale"), g.scale);
+              gl.uniform1i(u("u_octaves"), g.octaves);
+              gl.uniform1f(u("u_evolution"), g.evolution);
+              gl.uniform2f(u("u_offset"), ...g.offset);
+              color("u_low", g.low);
+              color("u_high", g.high);
+              break;
+            case "pattern":
+              gl.uniform1i(u("u_kind"), { stripes: 0, checker: 1, dots: 2, grid: 3 }[g.kind]);
+              gl.uniform1f(u("u_scale"), g.size);
+              gl.uniform1f(u("u_thickness"), g.thickness);
+              gl.uniform2f(u("u_rotation"), ...g.rotation);
+              gl.uniform2f(u("u_offset"), ...g.offset);
+              color("u_low", g.background);
+              color("u_high", g.foreground);
+              break;
+            case "aurora":
+              gl.uniform1i(u("u_count"), g.colors.length);
+              gl.uniform1f(u("u_scale"), g.sigma);
+              gl.uniform2fv(u("u_points[0]"), new Float32Array(g.points.flat()));
+              colors(g.colors);
+              break;
+          }
+        },
+      );
       return out;
     };
 
@@ -409,7 +452,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const out = target(width, height);
       const mask = uploadMask(layer.mask);
       pass(
-        programs.prepare,
+        fixed.prepare(),
         out,
         [
           ["u_src", src.texture],
@@ -438,12 +481,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         const inv = invert(placement(current, padding));
         const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
         const k = Math.floor(lod);
-        const top = Math.min(k + 1, maxLevel(src.width, src.height));
+        // The hi level is only sampled with a positive weight, so an exact level needs no next one.
+        const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
         const levels = [src];
         for (let n = 1; n <= top; n++) {
           const prev = levels[n - 1] as Target;
           const next = target(Math.ceil(prev.width / 2), Math.ceil(prev.height / 2));
-          pass(programs.downsample, next, [["u_src", prev.texture]], () => {});
+          pass(fixed.downsample(), next, [["u_src", prev.texture]], () => {});
           levels.push(next);
         }
         const lo = levels[k] as Target;
@@ -451,9 +495,16 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         const out = target(width, height);
         const mode = current.matte?.mode;
         const matted = i === chain.length - 1 ? end : "source";
-        const matteMode = mode === undefined || matted === "none" ? 0 : MATTE_MODES[mode];
+        const matteMode = (
+          mode === undefined || matted === "none" ? 0 : MATTE_MODES[mode]
+        ) as MatteMode;
+        const matteEmpty = matteMode !== 0 && (matted === "empty" || below === null);
+        const shift = inv !== null && lod === 0 ? wholePixelShift(inv) : null;
+        const copy = shift !== null && top === 0;
         pass(
-          programs.place,
+          program(`place:${matteMode}${matteEmpty ? "e" : ""}${copy ? "c" : ""}`, () =>
+            placeShader({ matte: matteMode, empty: matteEmpty, copy }),
+          ),
           out,
           [
             ["u_lo", lo.texture],
@@ -467,8 +518,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
             gl.uniform3f(u("u_invX"), a, c, e);
             gl.uniform3f(u("u_invY"), b, d, f);
             gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
-            gl.uniform1i(u("u_matteMode"), matteMode);
-            gl.uniform1i(u("u_matteEmpty"), matted === "empty" || below === null ? 1 : 0);
+            if (shift !== null) gl.uniform2i(u("u_shift"), shift[0], shift[1]);
             gl.uniform1f(u("u_opacity"), current.opacity);
           },
         );
@@ -488,7 +538,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const mask = uploadMask(layer.mask);
       const out = target(width, height);
       pass(
-        programs.blend,
+        blendProgram(BLEND_MODE_IDS[layer.blendMode], true),
         out,
         [
           ["u_backdrop", acc.texture],
@@ -497,8 +547,6 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           ["u_matte", matte?.texture ?? empty],
         ],
         (u) => {
-          gl.uniform1i(u("u_adjustment"), 1);
-          gl.uniform1i(u("u_mode"), BLEND_MODE_IDS[layer.blendMode]);
           gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
           gl.uniform1i(u("u_matteMode"), layer.matte === null ? 0 : MATTE_MODES[layer.matte.mode]);
           gl.uniform1i(u("u_matteEmpty"), matte === null ? 1 : 0);
@@ -528,7 +576,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         const src = placed(layer, frame.width, frame.height);
         const next = target(frame.width, frame.height);
         pass(
-          programs.blend,
+          blendProgram(BLEND_MODE_IDS[layer.blendMode], false),
           next,
           [
             ["u_backdrop", acc.texture],
@@ -536,10 +584,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
             ["u_mask", empty],
             ["u_matte", empty],
           ],
-          (u) => {
-            gl.uniform1i(u("u_adjustment"), 0);
-            gl.uniform1i(u("u_mode"), BLEND_MODE_IDS[layer.blendMode]);
-          },
+          () => {},
         );
         free(src);
         free(acc);
@@ -550,11 +595,12 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
 
     // Errors left by the caller's own GL work would otherwise be reported as ours.
     for (let i = 0; i < 16 && gl.getError() !== gl.NO_ERROR; i++);
+    let ok = false;
     try {
       const acc = compositeFloat(plan);
       const out = target(plan.width, plan.height, true);
       const bg = plan.background;
-      pass(programs.final, out, [["u_acc", acc.texture]], (u) =>
+      pass(fixed.final(), out, [["u_acc", acc.texture]], (u) =>
         bg === null
           ? gl.uniform4f(u("u_background"), 0, 0, 0, 0)
           : gl.uniform4f(u("u_background"), bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a),
@@ -568,10 +614,18 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         throw new CompositorError(
           `WebGL error 0x${error.toString(16)} while compositing (often out of GPU memory)`,
         );
+      ok = true;
       return { width: plan.width, height: plan.height, pixels };
     } finally {
-      for (const t of [...live]) free(t);
+      for (const t of [...live]) {
+        // After a failure (out of memory, lost context) the targets are not trusted again.
+        if (!ok && t.poolKey !== undefined) {
+          live.delete(t);
+          deleteTarget(t);
+        } else free(t);
+      }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      trimPool();
     }
   };
 
@@ -579,11 +633,28 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     composite,
     renderer,
     dispose: () => {
-      for (const p of Object.values(programs)) gl.deleteProgram(p.program);
+      for (const p of programs.values()) gl.deleteProgram(p.program);
+      programs.clear();
+      for (const t of [...pooled]) deleteTarget(t);
+      idle.clear();
       gl.deleteTexture(empty);
       gl.deleteVertexArray(vao);
     },
   };
+}
+
+/**
+ * The integer offset of a placement that only translates by whole pixels (identity linear part),
+ * else null. Then bilinear sampling at level 0 lands exactly on texel centers, so the shader can
+ * copy one texel; the bound keeps every coordinate exact in float32.
+ */
+function wholePixelShift(inv: readonly number[]): [number, number] | null {
+  const [a, b, c, d, e, f] = inv as [number, number, number, number, number, number];
+  const limit = 2 ** 20;
+  if (a !== 1 || b !== 0 || c !== 0 || d !== 1) return null;
+  if (!Number.isInteger(e) || !Number.isInteger(f) || Math.abs(e) > limit || Math.abs(f) > limit)
+    return null;
+  return [e, f];
 }
 
 function build(gl: WebGL2RenderingContext, fragment: string): Program {

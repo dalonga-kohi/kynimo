@@ -102,12 +102,10 @@ float band(float x, float hw, float period) {
 }
 `;
 
-/**
- * Draws a generator (the twin of generators.ts) into a W×H layer-space target, premultiplied.
- * u_type: 0 gradient, 1 noise, 2 pattern, 3 aurora. Pixel centers are (x + 0.5, y + 0.5).
- */
-export const GENERATOR = `${HEADER}
-uniform int u_type;
+/** The generator types, in the order of {@link generatorShader}'s argument. */
+export type GeneratorType = "gradient" | "noise" | "pattern" | "aurora";
+
+const GENERATOR_UNIFORMS = `
 uniform vec2 u_size;
 uniform int u_kind;
 uniform vec2 u_a;          // gradient start
@@ -125,8 +123,9 @@ uniform vec4 u_high;       // noise high, pattern foreground
 uniform float u_thickness;
 uniform vec2 u_rotation;
 uniform vec2 u_points[${MAX_AURORA_COLORS}];
-${HASH}
-${BAND}
+`;
+
+const GRADIENT_COLOR = `
 vec4 gradientColor(vec2 p) {
   vec2 d = u_b - u_a;
   float l2 = dot(d, d);
@@ -151,7 +150,9 @@ vec4 gradientColor(vec2 p) {
   }
   return u_colors[last];
 }
+`;
 
+const NOISE_COLOR = `
 float lattice(int o, ivec3 i) {
   return hashUnit(hashWords4(u_seed, uint(o), uint(i.x), uint(i.y), uint(i.z)));
 }
@@ -177,7 +178,9 @@ vec4 noiseColor(vec2 p) {
   }
   return mix(u_low, u_high, sum / weights);
 }
+`;
 
+const PATTERN_COLOR = `
 vec4 patternColor(vec2 p) {
   vec2 r = p - u_size / 2.0 - u_offset;
   vec2 q = vec2(u_rotation.x * r.x + u_rotation.y * r.y, -u_rotation.y * r.x + u_rotation.x * r.y);
@@ -200,7 +203,9 @@ vec4 patternColor(vec2 p) {
   }
   return mix(u_low, u_high, cov);
 }
+`;
 
+const AURORA_COLOR = `
 vec4 auroraColor(vec2 p) {
   float d2[${MAX_AURORA_COLORS}];
   float dmin = 3.4e38;
@@ -220,20 +225,35 @@ vec4 auroraColor(vec2 p) {
   }
   return sum / total;
 }
+`;
 
+const GENERATOR_PARTS: Record<GeneratorType, string> = {
+  gradient: GRADIENT_COLOR,
+  noise: `${HASH}${NOISE_COLOR}`,
+  pattern: `${BAND}${PATTERN_COLOR}`,
+  aurora: AURORA_COLOR,
+};
+
+/**
+ * Draws a generator (the twin of generators.ts) into a W×H layer-space target, premultiplied.
+ * One program per generator type, so a draw runs only its own function. Pixel centers are
+ * (x + 0.5, y + 0.5).
+ */
+export function generatorShader(type: GeneratorType): string {
+  return `${HEADER}${GENERATOR_UNIFORMS}${GENERATOR_PARTS[type]}
 void main() {
   vec2 p = vec2(ivec2(gl_FragCoord.xy)) + 0.5;
-  vec4 c = u_type == 0 ? gradientColor(p)
-    : u_type == 1 ? noiseColor(p)
-    : u_type == 2 ? patternColor(p) : auroraColor(p);
+  vec4 c = ${type}Color(p);
   outColor = vec4(c.rgb * c.a, c.a);
 }`;
+}
 
-/** Straight-color corrections preserve the source's coverage. Shadow and glow sit under it. */
-export const EFFECT = `${HEADER}
+/** Effect-shader ids; the same numbers the single-program shader switched on. */
+export type EffectMode = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+
+const EFFECT_UNIFORMS = `
 uniform sampler2D u_src;
 uniform sampler2D u_blur;
-uniform int u_mode;
 uniform vec2 u_params;
 uniform vec4 u_color;
 uniform vec4 u_white;
@@ -245,10 +265,9 @@ uniform int u_size;
 uniform bool u_monochrome;
 uniform ivec2 u_origin;
 uniform ivec2 u_inner;
-${TRANSPARENT_FETCH}
-${HASH}
-${BAND}
+${TRANSPARENT_FETCH}`;
 
+const BILINEAR_AT = `
 vec4 bilinearAt(vec2 p) {
   ivec2 i = ivec2(floor(p));
   vec2 f = fract(p);
@@ -256,7 +275,9 @@ vec4 bilinearAt(vec2 p) {
   vec4 bottom = mix(at(u_src, i + ivec2(0, 1)), at(u_src, i + ivec2(1, 1)), f.x);
   return mix(top, bottom, f.y);
 }
+`;
 
+const SHIFTED_ALPHA = `
 float shiftedAlpha(vec2 p) {
   ivec2 i = ivec2(floor(p));
   vec2 f = fract(p);
@@ -264,7 +285,9 @@ float shiftedAlpha(vec2 p) {
   float bottom = mix(at(u_blur, i + ivec2(0, 1)).a, at(u_blur, i + ivec2(1, 1)).a, f.x);
   return mix(top, bottom, f.y);
 }
+`;
 
+const HUE_SATURATION = `
 vec3 hueSaturation(vec3 c, float hue, float saturation) {
   float hi = max(c.r, max(c.g, c.b));
   float lo = min(c.r, min(c.g, c.b));
@@ -276,71 +299,89 @@ vec3 hueSaturation(vec3 c, float hue, float saturation) {
   vec3 wheel = clamp(abs(mod(h + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
   return hi - min(hi, d * (1.0 + saturation)) * (1.0 - wheel);
 }
+`;
 
+/** Shadow and glow (modes 1, 2) composite the blurred alpha under the source. */
+const underBody = (alpha: string) => `
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 c = texelFetch(u_src, p, 0);
-  if (u_mode <= 2) {
-    float a = u_mode == 1 ? shiftedAlpha(vec2(p) - u_params) : texelFetch(u_blur, p, 0).a;
-    vec4 under = vec4(u_color.rgb, 1.0) * (a * u_color.a * u_amount);
-    outColor = c + under * (1.0 - c.a);
-    return;
-  }
-  if (u_mode == 9) {
-    vec2 size = vec2(textureSize(u_src, 0));
-    vec2 o = (vec2(p) + 0.5 - size / 2.0) / (0.5 * max(size.x, size.y)) * u_amount;
-    vec4 r = bilinearAt(clamp(vec2(p) + 0.5 + o, vec2(0.5), size - 0.5) - 0.5);
-    vec4 b = bilinearAt(clamp(vec2(p) + 0.5 - o, vec2(0.5), size - 0.5) - 0.5);
-    outColor = vec4(r.r, c.g, b.b, max(r.a, max(c.a, b.a)));
-    return;
-  }
+  float a = ${alpha};
+  vec4 under = vec4(u_color.rgb, 1.0) * (a * u_color.a * u_amount);
+  outColor = c + under * (1.0 - c.a);
+}`;
+
+const CHROMATIC_BODY = `
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(u_src, p, 0);
+  vec2 size = vec2(textureSize(u_src, 0));
+  vec2 o = (vec2(p) + 0.5 - size / 2.0) / (0.5 * max(size.x, size.y)) * u_amount;
+  vec4 r = bilinearAt(clamp(vec2(p) + 0.5 + o, vec2(0.5), size - 0.5) - 0.5);
+  vec4 b = bilinearAt(clamp(vec2(p) + 0.5 - o, vec2(0.5), size - 0.5) - 0.5);
+  outColor = vec4(r.r, c.g, b.b, max(r.a, max(c.a, b.a)));
+}`;
+
+/** Straight-color corrections: the statements that turn `rgb` into the new straight color. */
+const COLOR_STEPS: Partial<Record<EffectMode, string>> = {
+  3: "rgb = (rgb - 0.5) * (1.0 + u_params.y) + 0.5 + u_params.x;",
+  4: "rgb = hueSaturation(rgb, u_params.x, u_params.y);",
+  5: `float l = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  vec4 tint = mix(u_color, u_white, l);
+  rgb = mix(rgb, tint.rgb, tint.a * u_amount);`,
+  6: "rgb = mix(rgb, u_color.rgb, u_color.a * u_amount);",
+  7: `vec2 halfSize = vec2(u_inner) / 2.0;
+  float d = length((vec2(p) + 0.5 - halfSize - vec2(u_origin)) / halfSize);
+  float k = smoothstep(u_params.x, u_params.x + u_params.y, d);
+  rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);`,
+  8: `ivec2 cell = ivec2(floor(vec2(p - u_origin) / float(u_size)));
+  for (int ch = 0; ch < 3; ch++) {
+    uint h = hashWords4(u_seed, uint(u_frame), uint(cell.x), uint(cell.y), u_monochrome ? 0u : uint(ch));
+    rgb[ch] = clamp(rgb[ch] + u_amount * 0.5 * (hashUnit(h) * 2.0 - 1.0), 0.0, 1.0);
+  }`,
+  10: "rgb = floor(rgb * (u_amount - 1.0) + 0.5) / (u_amount - 1.0);",
+  11: `float k = band(float(p.y - u_origin.y) + 0.5 - u_offset, u_params.y * u_params.x / 2.0, u_params.x);
+  rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);`,
+};
+
+const correctionBody = (mode: EffectMode) => `
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(u_src, p, 0);
   if (c.a <= 0.0) {
     outColor = vec4(0.0);
     return;
   }
   vec3 rgb = clamp(c.rgb / c.a, 0.0, 1.0);
-  switch (u_mode) {
-    case 3:
-      rgb = (rgb - 0.5) * (1.0 + u_params.y) + 0.5 + u_params.x;
-      break;
-    case 4:
-      rgb = hueSaturation(rgb, u_params.x, u_params.y);
-      break;
-    case 5: {
-      float l = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-      vec4 tint = mix(u_color, u_white, l);
-      rgb = mix(rgb, tint.rgb, tint.a * u_amount);
-      break;
-    }
-    case 6:
-      rgb = mix(rgb, u_color.rgb, u_color.a * u_amount);
-      break;
-    case 7: {
-      vec2 halfSize = vec2(u_inner) / 2.0;
-      float d = length((vec2(p) + 0.5 - halfSize - vec2(u_origin)) / halfSize);
-      float k = smoothstep(u_params.x, u_params.x + u_params.y, d);
-      rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
-      break;
-    }
-    case 8: {
-      ivec2 cell = ivec2(floor(vec2(p - u_origin) / float(u_size)));
-      for (int ch = 0; ch < 3; ch++) {
-        uint h = hashWords4(u_seed, uint(u_frame), uint(cell.x), uint(cell.y), u_monochrome ? 0u : uint(ch));
-        rgb[ch] = clamp(rgb[ch] + u_amount * 0.5 * (hashUnit(h) * 2.0 - 1.0), 0.0, 1.0);
-      }
-      break;
-    }
-    case 10:
-      rgb = floor(rgb * (u_amount - 1.0) + 0.5) / (u_amount - 1.0);
-      break;
-    case 11: {
-      float k = band(float(p.y - u_origin.y) + 0.5 - u_offset, u_params.y * u_params.x / 2.0, u_params.x);
-      rgb = mix(rgb, u_color.rgb, u_amount * u_color.a * k);
-      break;
-    }
+  {
+  ${COLOR_STEPS[mode]}
   }
   outColor = vec4(clamp(rgb, 0.0, 1.0) * c.a, c.a);
 }`;
+
+/**
+ * One program per effect type (`mode`: 1 drop shadow, 2 glow, 3 brightness/contrast, 4 hue/
+ * saturation, 5 tint, 6 fill, 7 vignette, 8 grain, 9 chromatic aberration, 10 posterize, 11
+ * scanlines). Straight-color corrections preserve the source's coverage. Shadow and glow sit
+ * under it.
+ */
+export function effectShader(mode: EffectMode): string {
+  let parts = "";
+  let body: string;
+  if (mode <= 2) {
+    parts = mode === 1 ? SHIFTED_ALPHA : "";
+    body = underBody(
+      mode === 1 ? "shiftedAlpha(vec2(p) - u_params)" : "texelFetch(u_blur, p, 0).a",
+    );
+  } else if (mode === 9) {
+    parts = BILINEAR_AT;
+    body = CHROMATIC_BODY;
+  } else {
+    parts = mode === 4 ? HUE_SATURATION : mode === 8 ? HASH : mode === 11 ? BAND : "";
+    body = correctionBody(mode);
+  }
+  return `${HEADER}${EFFECT_UNIFORMS}${parts}${body}`;
+}
 
 const MATTE_COVERAGE = `
 float matteCoverage(sampler2D matte, ivec2 p, int mode, bool empty) {
@@ -364,30 +405,66 @@ void main() {
     + at(p + ivec2(1, 1), size)) / 4.0;
 }`;
 
+/** Which of the five matte modes (0 none, 1 alpha, 2 alpha inverted, 3 luma, 4 luma inverted). */
+export type MatteMode = 0 | 1 | 2 | 3 | 4;
+
+/** The matte coverage of one pixel with the matte mode (and an empty matte) known at compile time. */
+function matteFunction(mode: MatteMode, empty: boolean): string {
+  if (mode === 0) return "";
+  return `
+float matteCoverage(sampler2D matte, ivec2 p) {
+  vec4 m = ${empty ? "vec4(0.0)" : "texelFetch(matte, p, 0)"};
+  float v = ${mode <= 2 ? "m.a" : "dot(m.rgb, vec3(0.2126, 0.7152, 0.0722))"};
+  return ${mode === 2 || mode === 4 ? "1.0 - v" : "v"};
+}
+`;
+}
+
+export interface PlaceVariant {
+  /** 0 none, 1 alpha, 2 alpha inverted, 3 luma, 4 luma inverted. */
+  matte: MatteMode;
+  /** The matte source draws nothing (ignored when `matte` is 0). */
+  empty: boolean;
+  /**
+   * The placement is a whole-pixel translation at level 0 (identity linear part, integer offset,
+   * no hi-level blend), so bilinear sampling reads exactly one texel per pixel: copy it.
+   */
+  copy: boolean;
+}
+
 /**
  * Places a prepared layer into composition space through the inverse placement, bilinear within
- * a mip level and linear between two levels, then applies the track matte and opacity.
- * u_matteMode: 0 none, 1 alpha, 2 alpha inverted, 3 luma, 4 luma inverted; u_matteEmpty means the
- * source draws nothing.
+ * a mip level and linear between two levels, then applies the track matte and opacity. The matte
+ * mode is compiled in, as is the texel-copy fast path (`u_shift` is the integer offset).
  */
-export const PLACE = `${HEADER}
+export function placeShader({ matte, empty, copy }: PlaceVariant): string {
+  const factor =
+    matte === 0 ? "u_opacity" : "u_opacity * matteCoverage(u_matte, ivec2(gl_FragCoord.xy))";
+  const sample = copy
+    ? `c = texel(u_lo, ivec2(gl_FragCoord.xy) + u_shift, textureSize(u_lo, 0));`
+    : `vec3 p = vec3(gl_FragCoord.xy, 1.0);
+    vec2 q = vec2(dot(u_invX, p), dot(u_invY, p));
+    c = bilinear(u_lo, q * u_scale.x);
+    if (u_t > 0.0) c = mix(c, bilinear(u_hi, q * u_scale.y), u_t);`;
+  return `${HEADER}
 uniform sampler2D u_lo;
 uniform sampler2D u_hi;
 uniform vec2 u_scale; // texel scale of the lo and hi levels: 2^-k, 2^-(k+1)
 uniform float u_t;    // weight of the hi level
 uniform vec3 u_invX;  // inverse placement: q.x = dot(u_invX, (p, 1))
 uniform vec3 u_invY;
+uniform ivec2 u_shift; // copy variant: the integer offset of the placement
 uniform bool u_visible;
 uniform sampler2D u_matte;
-uniform int u_matteMode;
-uniform bool u_matteEmpty;
 uniform float u_opacity;
-${MATTE_COVERAGE}
-
+${matteFunction(matte, empty)}
 vec4 texel(sampler2D s, ivec2 p, ivec2 size) {
   return (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) ? vec4(0.0) : texelFetch(s, p, 0);
 }
-
+${
+  copy
+    ? ""
+    : `
 vec4 bilinear(sampler2D s, vec2 q) {
   ivec2 size = textureSize(s, 0);
   vec2 u = q - 0.5;
@@ -398,77 +475,78 @@ vec4 bilinear(sampler2D s, vec2 q) {
   vec4 bottom = mix(texel(s, i + ivec2(0, 1), size), texel(s, i + ivec2(1, 1), size), f.x);
   return mix(top, bottom, f.y);
 }
-
+`
+}
 void main() {
   vec4 c = vec4(0.0);
   if (u_visible) {
-    vec3 p = vec3(gl_FragCoord.xy, 1.0);
-    vec2 q = vec2(dot(u_invX, p), dot(u_invY, p));
-    c = bilinear(u_lo, q * u_scale.x);
-    if (u_t > 0.0) c = mix(c, bilinear(u_hi, q * u_scale.y), u_t);
+    ${sample}
   }
-  float factor = u_opacity * matteCoverage(u_matte, ivec2(gl_FragCoord.xy), u_matteMode, u_matteEmpty);
+  float factor = ${factor};
   outColor = c * factor;
 }`;
+}
 
 /** Blend-mode ids are BLEND_MODE_IDS in pipeline.ts. */
-export const BLEND = `${HEADER}
-uniform sampler2D u_backdrop;
-uniform sampler2D u_source;
-uniform int u_mode;
-uniform bool u_adjustment;
-uniform sampler2D u_mask;
-uniform bool u_hasMask;
-uniform sampler2D u_matte;
-uniform int u_matteMode;
-uniform bool u_matteEmpty;
-uniform float u_opacity;
-${MATTE_COVERAGE}
 
-float multiply(float b, float s) { return b * s; }
-float screen(float b, float s) { return b + s - b * s; }
-float hardLight(float b, float s) { return s <= 0.5 ? multiply(b, 2.0 * s) : screen(b, 2.0 * s - 1.0); }
-float colorDodge(float b, float s) {
+/** Helper functions of the separable modes, in dependency order. */
+const BLEND_HELPERS: readonly [name: string, source: string][] = [
+  ["multiply", "float multiply(float b, float s) { return b * s; }"],
+  ["screen", "float screen(float b, float s) { return b + s - b * s; }"],
+  [
+    "hardLight",
+    "float hardLight(float b, float s) { return s <= 0.5 ? multiply(b, 2.0 * s) : screen(b, 2.0 * s - 1.0); }",
+  ],
+  [
+    "colorDodge",
+    `float colorDodge(float b, float s) {
   if (b <= 0.0) return 0.0;
   if (s >= 1.0) return 1.0;
   return min(1.0, b / (1.0 - s));
-}
-float colorBurn(float b, float s) {
+}`,
+  ],
+  [
+    "colorBurn",
+    `float colorBurn(float b, float s) {
   if (b >= 1.0) return 1.0;
   if (s <= 0.0) return 0.0;
   return 1.0 - min(1.0, (1.0 - b) / s);
-}
-float softLight(float b, float s) {
+}`,
+  ],
+  [
+    "softLight",
+    `float softLight(float b, float s) {
   if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
   float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
   return b + (2.0 * s - 1.0) * (d - b);
-}
+}`,
+  ],
+];
 
-float separable(int mode, float b, float s) {
-  switch (mode) {
-    case 1: return multiply(b, s);
-    case 2: return screen(b, s);
-    case 3: return hardLight(s, b);
-    case 4: return min(b, s);
-    case 5: return max(b, s);
-    case 6: return colorDodge(b, s);
-    case 7: return colorBurn(b, s);
-    case 8: return hardLight(b, s);
-    case 9: return softLight(b, s);
-    case 10: return abs(b - s);
-    case 11: return b + s - 2.0 * b * s;
-    case 16: return clamp(b + s, 0.0, 1.0);
-    case 17: return clamp(b - s, 0.0, 1.0);
-    case 18: return s <= 0.0 ? (b <= 0.0 ? 0.0 : 1.0) : clamp(b / s, 0.0, 1.0);
-    case 19: return clamp(b + s - 1.0, 0.0, 1.0);
-    case 20: return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);
-    case 21: return s <= 0.5 ? colorBurn(b, 2.0 * s) : colorDodge(b, 2.0 * s - 1.0);
-    case 22: return s <= 0.5 ? min(b, 2.0 * s) : max(b, 2.0 * s - 1.0);
-    case 23: return b + s >= 1.0 ? 1.0 : 0.0;
-    default: return s;
-  }
-}
+/** The per-channel expression of each separable mode. */
+const SEPARABLE: Readonly<Record<number, string>> = {
+  1: "multiply(b, s)",
+  2: "screen(b, s)",
+  3: "hardLight(s, b)",
+  4: "min(b, s)",
+  5: "max(b, s)",
+  6: "colorDodge(b, s)",
+  7: "colorBurn(b, s)",
+  8: "hardLight(b, s)",
+  9: "softLight(b, s)",
+  10: "abs(b - s)",
+  11: "b + s - 2.0 * b * s",
+  16: "clamp(b + s, 0.0, 1.0)",
+  17: "clamp(b - s, 0.0, 1.0)",
+  18: "s <= 0.0 ? (b <= 0.0 ? 0.0 : 1.0) : clamp(b / s, 0.0, 1.0)",
+  19: "clamp(b + s - 1.0, 0.0, 1.0)",
+  20: "clamp(b + 2.0 * s - 1.0, 0.0, 1.0)",
+  21: "s <= 0.5 ? colorBurn(b, 2.0 * s) : colorDodge(b, 2.0 * s - 1.0)",
+  22: "s <= 0.5 ? min(b, 2.0 * s) : max(b, 2.0 * s - 1.0)",
+  23: "b + s >= 1.0 ? 1.0 : 0.0",
+};
 
+const NON_SEPARABLE = `
 float lum(vec3 c) { return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; }
 vec3 clipColor(vec3 c) {
   float l = lum(c);
@@ -486,41 +564,102 @@ vec3 setSat(vec3 c, float s) {
   if (x <= n) return vec3(0.0);
   return (c - n) * s / (x - n);
 }
+`;
 
-vec3 blendColor(int mode, vec3 b, vec3 s) {
-  switch (mode) {
-    case 12: return setLum(setSat(s, sat(b)), lum(b));
-    case 13: return setLum(setSat(b, sat(s)), lum(b));
-    case 14: return setLum(s, lum(b));
-    case 15: return setLum(b, lum(s));
-    default: return vec3(separable(mode, b.r, s.r), separable(mode, b.g, s.g), separable(mode, b.b, s.b));
+const NON_SEPARABLE_COLOR: Readonly<Record<number, string>> = {
+  12: "setLum(setSat(s, sat(b)), lum(b))",
+  13: "setLum(setSat(b, sat(s)), lum(b))",
+  14: "setLum(s, lum(b))",
+  15: "setLum(b, lum(s))",
+};
+
+/** The `blendColor(vec3 b, vec3 s)` function of one mode (not used for 0, normal). */
+function blendColorFunction(mode: number): string {
+  const nonSeparable = NON_SEPARABLE_COLOR[mode];
+  if (nonSeparable !== undefined)
+    return `${NON_SEPARABLE}
+vec3 blendColor(vec3 b, vec3 s) { return ${nonSeparable}; }
+`;
+  const expression = SEPARABLE[mode] ?? "s";
+  // Only the helpers this mode's expression reaches, dependencies first.
+  let needed = expression;
+  const used: string[] = [];
+  for (let i = BLEND_HELPERS.length - 1; i >= 0; i--) {
+    const [name, source] = BLEND_HELPERS[i] as [string, string];
+    if (needed.includes(`${name}(`)) {
+      used.unshift(source);
+      needed += source;
+    }
   }
+  return `
+${used.join("\n")}
+float separable(float b, float s) { return ${expression}; }
+vec3 blendColor(vec3 b, vec3 s) {
+  return vec3(separable(b.r, s.r), separable(b.g, s.g), separable(b.b, s.b));
+}
+`;
 }
 
+/**
+ * Composites a placed layer onto the accumulated backdrop with one blend mode (`mode` is the id
+ * from BLEND_MODE_IDS), or, for an adjustment layer, mixes the effected backdrop in through its
+ * mask, matte and opacity. One program per (mode, adjustment): no runtime mode switch.
+ */
+export function blendShader(mode: number, adjustment: boolean): string {
+  const color = mode === 0 ? "" : blendColorFunction(mode);
+  const head = `${HEADER}
+uniform sampler2D u_backdrop;
+uniform sampler2D u_source;
+${color}`;
+  if (adjustment)
+    return `${head}
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+uniform sampler2D u_matte;
+uniform int u_matteMode;
+uniform bool u_matteEmpty;
+uniform float u_opacity;
+${MATTE_COVERAGE}
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 b = texelFetch(u_backdrop, p, 0);
   vec4 s = texelFetch(u_source, p, 0);
-  if (u_adjustment) {
-    float coverage = u_hasMask ? texelFetch(u_mask, p, 0).r : 1.0;
-    float factor = u_opacity * coverage * matteCoverage(u_matte, p, u_matteMode, u_matteEmpty);
-    if (u_mode != 0 && b.a > 0.0 && s.a > 0.0) {
-      vec3 cb = clamp(b.rgb / b.a, 0.0, 1.0);
-      vec3 cs = clamp(s.rgb / s.a, 0.0, 1.0);
-      s.rgb = mix(s.rgb, s.a * blendColor(u_mode, cb, cs), b.a);
-    }
-    outColor = mix(b, s, factor);
-    return;
+  float coverage = u_hasMask ? texelFetch(u_mask, p, 0).r : 1.0;
+  float factor = u_opacity * coverage * matteCoverage(u_matte, p, u_matteMode, u_matteEmpty);
+${
+  mode === 0
+    ? ""
+    : `  if (b.a > 0.0 && s.a > 0.0) {
+    vec3 cb = clamp(b.rgb / b.a, 0.0, 1.0);
+    vec3 cs = clamp(s.rgb / s.a, 0.0, 1.0);
+    s.rgb = mix(s.rgb, s.a * blendColor(cb, cs), b.a);
   }
-  if (u_mode == 0 || b.a <= 0.0 || s.a <= 0.0) {
+`
+}  outColor = mix(b, s, factor);
+}`;
+  if (mode === 0)
+    return `${head}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 b = texelFetch(u_backdrop, p, 0);
+  vec4 s = texelFetch(u_source, p, 0);
+  outColor = s + b * (1.0 - s.a);
+}`;
+  return `${head}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 b = texelFetch(u_backdrop, p, 0);
+  vec4 s = texelFetch(u_source, p, 0);
+  if (b.a <= 0.0 || s.a <= 0.0) {
     outColor = s + b * (1.0 - s.a);
     return;
   }
   vec3 cb = clamp(b.rgb / b.a, 0.0, 1.0);
   vec3 cs = clamp(s.rgb / s.a, 0.0, 1.0);
-  vec3 mixed = blendColor(u_mode, cb, cs);
+  vec3 mixed = blendColor(cb, cs);
   outColor = vec4(s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed, s.a + b.a * (1.0 - s.a));
 }`;
+}
 
 /** The root background under the result, quantized to RGBA8 by the framebuffer. */
 export const FINAL = `${HEADER}

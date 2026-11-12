@@ -65,7 +65,7 @@ export function matteChain(layer: PlannedLayer): { chain: PlannedLayer[]; end: "
   return { chain, end: last.matte === null ? "none" : "empty" };
 }
 
-/** Ids the BLEND shader switches on; they must match its `case` labels (the GPU tests check every mode). */
+/** Ids of the BLEND shader variants (`blendShader` in shaders.ts); the GPU tests check every mode. */
 export const BLEND_MODE_IDS: Readonly<Record<BlendMode, number>> = {
   normal: 0,
   multiply: 1,
