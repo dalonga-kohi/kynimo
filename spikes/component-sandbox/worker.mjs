@@ -21,6 +21,7 @@ const evaluate = {
     return cached(scene, frame);
   },
   native: createFrameEvaluator(),
+  bounded: createFrameEvaluator(undefined, { bounded: true }),
 };
 
 self.onmessage = ({ data: { mode, scene, frame } }) => {

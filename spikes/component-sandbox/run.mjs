@@ -16,7 +16,10 @@ const { build, preview } = await import(pathToFileURL(fromCapture.resolve("vite"
 const root = fileURLToPath(new URL(".", import.meta.url));
 const REPEATS = 3;
 const FRAME_BUDGET_MS = 4;
-const variants = ["quickjs", "reused", "minimal"];
+const boundedOnly = process.argv.includes("--bounded-only");
+const variants = boundedOnly
+  ? ["bounded", "boundedScrub"]
+  : ["quickjs", "reused", "minimal", "bounded", "boundedScrub"];
 
 function quickJSEntry(packageName) {
   const entry = fromQuickJS.resolve(packageName);
@@ -63,6 +66,7 @@ try {
   const url = server.resolvedUrls.local[0];
   const quickJS = await newQuickJSWASMModule();
   const nodeFrame = createFrameEvaluator(createSandbox(quickJS, source));
+  const nodeBounded = createFrameEvaluator(undefined, { bounded: true });
   const worst = Object.fromEntries(variants.map((mode) => [mode, 0]));
   let previousResults;
   console.log(
@@ -79,32 +83,57 @@ try {
       const page = await browser.newPage();
       await page.goto(url);
       await page.waitForFunction(() => typeof globalThis.runComponentSpike === "function");
-      evidence = await page.evaluate(() => globalThis.runComponentSpike());
+      evidence = await page.evaluate(
+        (boundedOnly) => globalThis.runComponentSpike({ boundedOnly }),
+        boundedOnly,
+      );
     } finally {
       await browser.close();
     }
 
     const { results, timings, readyMs, wasmMs, firstMs, coldOutput } = evidence;
-    assert.deepEqual(results.quickjs, results.native, "Browser QuickJS/native output differs");
-    assert.deepEqual(results.quickjs, results.scrub, "Browser sequential/scrub output differs");
-    assert.deepEqual(results.quickjs, results.reused, "Reused runtime output differs");
-    assert.deepEqual(results.quickjs, results.minimal, "Minimal intrinsics output differs");
-    assert.deepEqual(results.quickjs, results.cached, "Trusted cached fixture output differs");
-    assert.equal(coldOutput, results.quickjs[0], "Cold/warm output differs");
+    if (!boundedOnly) {
+      assert.deepEqual(results.quickjs, results.native, "Browser QuickJS/native output differs");
+      assert.deepEqual(results.quickjs, results.scrub, "Browser sequential/scrub output differs");
+      assert.deepEqual(results.quickjs, results.reused, "Reused runtime output differs");
+      assert.deepEqual(results.quickjs, results.minimal, "Minimal intrinsics output differs");
+      assert.deepEqual(results.quickjs, results.cached, "Trusted cached fixture output differs");
+    }
+    assert.deepEqual(
+      results.bounded,
+      results.boundedScrub,
+      "Bounded sequential/scrub output differs",
+    );
+    assert.equal(
+      coldOutput,
+      results[boundedOnly ? "bounded" : "quickjs"][0],
+      "Cold/warm output differs",
+    );
     const composition = JSON.parse(coldOutput);
     assert.equal(composition.layers.length, SCENES.representative);
     assert.equal(composition.layers.flatMap((layer) => layer.composition.layers).length, 68);
-    for (const [frame, expected] of Object.entries(results.quickjs)) {
+    for (const [frame, expected] of Object.entries(results.bounded)) {
+      if (!boundedOnly)
+        assert.equal(
+          JSON.stringify(nodeFrame("representative", Number(frame))),
+          results.quickjs[frame],
+          `QuickJS Node parity failed at ${frame}`,
+        );
       assert.equal(
-        JSON.stringify(nodeFrame("representative", Number(frame))),
+        JSON.stringify(nodeBounded("representative", Number(frame))),
         expected,
-        `Node parity failed at ${frame}`,
+        `Bounded Node parity failed at ${frame}`,
       );
     }
-    assert.notEqual(results.quickjs[0], results.quickjs[239], "Fixture output did not animate");
+    assert.notEqual(
+      results.bounded[0],
+      results.bounded[239],
+      "Bounded fixture output did not animate",
+    );
+    assert.notEqual(results.native[0], results.native[239], "Fixture output did not animate");
     if (previousResults)
-      assert.deepEqual(results.quickjs, previousResults, "Output differs across browser launches");
-    previousResults = results.quickjs;
+      assert.deepEqual(results.bounded, previousResults, "Output differs across browser launches");
+    previousResults = results.bounded;
 
     console.log(
       `\nLaunch ${run} | worker ready ${ms(readyMs)} ms (Wasm ${ms(wasmMs)} ms) | first frame ${ms(firstMs)} ms`,

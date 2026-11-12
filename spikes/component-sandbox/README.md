@@ -11,19 +11,25 @@ pnpm exec turbo run build --filter=@kynimo/components
 node spikes/component-sandbox/run.mjs
 ```
 
+Use `node spikes/component-sandbox/run.mjs --bounded-only` to measure the ADR-0058 evaluator and the native control. The bounded fixture uses the same eight instances and 68 layers with production drawing helpers. The runner also checks cold/warm, shuffled-order, and Node parity.
+
+For rasterization and compositing under a 60 Hz clock, first build `@kynimo/capture` with `pnpm exec turbo run build --filter=@kynimo/capture`, then run `node spikes/component-sandbox/playback.mjs --hardware`. Use `--compact` for 640×360. The playback runner reports evaluation, drawing with synchronous readback, combined work and missed ticks. Omit `--hardware` to use SwiftShader.
+
 Run on an idle machine. The runner builds a Vite bundle, serves it on localhost, and launches three fresh Chromium processes. Each browser creates a dedicated worker and times startup through the ready message, Wasm initialization within the worker, and the first evaluated frame. The worker loads the synchronous release Wasm build pinned by `@kynimo/script`.
 
 The representative 60 fps composition has eight active instances and produces 68 text and solid layers per frame. It contains three lower thirds, three bar charts, and two particle fields. It exercises animated numeric props, resolved style roles, non-ASCII text, frame arithmetic, and seeded randomness. The stress case repeats the mix four times. Each measurement warms up with 60 requests and samples 240 requests with one frame in flight.
 
-| Row       | What runs                                                                                                                              |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `quickjs` | Fresh QuickJS runtime and context for each instance, one Wasm instance per worker                                                      |
-| `reused`  | One QuickJS runtime for the benchmark mode, fresh context for each instance                                                            |
-| `minimal` | Same as `reused`, with only base objects, evaluation and JSON intrinsics enabled                                                       |
-| `cached`  | Trusted control with a persistent context and a compile-once fixture. Guest state can persist, so this mode is excluded from the gate. |
-| `native`  | The same fixture function in the browser worker's JavaScript engine                                                                    |
-| `scrub`   | The fresh-runtime path with the same frames requested in a different order                                                             |
-| `stress`  | The fresh-runtime path with 32 instances                                                                                               |
+| Row            | What runs                                                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `quickjs`      | Fresh QuickJS runtime and context for each instance, one Wasm instance per worker                                                      |
+| `reused`       | One QuickJS runtime for the benchmark mode, fresh context for each instance                                                            |
+| `minimal`      | Same as `reused`, with only base objects, evaluation and JSON intrinsics enabled                                                       |
+| `cached`       | Trusted control with a persistent context and a compile-once fixture. Guest state can persist, so this mode is excluded from the gate. |
+| `native`       | The same fixture function in the browser worker's JavaScript engine                                                                    |
+| `bounded`      | The production bounded component evaluator with the fixture expressed through `solid` and `text`                                       |
+| `boundedScrub` | The bounded path with shuffled frame requests                                                                                          |
+| `scrub`        | The fresh-runtime path with the same frames requested in a different order                                                             |
+| `stress`       | The fresh-runtime path with 32 instances                                                                                               |
 
 Round-trip timings start at the browser's request and end when the resolved frame arrives. They include scheduling, structured cloning, prop and style resolution, input serialization, guest initialization and evaluation, output serialization and validation, and engine evaluation. Worker timings end before the reply is posted. Drawing, asset loading, and player work are outside the measurement. The browser clock is used only by the harness.
 
