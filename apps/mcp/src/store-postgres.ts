@@ -1,4 +1,4 @@
-import type { Project } from "@kynimo/scene";
+import type { Project, ShaderDefinition } from "@kynimo/scene";
 import pg from "pg";
 import {
   type AccountStore,
@@ -129,6 +129,15 @@ export const MIGRATIONS: readonly (readonly string[])[] = [
       seed double precision not null,
       created_at timestamptz not null default now(),
       primary key (project_id, version)
+    )`,
+  ],
+  [
+    `create table kynimo_shader_definitions (
+      project_id text not null references kynimo_projects (id) on delete cascade,
+      id text not null,
+      version text not null,
+      definition json not null,
+      primary key (project_id, id, version)
     )`,
   ],
 ];
@@ -277,6 +286,26 @@ export class PostgresStore implements AccountStore {
     return rows.map((r) => r.version);
   }
 
+  private async shaderDefinitions(q: Query, id: string): Promise<ShaderDefinition[]> {
+    const rows = await q<{ definition: ShaderDefinition }>(
+      "select definition from kynimo_shader_definitions where project_id = $1",
+      [id],
+    );
+    return rows.map(({ definition }) => definition);
+  }
+
+  async listShaderDefinitions(id: string): Promise<ShaderDefinition[] | undefined> {
+    if (!PROJECT_ID_PATTERN.test(id)) return undefined;
+    const rows = await this.db.query<{ definition: ShaderDefinition | null }>(
+      `select d.definition from kynimo_projects p
+       left join kynimo_shader_definitions d on d.project_id = p.id
+       where p.id = $1 and p.account = $2`,
+      [id, this.account],
+    );
+    if (rows.length === 0) return undefined;
+    return rows.flatMap(({ definition }) => (definition === null ? [] : [definition]));
+  }
+
   private async lookup(q: Query, scope: string, actor: string, key: string): Promise<KeyLookup> {
     const [row] = await q<{
       fingerprint: string;
@@ -361,6 +390,7 @@ export class PostgresStore implements AccountStore {
       const current = this.state(id, row);
       const step = await fn({
         project: structuredClone(current),
+        definitions: () => this.shaderDefinitions(q, id),
         lookup: (actor, key) => this.lookup(q, id, actor, key),
       });
       const { commit } = step;
@@ -384,6 +414,12 @@ export class PostgresStore implements AccountStore {
             [id, next.doc.name, next.version, next.idCounter, JSON.stringify(next.history)],
           );
         }
+        const definition = commit.definition;
+        if (definition !== undefined)
+          await q(
+            "insert into kynimo_shader_definitions (project_id, id, version, definition) values ($1, $2, $3, $4)",
+            [id, definition.id, definition.version, JSON.stringify(definition)],
+          );
         await this.saveKey(q, id, commit);
       }
       return { value: step.value };

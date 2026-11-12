@@ -26,6 +26,7 @@ export function activeEffect(effect: ResolvedEffect): boolean {
     case "chromatic-aberration":
       return effect.amount > 0;
     case "posterize":
+    case "custom-shader":
       return true;
     case "scanlines":
       return effect.amount * effect.color.a > 0 && effect.thickness > 0;
@@ -102,6 +103,7 @@ export function generatorSamples(generator: ResolvedGenerator): number {
   switch (generator.type) {
     case "gradient":
     case "pattern":
+    case "custom-shader":
       return 1;
     case "aurora":
       return generator.colors.length;

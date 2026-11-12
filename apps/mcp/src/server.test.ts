@@ -63,6 +63,7 @@ describe("MCP server", () => {
       "build_from_brief",
       "cancel_export",
       "create_project",
+      "define_shader",
       "describe_motion",
       "export",
       "find_layers",
@@ -77,6 +78,7 @@ describe("MCP server", () => {
       "import_svg",
       "list_assets",
       "list_components",
+      "list_definitions",
       "list_presets",
       "list_projects",
       "mark_beats",
@@ -138,7 +140,8 @@ describe("MCP server", () => {
     // 101_000 with the beat tools (ADR-0052): 96.1 KB before, 100.9 KB after.
     // 102_000 after describing the sync_to_beats fields (review fixes): 101.2 KB.
     // 103_500 with 2.5D layers and cameras (ADR-0054): 101.2 KB before, 102.9 KB after.
-    expect(JSON.stringify(tools).length).toBeLessThan(103_500);
+    // 112_000 with shader authoring and discovery (ADR-0055).
+    expect(JSON.stringify(tools).length).toBeLessThan(112_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -718,6 +721,7 @@ describe("MCP server", () => {
         "kynimo://capabilities",
         "kynimo://components",
         "kynimo://presets",
+        "kynimo://shaders",
         "kynimo://sdk",
         "kynimo://schema/scene",
         "kynimo://schema/ops",
@@ -725,7 +729,10 @@ describe("MCP server", () => {
       ]),
     );
     const { resourceTemplates } = await client.listResourceTemplates();
-    expect(resourceTemplates.map((t) => t.uriTemplate)).toEqual(["kynimo://schema/layer/{type}"]);
+    expect(resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
+      "kynimo://projects/{project_id}/shaders",
+      "kynimo://schema/layer/{type}",
+    ]);
   });
 
   it("serves the scene, op and layer schemas as JSON Schema", async () => {

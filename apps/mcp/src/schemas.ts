@@ -29,6 +29,8 @@ import {
   NameSchema,
   OpSchema,
   SemverSchema,
+  ShaderDefinitionInputSchema,
+  ShaderDefinitionSummarySchema,
   TRANSFORM_PROPERTIES,
   TrackMatteSchema,
 } from "@kynimo/scene";
@@ -665,6 +667,24 @@ const ErrorItem = z.looseObject({
   message: z.string(),
 });
 
+export const DefineShaderInput = ShaderDefinitionInputSchema.extend({
+  project_id: ProjectIdSchema,
+  idempotency_key: IdempotencyKeySchema,
+}).describe(
+  "One immutable project shader. The source is a bounded GLSL ES 3.00 body with typed locals and a final return vec4.",
+);
+
+export const DefineShaderOutput = z.looseObject({
+  project_id: ProjectIdSchema,
+  definition: ShaderDefinitionSummarySchema,
+  created: z.boolean(),
+  replayed: z.boolean(),
+});
+
+export const ListDefinitionsOutput = z.looseObject({
+  definitions: z.array(ShaderDefinitionSummarySchema),
+});
+
 export const WriteOutput = z.looseObject({
   project_id: z.string(),
   version: z.number().int(),
@@ -851,7 +871,12 @@ export const GetCapabilitiesOutput = z.looseObject({
 export const WriteOutcomeOutput = z.looseObject({
   status: z.enum(["applied", "rejected", "expired", "unknown"]),
   version: z.number().int().optional(),
-  result: WriteOutput.omit({ replayed: true }).optional(),
+  result: WriteOutput.omit({ replayed: true })
+    .extend({
+      definition: ShaderDefinitionSummarySchema.optional(),
+      definition_created: z.boolean().optional(),
+    })
+    .optional(),
   kind: z.string().optional(),
   message: z.string().optional(),
   errors: z.array(ErrorItem).optional(),

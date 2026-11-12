@@ -10,5 +10,12 @@ export * from "./path.js";
 export * from "./projective.js";
 export { sampleNonNegative } from "./properties.js";
 export type * from "./resolved.js";
+export {
+  indexShaderDefinitions,
+  type ResolvedShader,
+  type ShaderDefinitions,
+  shaderDefinitionKey,
+  validateShader,
+} from "./shader.js";
 export * from "./text-animator.js";
 export * from "./track.js";

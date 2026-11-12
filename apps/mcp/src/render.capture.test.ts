@@ -490,6 +490,164 @@ describe("render tools with the capture renderer", () => {
     }
   }, 60_000);
 
+  it("publishes, pins and renders immutable custom shader versions over MCP", async () => {
+    const created = await call("create_project", {
+      name: "Shaders",
+      idempotency_key: "shader-project",
+      width: 64,
+      height: 64,
+      duration_frames: 12,
+      background: null,
+    });
+    const project_id = created.structuredContent?.id as string;
+    const body = {
+      project_id,
+      id: "custom-red",
+      title: "Red source",
+      version: "1.0.0",
+      kind: "generator",
+      uniforms: { u_amount: { type: "float", default: 0.5 } },
+      source: "return vec4(u_amount, 0.0, 0.0, 1.0);",
+    };
+    const define = (idempotency_key: string, overrides: Record<string, unknown> = {}) =>
+      call("define_shader", { ...body, idempotency_key, ...overrides });
+    const args = { ...body, idempotency_key: "shader-v1" };
+    const [first, retry] = await Promise.all([
+      call("define_shader", args),
+      call("define_shader", args),
+    ]);
+    expect(retry.structuredContent).toEqual({
+      ...first.structuredContent,
+      replayed: retry.structuredContent?.replayed,
+    });
+    expect(first.structuredContent).toMatchObject({
+      created: true,
+      definition: { id: body.id, version: body.version },
+    });
+    expect([first, retry].filter((r) => r.structuredContent?.replayed === true)).toHaveLength(1);
+    const definition = first.structuredContent?.definition;
+    expect(definition).toMatchObject({ hash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(definition).not.toHaveProperty("source");
+    expect(
+      (await call("get_write_outcome", { project_id, idempotency_key: "shader-v1" }))
+        .structuredContent,
+    ).toMatchObject({ status: "applied", version: 1, result: { definition } });
+
+    const rejected = await client.callTool({
+      name: "define_shader",
+      arguments: {
+        ...body,
+        idempotency_key: "conflict",
+        source: "return vec4(1.0);",
+      },
+    });
+    expect(rejected.isError).toBe(true);
+    expect(JSON.stringify(rejected.content)).toContain("immutable");
+    const invalid = await client.callTool({
+      name: "define_shader",
+      arguments: {
+        ...body,
+        idempotency_key: "syntax",
+        version: "0.1.0",
+        source: "return 1.0;",
+      },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(JSON.stringify(invalid.content)).toContain("shader must return vec4");
+    await define("shader-effect", {
+      id: "custom-swap",
+      title: "Swap channels",
+      kind: "effect",
+      uniforms: {},
+      source: "vec4 c = sampleInput(uv); return vec4(c.bgr, c.a);",
+    });
+    const generator = {
+      type: "custom-shader",
+      shaderId: body.id,
+      shaderVersion: body.version,
+      uniforms: {
+        u_amount: {
+          keyframes: [
+            { frame: 0, value: 0.25, interpolation: { type: "linear" } },
+            { frame: 8, value: 1, interpolation: { type: "linear" } },
+          ],
+        },
+      },
+    };
+    const layer = { type: "generator", name: "Source", width: 64, height: 64, generator };
+    const add = { project_id, base_version: 1, composition: "main", id: "source" };
+    const invalidBinding = await client.callTool({
+      name: "add_layer",
+      arguments: {
+        ...add,
+        idempotency_key: "wrong-uniform",
+        layer: {
+          ...layer,
+          generator: { ...generator, uniforms: { u_amount: { value: [0, 0] } } },
+        },
+      },
+    });
+    expect(invalidBinding.isError).toBe(true);
+    expect(JSON.stringify(invalidBinding.content)).toContain("must match the type");
+    await call("add_layer", { ...add, idempotency_key: "shader-layer", layer });
+    await call("add_effect", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "apply-shader",
+      layer: "source",
+      effect: {
+        type: "custom-shader",
+        shaderId: "custom-swap",
+        shaderVersion: "1.0.0",
+        uniforms: {},
+      },
+    });
+    const before = images(await call("render_frames", { project_id, frames: [0] }))[0]?.data ?? "";
+    expect(decodePng(before).at(32, 32)).toEqual([0, 0, 64, 255]);
+    const next = await define("shader-v2", {
+      version: "2.0.0",
+      source: "return vec4(0.0, 1.0, 0.0, 1.0);",
+    });
+    expect(next.structuredContent?.definition).not.toMatchObject({
+      hash: (definition as { hash: string }).hash,
+    });
+    const catalog = await call("list_definitions", { project_id });
+    expect(catalog.structuredContent?.definitions).toMatchObject([
+      { id: "custom-red", version: "1.0.0" },
+      { id: "custom-red", version: "2.0.0" },
+      { id: "custom-swap", version: "1.0.0" },
+    ]);
+    const resource = await client.readResource({
+      uri: `kynimo://projects/${project_id}/shaders`,
+    });
+    const [entry] = resource.contents;
+    if (entry === undefined || !("text" in entry)) throw new Error("expected shader catalog JSON");
+    expect(JSON.parse(entry.text)).toMatchObject({
+      definitions: catalog.structuredContent?.definitions,
+    });
+
+    const after = await call("render_frames", { project_id, frames: [8, 0], max_size: 64 });
+    expect(after.structuredContent?.version).toBe(3);
+    const [end, again] = images(after);
+    expect(again?.data).toBe(before);
+    expect(decodePng(end?.data ?? "").at(32, 32)).toEqual([0, 0, 255, 255]);
+    await call("apply_ops", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "change-pin",
+      ops: [
+        {
+          op: "setGenerator",
+          layer: "source",
+          generator: { ...generator, shaderVersion: "2.0.0" },
+        },
+      ],
+    });
+    const repinned =
+      images(await call("render_frames", { project_id, frames: [0] }))[0]?.data ?? "";
+    expect(decodePng(repinned).at(32, 32)).toEqual([0, 255, 0, 255]);
+  }, 60_000);
+
   it("returns downscaled PNG frames and caches by document", async () => {
     const r = await call("render_frames", { project_id: project, frames: [0, 29], max_size: 160 });
     const imgs = images(r);

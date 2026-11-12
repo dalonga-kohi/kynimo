@@ -1,5 +1,5 @@
 import type { RenderWarning, SkippedLayer } from "@kynimo/renderer";
-import type { Project } from "@kynimo/scene";
+import type { Project, ShaderDefinition } from "@kynimo/scene";
 
 /**
  * The page's origin. The host answers every request to it from memory (page bundle, CanvasKit's
@@ -12,6 +12,7 @@ export const ORIGIN = "https://capture.kynimo.invalid";
 /** One `captureFrames` call, as the page receives it. The project has already passed `migrateProject`. */
 export interface PageRequest {
   project: Project;
+  shaders: readonly ShaderDefinition[];
   compositionId: string;
   frames: number[];
   /** Ids of the image and font assets whose bytes the host serves at `/assets/<id>`. */
@@ -59,6 +60,7 @@ export type PageResponse =
 /** `openExport`: the document and assets of one export; the host serves the bytes at `/assets/<id>`. */
 export interface ExportRequest {
   project: Project;
+  shaders: readonly ShaderDefinition[];
   compositionId: string;
   assets: string[];
   maxSize: number | null;

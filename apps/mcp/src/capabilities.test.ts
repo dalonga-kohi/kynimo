@@ -158,7 +158,7 @@ describe("capability manifest", () => {
     expect(zoom.safeParse({ value: max + 1 }).success).toBe(false);
   });
 
-  it("lists every generator kind, the looks and their limits, and keeps custom shaders unavailable", () => {
+  it("lists every generator kind, the looks and their limits, and exposes custom shader authoring", () => {
     expect(sorted(Object.keys(manifest.features.generators))).toEqual(
       sorted(GeneratorSchema.options.map((option) => option.shape.type.value)),
     );
@@ -183,8 +183,9 @@ describe("capability manifest", () => {
       scanlineSpacing: { min: 2, max: 64 },
     });
     expect(manifest.unavailable).not.toHaveProperty("shaders");
-    expect(manifest.unavailable.custom_shaders?.reason).toContain("M6");
-    expect(manifest.unavailable.catalogs?.reason).toContain("shader catalog in M6");
+    expect(manifest.unavailable).not.toHaveProperty("custom_shaders");
+    expect(manifest.shaders.tools).toEqual(["define_shader", "list_definitions"]);
+    expect(manifest.features.effects["custom-shader"].status).toBe("renders");
     expect(manifest.layer_types.generator.status).toBe("renders");
     expect(manifest.layer_types.component.status).toBe("renders");
     expect(manifest.unavailable.custom_components?.reason).toContain("define_component");
@@ -221,6 +222,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(11_300); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
+    expect(JSON.stringify(manifest).length).toBeLessThan(11_800); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
   });
 });

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { SCENE_FORMAT_VERSION } from "@kynimo/scene";
+import { SCENE_FORMAT_VERSION, type ShaderDefinition } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchTestCapture } from "./launch.test-util.js";
 import { CHECKER_PNG, DETERMINISM_ASSETS, DETERMINISM_SCENE } from "./scene.test-util.js";
@@ -149,6 +149,40 @@ const doc = (l: unknown, asset: unknown, background: string | null = null) => ({
     },
   ],
 });
+it("exports frame-driven shader pins with the same pixels as frame capture", async () => {
+  const definition: ShaderDefinition = {
+    id: "custom-export",
+    version: "1.0.0",
+    title: "Export shader",
+    kind: "generator",
+    source: "return vec4(frame / 4.0, uv.x, 0.25, 1.0);",
+    hash: "0".repeat(64),
+    uniforms: {},
+  };
+  const generator = {
+    type: "custom-shader",
+    shaderId: definition.id,
+    shaderVersion: definition.version,
+    uniforms: {},
+  };
+  const document = {
+    ...doc(layer("generator", { generator, width: 16, height: 16 }), null),
+    assets: [],
+  };
+  const frames = [3, 0, 1];
+  const shaders = [definition];
+  const captured = await capture.captureFrames(document, frames, { shaders });
+  const session = await capture.openExport(document, { shaders, alpha: "premultiplied" });
+  try {
+    expect(new Set(captured.map((frame) => frame.pixelsSha256)).size).toBe(frames.length);
+    expect((await exportAll(session, frames)).map((frame) => sha(frame.rgba))).toEqual(
+      captured.map((frame) => frame.pixelsSha256),
+    );
+  } finally {
+    await session.close();
+  }
+}, 60_000);
+
 const imageAsset = {
   id: "pic",
   name: "pic",

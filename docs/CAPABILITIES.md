@@ -160,21 +160,25 @@ Adjustment layers filter the composite below them in the same composition. Their
 
 ## 8. Components, code, guidelines, quality
 
-Code is a first-class way to build (ADR-0012, ADR-0036). **Scripts** run once at authoring time: the agent writes TypeScript against an SDK generated from the operation schemas, and the result is an ordinary batch of operations, so nothing of the script is in the render path. Components and shaders run at render time: Agents and users write custom components (TypeScript, `evaluate(props, ctx) → layer subtree`, with the frame, size, seeded `random` and the style on `ctx`; ADR-0046) and shaders (GLSL fragment shaders with declared uniforms). Both are sandboxed, validated on submit, stored per project as versioned, content-hashed definitions, and pinned by id + version in the document. A component's `evaluate` runs every frame and returns a layer subtree derived at render time (not stored), so the instance is edited through its props. A shader's props are animatable uniforms; effect shaders get their input texture(s), the layer-local frame, fps, resolution and a document-derived seed. Code runs under resource limits. Nothing draws outside these nodes. Five built-in components ship (ADR-0047): `kinetic-type`, `lower-third`, `logo-reveal`, `transition` (cover transitions: cut your shots at the midpoint of the instance) and `background`; each enters at the start of its instance and exits at the end, and follows the pinned style. Use `list_components` to discover props and versions, and `add_component` to validate and place a pinned instance (ADR-0049).
+`run_script` runs TypeScript against the scene SDK at authoring time and writes one validated batch of scene operations (ADR-0036, ADR-0041).
 
-| Capability                                                                                       | Status |
-| ------------------------------------------------------------------------------------------------ | ------ |
-| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree            | beta   |
-| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds (ADR-0047)    | beta   |
-| Built-in library: charts, device mockups                                                         | v1.x   |
-| Custom components in sandboxed TypeScript, defined over MCP (`define_component`)                 | beta   |
-| Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`)        | beta   |
-| Built-in shader library: backgrounds, textures, looks (ADR-0045); transitions                    | beta   |
-| Shaders on 3D layers and models (materials)                                                      | v1.x   |
-| Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`, ADR-0041) | beta   |
-| Code panel in the web editor; local CLI / dev mode                                               | later  |
-| Guideline packs: visual + motion tokens, choreography rules                                      | beta   |
-| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op           | beta   |
+`define_shader` publishes a bounded GLSL ES 3.00 body as an immutable, content-hashed project definition. Scene format 10 adds pinned generator and single-input effect instances with animatable uniforms. The shader sees layer-local frame, fps, pixel position, resolution, a document-derived seed, and the effect's source texture through a bounded sampling function. Use `list_definitions` to discover the project's versions and `kynimo://shaders` for the authoring interface. [ADR-0052](decisions/0052-project-shaders.md)
+
+Five built-in components use typed props and resolve an editable instance to a layer subtree every frame. `list_components` lists `kinetic-type`, `lower-third`, `logo-reveal`, `transition`, and `background`. `add_component` validates and places a version-pinned instance. Project-defined components need a per-frame evaluator that meets the performance and isolation gate. [ADR-0049](decisions/0049-component-placement.md) · [ADR-0051](decisions/0051-component-sandbox-spike.md)
+
+| Capability                                                                                       | Status  |
+| ------------------------------------------------------------------------------------------------ | ------- |
+| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree            | beta    |
+| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds (ADR-0047)    | beta    |
+| Built-in library: charts, device mockups                                                         | v1.x    |
+| Custom components in sandboxed TypeScript (`define_component`, ADR-0051 evaluator pending)       | planned |
+| Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`)        | beta    |
+| Built-in shader library: backgrounds, textures, looks (ADR-0045); transitions                    | beta    |
+| Shaders on 3D layers and models (materials)                                                      | v1.x    |
+| Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`, ADR-0041) | beta    |
+| Code panel in the web editor; local CLI / dev mode                                               | later   |
+| Guideline packs: visual + motion tokens, choreography rules                                      | beta    |
+| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op           | beta    |
 
 ## 9. Output
 
@@ -228,7 +232,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4         |
 | Intent   | `add_component`, `list_components`                                                                                                                                   | shipped    |
 | Intent   | `build_from_brief` (ordered headline, logo, image and video shots → one editable storyboard write with a dry run, ADR-0050)                                          | shipped    |
-| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6         |
+| Code     | `define_shader`, `list_definitions`; `define_component` awaits the ADR-0051 evaluator                                                                                | M6         |
 | Intent   | `mark_beats` (beat markers on an audio layer from the asset's detected beats or a bpm grid), `sync_to_beats` (snap keyframes and cuts to them; `dry_run`; ADR-0052)  | shipped    |
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3         |
@@ -236,4 +240,4 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Output   | `get_preview_link`                                                                                                                                                   | M7         |
 | Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8         |
 
-MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028). Built-in presets are at `kynimo://presets` (`list_presets`, ADR-0040), built-in components at `kynimo://components` (`list_components`, ADR-0049), and script SDK declarations at `kynimo://sdk` (ADR-0041).
+MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028). Built-in presets are at `kynimo://presets` (`list_presets`, ADR-0040), built-in components at `kynimo://components` (`list_components`, ADR-0049), and script SDK declarations at `kynimo://sdk` (ADR-0041). The shader resources are `kynimo://shaders` and `kynimo://projects/{project_id}/shaders` (ADR-0052).

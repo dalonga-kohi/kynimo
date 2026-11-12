@@ -78,6 +78,22 @@ describe("compactJsonSchema", () => {
   });
 });
 
+function dialectKeywords(schema: unknown): string[] {
+  if (Array.isArray(schema)) return schema.flatMap(dialectKeywords);
+  if (schema === null || typeof schema !== "object") return [];
+  return Object.entries(schema).flatMap(([key, value]) => {
+    if (
+      ["additionalItems", "definitions", "dependencies", "$ref"].includes(key) ||
+      (key === "items" && Array.isArray(value))
+    )
+      return [key];
+    if (key === "properties" || key === "patternProperties")
+      return Object.values(value as Record<string, unknown>).flatMap(dialectKeywords);
+    if (["default", "const", "enum", "examples"].includes(key)) return [];
+    return dialectKeywords(value);
+  });
+}
+
 describe("tool listing", () => {
   it("is compacted for every tool, input and output", async () => {
     const listing = JSON.stringify(await listTools());
@@ -88,9 +104,8 @@ describe("tool listing", () => {
 
   it("uses no keyword whose meaning differs between draft-07 and 2020-12", async () => {
     // Dropping `$schema` relies on this: MCP reads a schema without one as 2020-12.
-    const listing = JSON.stringify(await listTools());
-    for (const keyword of ['"items":[', "additionalItems", "definitions", "dependencies", "$ref"])
-      expect(listing, keyword).not.toContain(keyword);
+    for (const { name, inputSchema, outputSchema } of await listTools())
+      expect(dialectKeywords([inputSchema, outputSchema]), name).toEqual([]);
   });
 
   it("keeps each tool within a size cap, so one tool cannot eat the budget unnoticed", async () => {

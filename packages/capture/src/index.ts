@@ -12,4 +12,5 @@ export {
   MAX_FRAMES_PER_CALL,
   type SheetOptions,
 } from "./session.js";
+export { SHADER_COMPILE_TIMEOUT_MS, validateShaderProgram } from "./shader-validation.js";
 export { fitSize, sheetSize } from "./size.js";

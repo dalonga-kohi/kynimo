@@ -2,9 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { SCENE_FORMAT_VERSION, withLayerDefaults } from "@kynimo/scene";
+import { SCENE_FORMAT_VERSION, type ShaderDefinition, withLayerDefaults } from "@kynimo/scene";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KynimoService, ToolError } from "./service.js";
+import { shaderHash } from "./shaders.js";
 import {
   type AccountStore,
   FileStore,
@@ -233,6 +234,58 @@ for (const [name, make] of Object.entries(backends)) {
       const reopened = await backend.open();
       expect(await reopened.getScript(id)).toEqual({ version: 2, source: "a()", seed: 3 });
       expect(await reopened.scriptVersions(id, 5)).toEqual([2]);
+    });
+
+    it("persists immutable shader definitions with their write key across project writes and restart", async () => {
+      const { id, store, write } = await setup();
+      const input = {
+        id: "custom-poster",
+        version: "1.0.0",
+        kind: "generator" as const,
+        title: "Poster",
+        source: "return vec4(1.0);",
+        uniforms: {},
+      };
+      const definition: ShaderDefinition = { ...input, hash: shaderHash(input) };
+      expect(await store.listShaderDefinitions(id)).toEqual([]);
+      await store.transact(id, async (tx) => {
+        expect(await tx.definitions()).toEqual([]);
+        return {
+          value: undefined,
+          commit: {
+            definition,
+            record: {
+              actor: "agent",
+              key: "define",
+              fingerprint: "request",
+              outcome: {
+                status: "applied",
+                version: 1,
+                result: {
+                  project_id: id,
+                  version: 1,
+                  changed: false,
+                  layers_added: [],
+                  layers_removed: [],
+                  layers_changed: [],
+                  markers_added: [],
+                  markers_removed: [],
+                },
+              },
+            },
+          },
+        };
+      });
+      await write(1, "layer", [addSolid("new")]);
+      if (!backend) throw new Error("no backend");
+      const reopened = await backend.open();
+      expect(await reopened.listShaderDefinitions(id)).toEqual([definition]);
+      expect(await reopened.lookupWrite(id, "agent", "define")).toMatchObject({ status: "found" });
+      expect(await reopened.get(id)).toMatchObject({ version: 2 });
+      if ("forAccount" in reopened)
+        expect(
+          await (reopened as AccountStore).forAccount("other").listShaderDefinitions(id),
+        ).toBeUndefined();
     });
 
     it("keeps documents, undo history and keys across a restart", async () => {

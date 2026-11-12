@@ -15,10 +15,12 @@ import type { Rgba } from "./color.js";
 import { hashWords } from "./hash.js";
 import { samplePoint, sampleUnit } from "./properties.js";
 import type { Point, ResolvedGradientStop } from "./resolved.js";
+import { type ResolvedShader, type ResolveShader, resolveShader } from "./shader.js";
 import { mixStops, sanitizeStops } from "./shape.js";
 import { sampleColor, sampleNumber, sampleTrack } from "./track.js";
 
 export type ResolvedGenerator =
+  | ResolvedShader
   | {
       type: "gradient";
       kind: "linear" | "radial" | "conic";
@@ -71,6 +73,7 @@ export function resolveGenerator(
   fps: FrameRate,
   width: number,
   height: number,
+  shader?: ResolveShader,
 ): ResolvedGenerator {
   const number = (track: Animatable<number>, min: number, max: number) =>
     clamp(sampleNumber(track, frame, fps), min, max);
@@ -93,6 +96,10 @@ export function resolveGenerator(
     number(track, -MAX_GENERATOR_EVOLUTION, MAX_GENERATOR_EVOLUTION);
 
   switch (generator.type) {
+    case "custom-shader":
+      return shader
+        ? shader(generator, "generator")
+        : resolveShader(generator, "generator", undefined, frame, fps, 0);
     case "gradient":
       return {
         type: "gradient",

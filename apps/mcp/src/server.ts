@@ -27,7 +27,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { buildFromBriefExpansion } from "./build-from-brief.js";
-import { capabilityManifest, RESOURCES } from "./capabilities.js";
+import { capabilityManifest, RESOURCES, shaderCatalog } from "./capabilities.js";
 import { addComponentExpansion, componentCatalog } from "./components.js";
 import { importSvgExpansion } from "./import-svg.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
@@ -49,6 +49,8 @@ import {
   CancelExportOutput,
   CreateProjectInput,
   CreateProjectOutput,
+  DefineShaderInput,
+  DefineShaderOutput,
   DescribeMotionInput,
   DescribeMotionOutput,
   ExportInput,
@@ -69,6 +71,7 @@ import {
   LAYER_TYPES,
   ListAssetsOutput,
   ListComponentsOutput,
+  ListDefinitionsOutput,
   ListPresetsOutput,
   ListProjectsOutput,
   MarkBeatsToolInput,
@@ -108,7 +111,8 @@ Animate with intent first: animate (one property over a window; durations and ea
 Audio uploads come with detected beats: mark_beats puts them on an audio layer as markers, sync_to_beats snaps keyframes and cuts to them.
 Use list_components or kynimo://components to discover built-ins and their props. add_component places a version-pinned instance; use dry_run to validate placement and props first.
 Use build_from_brief to assemble a storyboard of headline, logo, image and video shots in one write. Translate the user's brief into the shot fields first. Use dry_run to check timing and assets, then render a contact sheet.
-Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
+Use define_shader to publish a project GLSL generator or effect, then pin its id and version in add_layer, setGenerator or add_effect. Read the shader interface at kynimo://shaders and find versions with list_definitions.
+Scene edits need base_version (the version you last read). Every write needs a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
 Text layers take animators (like After Effects): each has a range selector (unit characters/words/lines, start/end/offset as fractions of the text, shape, ease, order incl. seeded random) that weights each unit (0..1, times amount), and properties (position, scale, rotation, opacity, fill, tracking; blur is accepted but not drawn yet) applied at that weight. Selected units get the properties, so to reveal text set opacity 0 and sweep start from 0 to 1 (the unrevealed part stays selected); units the window cuts are selected partly.
@@ -785,6 +789,33 @@ export function createServer(service: KynimoService): McpServer {
   );
 
   server.registerTool(
+    "define_shader",
+    {
+      title: "Define shader",
+      description:
+        "Validates and publishes one immutable, project-scoped GLSL shader version. Use a custom- id, semver, kind, typed uniforms and a function body ending in return vec4. See kynimo://shaders for the supported GLSL interface. Publishing does not edit the scene.",
+      inputSchema: DefineShaderInput,
+      outputSchema: DefineShaderOutput,
+      annotations: WRITE,
+    },
+    guard(async ({ project_id, idempotency_key, ...definition }) =>
+      service.defineShader(project_id, idempotency_key, definition),
+    ),
+  );
+  server.registerTool(
+    "list_definitions",
+    {
+      title: "List project definitions",
+      description:
+        "Lists immutable shader versions in one project, including their content hashes and uniform descriptors.",
+      inputSchema: z.object({ project_id: ProjectIdSchema }),
+      outputSchema: ListDefinitionsOutput,
+      annotations: READ,
+    },
+    guard(async ({ project_id }) => service.listDefinitions(project_id)),
+  );
+
+  server.registerTool(
     "list_components",
     {
       title: "List components",
@@ -834,7 +865,7 @@ export function createServer(service: KynimoService): McpServer {
     guard(async (a) => ({ ...(await service.write(meta(a), { kind: "redo" })) })),
   );
 
-  registerResources(server);
+  registerResources(server, service);
 
   return server;
 }
@@ -844,7 +875,7 @@ const json = (uri: URL, value: unknown) => ({
 });
 
 /** Look-up data as MCP resources (ADR-0028). Tools cover the same data for clients that hide resources. */
-function registerResources(server: McpServer): void {
+function registerResources(server: McpServer, service: KynimoService): void {
   server.registerResource(
     "capabilities",
     RESOURCES.capabilities,
@@ -865,6 +896,35 @@ function registerResources(server: McpServer): void {
       mimeType: "application/json",
     },
     (uri) => json(uri, componentCatalog()),
+  );
+  server.registerResource(
+    "shaders",
+    RESOURCES.shaders,
+    {
+      title: "Shader catalog",
+      description: "Built-in shaders and the project shader authoring interface.",
+      mimeType: "application/json",
+    },
+    (uri) => json(uri, shaderCatalog()),
+  );
+  server.registerResource(
+    "project-shaders",
+    new ResourceTemplate(RESOURCES.projectShaders, { list: undefined }),
+    {
+      title: "Project shader catalog",
+      description: "Built-in and project-defined shader versions.",
+      mimeType: "application/json",
+    },
+    async (uri, { project_id }) => {
+      const project = ProjectIdSchema.safeParse(project_id);
+      if (!project.success) throw new McpError(ErrorCode.InvalidParams, "invalid project id");
+      try {
+        return json(uri, { ...shaderCatalog(), ...(await service.listDefinitions(project.data)) });
+      } catch (error) {
+        if (error instanceof ToolError) throw new McpError(ErrorCode.InvalidParams, error.message);
+        throw error;
+      }
+    },
   );
   server.registerResource(
     "presets",

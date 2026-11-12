@@ -1,4 +1,5 @@
-import type { ResolvedEffect, ResolvedGenerator, Rgba } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator, ResolvedShader, Rgba } from "@kynimo/engine";
+import { MAX_PROJECT_DEFINITIONS } from "@kynimo/scene";
 import type {
   CoverageImage,
   FramePlan,
@@ -6,6 +7,7 @@ import type {
   PlannedLayer,
   RasterImage,
 } from "../raster.js";
+import { compiledShader, MAX_FRAME_SHADER_WORK } from "./custom-shader.js";
 import {
   effectPadding,
   effectSamples,
@@ -63,7 +65,9 @@ interface Target {
   released?: number;
 }
 
-const EFFECT_MODES: Readonly<Record<ResolvedEffect["type"], EffectMode | 0>> = {
+const EFFECT_MODES: Readonly<
+  Record<Exclude<ResolvedEffect["type"], "custom-shader">, EffectMode | 0>
+> = {
   "gaussian-blur": 0,
   "drop-shadow": 1,
   glow: 2,
@@ -124,6 +128,22 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       programs.set(key, p);
     }
     return p;
+  };
+  const shaderPrograms = new Map<string, Program>();
+  const shaderProgram = (fragment: string): Program => {
+    const cached = shaderPrograms.get(fragment);
+    if (cached !== undefined) return cached;
+    const next = build(gl, fragment);
+    if (shaderPrograms.size >= MAX_PROJECT_DEFINITIONS) {
+      const oldest = shaderPrograms.keys().next().value;
+      if (oldest !== undefined) {
+        const previous = shaderPrograms.get(oldest);
+        if (previous !== undefined) gl.deleteProgram(previous.program);
+        shaderPrograms.delete(oldest);
+      }
+    }
+    shaderPrograms.set(fragment, next);
+    return next;
   };
   const fixed = {
     prepare: () => program("prepare", () => PREPARE),
@@ -290,6 +310,52 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         "radius, layer size or number of effects",
       );
 
+    let remainingShaderWork = MAX_FRAME_SHADER_WORK;
+    const customShader = (
+      id: string,
+      width: number,
+      height: number,
+      shader: ResolvedShader,
+      src?: Target,
+    ) => {
+      const compiled = compiledShader(shader.definition);
+      remainingShaderWork -= width * height * compiled.work;
+      if (remainingShaderWork < 0)
+        throw new CompositorError(
+          `layer '${id}' exceeds the frame budget of ${MAX_FRAME_SHADER_WORK} custom shader work units`,
+        );
+      const out = target(width, height);
+      pass(
+        shaderProgram(compiled.fragment),
+        out,
+        src === undefined ? [] : [["k_input", src.texture]],
+        (u) => {
+          gl.uniform2f(u("k_size"), width, height);
+          gl.uniform1f(u("k_frame"), shader.frame);
+          gl.uniform1f(u("k_fps"), shader.fps);
+          gl.uniform1f(u("k_seed"), shader.seed);
+          shader.uniforms.forEach((value, i) => {
+            const location = u(`k_u${i}`);
+            switch (value.length) {
+              case 1:
+                gl.uniform1fv(location, value);
+                break;
+              case 2:
+                gl.uniform2fv(location, value);
+                break;
+              case 3:
+                gl.uniform3fv(location, value);
+                break;
+              case 4:
+                gl.uniform4fv(location, value);
+                break;
+            }
+          });
+        },
+      );
+      return out;
+    };
+
     const uploadMask = (mask: CoverageImage | null): Target | null =>
       mask === null
         ? null
@@ -325,10 +391,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     };
 
     const applyEffect = (
+      id: string,
       src: Target,
       effect: ResolvedEffect,
       pad: readonly [number, number],
     ): Target => {
+      if (effect.type === "custom-shader")
+        return customShader(id, src.width, src.height, effect, src);
       if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
       const blurred =
         effect.type === "drop-shadow" || effect.type === "glow"
@@ -407,13 +476,14 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
 
     /** The original target belongs to the caller. Intermediates are freed after their last read. */
     const filter = (
+      id: string,
       src: Target,
       effects: readonly ResolvedEffect[],
       pad: readonly [number, number],
     ): Target => {
       let out = src;
       for (const effect of effects) {
-        const next = applyEffect(out, effect, pad);
+        const next = applyEffect(id, out, effect, pad);
         if (out !== src && out !== next) free(out);
         out = next;
       }
@@ -423,6 +493,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     /** Draws a generator into a fresh `width × height` layer-space target. */
     const generate = (id: string, width: number, height: number, g: ResolvedGenerator): Target => {
       chargeSamples(id, width * height * generatorSamples(g), "layer size or noise octaves");
+      if (g.type === "custom-shader") return customShader(id, width, height, g);
       const out = target(width, height);
       pass(
         program(`generator:${g.type}`, () => generatorShader(g.type)),
@@ -516,7 +587,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       );
       if (mask !== null) free(mask);
       if (owned) free(src);
-      const effected = filter(out, effects, [x, y]);
+      const effected = filter(layer.id, out, effects, [x, y]);
       if (effected !== out) free(out);
       return effected;
     };
@@ -668,7 +739,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     const adjust = (layer: PlannedAdjustmentLayer, acc: Target): Target => {
       const { width, height } = acc;
       chargeEffects(width, height, layer.effects, layer.id);
-      const src = filter(acc, layer.effects, [0, 0]);
+      const src = filter(layer.id, acc, layer.effects, [0, 0]);
       const source = layer.matte?.source;
       const matte = source == null ? null : placed(source, width, height);
       const mask = uploadMask(layer.mask);
@@ -771,6 +842,8 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     dispose: () => {
       for (const p of programs.values()) gl.deleteProgram(p.program);
       programs.clear();
+      for (const p of shaderPrograms.values()) gl.deleteProgram(p.program);
+      shaderPrograms.clear();
       for (const t of [...pooled]) deleteTarget(t);
       idle.clear();
       idleOrder.clear();

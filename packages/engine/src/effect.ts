@@ -18,9 +18,11 @@ import {
 import type { Rgba } from "./color.js";
 import { samplePoint, sampleUnit } from "./properties.js";
 import type { Point } from "./resolved.js";
+import { type ResolvedShader, type ResolveShader, resolveShader } from "./shader.js";
 import { sampleColor, sampleNumber } from "./track.js";
 
 export type ResolvedEffect =
+  | ResolvedShader
   | { type: "gaussian-blur"; radius: number }
   | { type: "drop-shadow"; radius: number; offset: Point; color: Rgba; opacity: number }
   | { type: "glow"; radius: number; color: Rgba; intensity: number }
@@ -57,6 +59,7 @@ export function resolveEffects(
   effects: readonly Effect[],
   frame: number,
   fps: FrameRate,
+  shader?: ResolveShader,
 ): ResolvedEffect[] {
   const number = (track: Animatable<number>, min: number, max: number) =>
     clamp(sampleNumber(track, frame, fps), min, max);
@@ -69,6 +72,13 @@ export function resolveEffects(
     if (effect.enabled === false) continue;
     const { type } = effect;
     switch (type) {
+      case "custom-shader":
+        out.push(
+          shader
+            ? shader(effect, "effect")
+            : resolveShader(effect, "effect", undefined, frame, fps, 0),
+        );
+        break;
       case "gaussian-blur":
         out.push({ type, radius: radius(effect.radius) });
         break;

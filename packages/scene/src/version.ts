@@ -39,10 +39,12 @@
  *    `positionZ`, `rotationX` and `rotationY`; camera layers are a new variant. The step from 11
  *    adds `threeD: false` and zero tracks, which render exactly as version 11 did.
  *
+ * 13: project-defined shaders pinned on generator layers and effects (ADR-0055).
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 12 as const;
+export const SCENE_FORMAT_VERSION = 13 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;
