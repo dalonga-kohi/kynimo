@@ -1,7 +1,9 @@
 import {
+  type FrameRate,
   type Keyframe,
   type Layer,
   type Op,
+  springSettleFrames,
   TRANSFORM_PROPERTIES,
   type TransformProperty,
 } from "@kynimo/scene";
@@ -163,4 +165,50 @@ export function diffLayerOps(before: Layer, after: Layer): Op[] {
       ops.push({ op: "setShapeContents", layer, contents: after.contents });
   }
   return ops;
+}
+
+/**
+ * Refuses a keyframe move that makes two keyframes of a track collide or swap, or that squeezes a
+ * spring segment below its settle time. `before` and `after` are the layer's tracks before and
+ * after the move (same order, as listed by {@link listKeyframeTracks}); the hints say what the
+ * caller should do about it (a function gets the factor by which the segment must stay as long).
+ */
+export function checkMovedTracks(
+  layer: Layer,
+  before: KeyframeTrack[],
+  after: KeyframeTrack[],
+  fps: FrameRate,
+  path: InputPath,
+  hint: { collision: string; spring: string | ((needed: number) => string) },
+): void {
+  before.forEach((track, t) => {
+    const next = after[t]?.keyframes ?? [];
+    const name = `${layer.id}.${trackName(track.path)}`;
+    for (let j = 1; j < next.length; j++) {
+      const prev = next[j - 1];
+      const cur = next[j];
+      if (prev === undefined || cur === undefined) continue;
+      if (cur.frame <= prev.frame)
+        throw new IntentError(
+          path,
+          `${name}: keyframes at frames ${(track.keyframes[j - 1]?.frame ?? 0) + layer.startFrame} and ${(track.keyframes[j]?.frame ?? 0) + layer.startFrame} would ${cur.frame === prev.frame ? "land on the same frame" : "change order"}; ${hint.collision}`,
+        );
+    }
+    for (let j = 0; j + 1 < next.length; j++) {
+      const cur = next[j];
+      const following = next[j + 1];
+      if (cur?.interpolation.type !== "spring" || following === undefined) continue;
+      const settle = springSettleFrames(cur.interpolation, fps);
+      const gap = following.frame - cur.frame;
+      if (gap >= settle) continue;
+      const original = (track.keyframes[j + 1]?.frame ?? 0) - (track.keyframes[j]?.frame ?? 0);
+      const needed = Math.ceil((settle / original) * 100) / 100;
+      throw new IntentError(
+        path,
+        `${name}: the spring at frame ${cur.frame + layer.startFrame} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; ${
+          typeof hint.spring === "function" ? hint.spring(needed) : hint.spring
+        }`,
+      );
+    }
+  });
 }

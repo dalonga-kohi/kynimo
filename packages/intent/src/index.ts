@@ -5,6 +5,16 @@ export {
   type AnimateResolved,
   animate,
 } from "./animate.js";
+export {
+  MarkBeatsInput,
+  MarkBeatsInput as MarkBeatsInputSchema,
+  type MarkBeatsResolved,
+  markBeats,
+  SyncToBeatsInput,
+  SyncToBeatsInput as SyncToBeatsInputSchema,
+  type SyncToBeatsResolved,
+  syncToBeats,
+} from "./beats.js";
 export { AddEffectInputSchema, addEffect } from "./effects.js";
 export { type InputPath, IntentError } from "./errors.js";
 export {
@@ -40,4 +50,10 @@ export {
 } from "./stagger.js";
 export * from "./style.js";
 export { resolveTargets, type Target } from "./targets.js";
-export { diffLayerOps, type KeyframeTrack, listKeyframeTracks, mapLayerKeyframes } from "./walk.js";
+export {
+  checkMovedTracks,
+  diffLayerOps,
+  type KeyframeTrack,
+  listKeyframeTracks,
+  mapLayerKeyframes,
+} from "./walk.js";

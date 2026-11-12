@@ -1,10 +1,9 @@
 import type { Op, Project } from "@kynimo/scene";
-import { springSettleFrames } from "@kynimo/scene";
 import { z } from "zod";
 import { IntentError, scoped } from "./errors.js";
 import { TargetsInput } from "./style.js";
 import { resolveTargets } from "./targets.js";
-import { diffLayerOps, listKeyframeTracks, mapLayerKeyframes, trackName } from "./walk.js";
+import { checkMovedTracks, diffLayerOps, listKeyframeTracks, mapLayerKeyframes } from "./walk.js";
 
 export const RetimeInput = z.strictObject({
   layers: TargetsInput,
@@ -71,39 +70,12 @@ export function retime(doc: Project, input: RetimeInput): { ops: Op[]; resolved:
   targets.forEach(({ layer, path }, i) => {
     scoped(path, () => {
       const after = mapLayerKeyframes(layer, (f) => move(layer.startFrame + f) - layer.startFrame);
-      const afterTracks = listKeyframeTracks(after);
-      (tracksOf[i] ?? []).forEach((before, t) => {
-        const next = afterTracks[t]?.keyframes ?? [];
-        const name = `${layer.id}.${trackName(before.path)}`;
-        for (let j = 1; j < next.length; j++) {
-          const prev = next[j - 1];
-          const cur = next[j];
-          if (prev === undefined || cur === undefined) continue;
-          if (cur.frame <= prev.frame)
-            throw new IntentError(
-              path,
-              `${name}: keyframes at frames ${(before.keyframes[j - 1]?.frame ?? 0) + layer.startFrame} and ${(before.keyframes[j]?.frame ?? 0) + layer.startFrame} would ${cur.frame === prev.frame ? "land on the same frame" : "change order"}; use a window or a different pivot`,
-            );
-        }
-        for (let j = 0; j + 1 < next.length; j++) {
-          const cur = next[j];
-          const following = next[j + 1];
-          if (cur?.interpolation.type !== "spring" || following === undefined) continue;
-          const settle = springSettleFrames(cur.interpolation, fps);
-          const gap = following.frame - cur.frame;
-          if (gap >= settle) continue;
-          const original =
-            (before.keyframes[j + 1]?.frame ?? 0) - (before.keyframes[j]?.frame ?? 0);
-          const needed = Math.ceil((settle / original) * 100) / 100;
-          throw new IntentError(
-            path,
-            `${name}: the spring at frame ${cur.frame + layer.startFrame} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; ${
-              window === undefined
-                ? `use a scale of at least ${needed}, or switch that segment to a bezier easing`
-                : "move the window or the pivot so both keyframes move together, or switch that segment to a bezier easing"
-            }`,
-          );
-        }
+      checkMovedTracks(layer, tracksOf[i] ?? [], listKeyframeTracks(after), fps, path, {
+        collision: "use a window or a different pivot",
+        spring: (needed) =>
+          window === undefined
+            ? `use a scale of at least ${needed}, or switch that segment to a bezier easing`
+            : "move the window or the pivot so both keyframes move together, or switch that segment to a bezier easing",
       });
       ops.push(...diffLayerOps(layer, after));
     });
