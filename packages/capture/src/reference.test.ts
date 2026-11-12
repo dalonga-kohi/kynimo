@@ -77,9 +77,10 @@ describe("reference scenes (ADR-0018)", () => {
     expect(folders.sort()).toEqual([...SCENES].sort());
   });
 
-  it.each(SCENES)(
-    "%s renders exactly its approved frames",
-    async (scene) => {
+  for (const scene of SCENES) {
+    // The three 720p camera frames exceeded 60 seconds on a loaded CI runner.
+    const timeout = scene === "camera-3d" ? 120_000 : 60_000;
+    it(`${scene} renders exactly its approved frames`, { timeout }, async () => {
       const dir = new URL(`${scene}/`, REFERENCE);
       const framesDir = new URL("frames/", dir);
       const document = readJson(new URL("scene.json", dir));
@@ -118,7 +119,6 @@ describe("reference scenes (ADR-0018)", () => {
         changed: changed.map((f) => f.frame),
         approved,
       }).toEqual({ changed: [], approved: frames.map(frameFile).sort() });
-    },
-    60_000,
-  );
+    });
+  }
 });
