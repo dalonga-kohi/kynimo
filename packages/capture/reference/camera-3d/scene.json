@@ -1,0 +1,973 @@
+{
+  "formatVersion": 12,
+  "name": "Reference: camera 3d",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 1280,
+      "height": 720,
+      "fps": {
+        "num": 24,
+        "den": 1
+      },
+      "durationFrames": 48,
+      "background": "#0b0d14",
+      "layers": [
+        {
+          "id": "camera",
+          "name": "camera",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [340, 360],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.45,
+                    "y1": 0,
+                    "x2": 0.55,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": [940, 360],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "positionZ": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": -1900,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.45,
+                    "y1": 0,
+                    "x2": 0.55,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": -1350,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "type": "camera",
+          "zoom": {
+            "value": 1777.8
+          },
+          "pointOfInterest": {
+            "value": [640, 360, 0]
+          }
+        },
+        {
+          "id": "streak",
+          "name": "streak",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [80, 80]
+            },
+            "position": {
+              "value": [1060, 540]
+            },
+            "positionZ": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 1500,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": -800,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": {
+            "shutterAngle": 360,
+            "shutterPhase": -180,
+            "samples": 24
+          },
+          "type": "solid",
+          "width": 160,
+          "height": 160,
+          "color": "#ff6a3d"
+        },
+        {
+          "id": "badge-card",
+          "name": "badge-card",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [120, 120]
+            },
+            "position": {
+              "value": [1010, 190]
+            },
+            "positionZ": {
+              "value": -150
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": -25,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": 25,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "precomp",
+          "compositionId": "badge"
+        },
+        {
+          "id": "title",
+          "name": "title",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [70, 120]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "text",
+          "content": {
+            "value": "Flat title, deep stage"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 700,
+            "size": {
+              "value": 64
+            }
+          },
+          "tracking": {
+            "value": -10
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#f5f7fb"
+          },
+          "animators": []
+        },
+        {
+          "id": "mask-card",
+          "name": "mask-card",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [180, 120]
+            },
+            "position": {
+              "value": [430, 420]
+            },
+            "positionZ": {
+              "value": -100
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [
+            {
+              "id": "cut",
+              "name": "cut",
+              "mode": "add",
+              "inverted": false,
+              "path": {
+                "value": {
+                  "closed": true,
+                  "vertices": [
+                    {
+                      "point": [50, 0],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    },
+                    {
+                      "point": [360, 0],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    },
+                    {
+                      "point": [360, 190],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    },
+                    {
+                      "point": [310, 240],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    },
+                    {
+                      "point": [0, 240],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    },
+                    {
+                      "point": [0, 50],
+                      "inTangent": [0, 0],
+                      "outTangent": [0, 0]
+                    }
+                  ]
+                }
+              },
+              "feather": {
+                "value": [0, 0]
+              },
+              "opacity": {
+                "value": 1
+              },
+              "expansion": {
+                "value": 0
+              }
+            }
+          ],
+          "effects": [],
+          "motionBlur": null,
+          "type": "solid",
+          "width": 360,
+          "height": 240,
+          "color": "#38bdf8"
+        },
+        {
+          "id": "shape-card",
+          "name": "shape-card",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [640, 340]
+            },
+            "positionZ": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 300,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": -300,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": 70,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "shape",
+          "contents": [
+            {
+              "type": "rect",
+              "id": "card",
+              "name": "card",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [300, 300]
+              },
+              "cornerRadius": {
+                "value": 44
+              }
+            },
+            {
+              "type": "fill",
+              "id": "card-fill",
+              "name": "fill",
+              "paint": {
+                "type": "linear-gradient",
+                "start": {
+                  "value": [0, -150]
+                },
+                "end": {
+                  "value": [0, 150]
+                },
+                "stops": {
+                  "value": [
+                    {
+                      "offset": 0,
+                      "color": "#a78bfa"
+                    },
+                    {
+                      "offset": 1,
+                      "color": "#f472b6"
+                    }
+                  ]
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            },
+            {
+              "type": "stroke",
+              "id": "card-stroke",
+              "name": "card-stroke",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#ffffff"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "width": {
+                "value": 8
+              },
+              "cap": "round",
+              "join": "round",
+              "miterLimit": 4,
+              "dashes": [],
+              "dashOffset": {
+                "value": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "text-card",
+          "name": "text-card",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [720, 470]
+            },
+            "positionZ": {
+              "value": 150
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 40,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 47,
+                  "value": 15,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "text",
+          "content": {
+            "value": "2.5D"
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 800,
+            "size": {
+              "value": 190
+            }
+          },
+          "tracking": {
+            "value": -20
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#fde68a"
+          },
+          "animators": []
+        },
+        {
+          "id": "background",
+          "name": "background",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "generator",
+          "width": 1280,
+          "height": 720,
+          "generator": {
+            "type": "gradient",
+            "kind": "linear",
+            "start": {
+              "value": [0, 0]
+            },
+            "end": {
+              "value": [1280, 720]
+            },
+            "stops": {
+              "value": [
+                {
+                  "offset": 0,
+                  "color": "#1e1b4b"
+                },
+                {
+                  "offset": 1,
+                  "color": "#0f766e"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "markers": []
+    },
+    {
+      "id": "badge",
+      "name": "badge",
+      "width": 240,
+      "height": 240,
+      "fps": {
+        "num": 24,
+        "den": 1
+      },
+      "durationFrames": 48,
+      "background": "#00000000",
+      "layers": [
+        {
+          "id": "badge-bg",
+          "name": "badge-bg",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "shape",
+          "contents": [
+            {
+              "type": "rect",
+              "id": "r",
+              "name": "r",
+              "position": {
+                "value": [120, 120]
+              },
+              "size": {
+                "value": [220, 220]
+              },
+              "cornerRadius": {
+                "value": 36
+              }
+            },
+            {
+              "type": "fill",
+              "id": "rf",
+              "name": "rf",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#fb7185"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            },
+            {
+              "type": "stroke",
+              "id": "rs",
+              "name": "rs",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#ffffff"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "width": {
+                "value": 6
+              },
+              "cap": "round",
+              "join": "round",
+              "miterLimit": 4,
+              "dashes": [],
+              "dashOffset": {
+                "value": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "badge-dot",
+          "name": "badge-dot",
+          "inFrame": 0,
+          "outFrame": 48,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "type": "shape",
+          "contents": [
+            {
+              "type": "ellipse",
+              "id": "e",
+              "name": "e",
+              "position": {
+                "value": [120, 120]
+              },
+              "size": {
+                "value": [100, 100]
+              }
+            },
+            {
+              "type": "fill",
+              "id": "ef",
+              "name": "ef",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#fff7ed"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        }
+      ],
+      "markers": []
+    }
+  ]
+}
