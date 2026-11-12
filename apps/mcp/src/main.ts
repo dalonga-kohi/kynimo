@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -183,6 +183,10 @@ if (values.help) {
     void stopHttp()
       .then(() => runtime.close())
       .then(() => Promise.allSettled([renderer.close(), close()]))
+      // A temporary exports folder (no --dir) goes with the server; <dir>/exports is never removed.
+      .then(() =>
+        values.dir ? undefined : rm(exportDir, { recursive: true, force: true }).catch(() => {}),
+      )
       .finally(() => process.exit(0));
   };
   process.once("SIGINT", release);

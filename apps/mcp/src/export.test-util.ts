@@ -75,6 +75,7 @@ export class FakeRenderer implements FrameRenderer {
   reached: number[] = [];
   failAt: number | null = null;
   sizeError = 0;
+  failOpen = false;
   repeat = new Set<number>();
   skipOn: (n: number) => boolean = () => false;
 
@@ -110,6 +111,7 @@ export class FakeRenderer implements FrameRenderer {
     assets: ReadonlyMap<string, Uint8Array>,
     alpha: "premultiplied" | "straight",
   ) {
+    if (this.failOpen) throw new Error("the page could not open");
     this.opens.push({ composition, maxSize, assets: [...assets.keys()], alpha });
     const comp = doc.compositions.find((c) => c.id === composition);
     const session = new FakeSession(this, fitSize(comp?.width ?? 1, comp?.height ?? 1, maxSize));
@@ -133,6 +135,8 @@ export class FakeMedia implements MediaTools {
   /** One second of stereo at 0.5. */
   pcm = new Float32Array(96_000).fill(0.5);
   failWrite: Error | null = null;
+  /** Runs inside `finish()`, after the fake file is written. */
+  onFinish: (() => void) | null = null;
   async version() {
     return "ffmpeg 6.1.1";
   }
@@ -162,6 +166,7 @@ export class FakeMedia implements MediaTools {
     });
     this.encodes.push(record);
     return {
+      closed: Promise.resolve(),
       write: async (frame) => {
         if (this.failWrite) throw this.failWrite;
         record.written.push(frame);
@@ -169,6 +174,7 @@ export class FakeMedia implements MediaTools {
       finish: async () => {
         writeFileSync(opts.out, "fake-video");
         record.finished = true;
+        this.onFinish?.();
       },
     };
   }

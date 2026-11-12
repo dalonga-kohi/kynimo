@@ -35,8 +35,11 @@ export interface Encoder {
   /** One raw frame, `width * height * 4` bytes RGBA, rows top to bottom. The same buffer may be written again. */
   write(frame: Uint8Array): Promise<void>;
   finish(): Promise<void>;
+  /** Resolves once every FFmpeg process this encoder started has exited. Never rejects. */
+  readonly closed: Promise<void>;
 }
 
+const noop = () => undefined;
 const DEFAULT_STALL_MS = 120_000;
 const STDERR_LIMIT = 64 * 1024;
 
@@ -295,7 +298,11 @@ export function startEncode(ffmpeg: string, o: EncodeOptions): Encoder {
 
   let written = 0;
   let finished: Promise<void> | undefined;
+  // Writes are sequential, so at most one waits for a drain; one shared listener serves them all.
+  let blocked: ((error: MediaError) => void) | undefined;
+  void first.closed.then(() => blocked?.(exitError(first, args)));
   return {
+    closed: first.closed.then(() => finished?.then(noop, noop)),
     async write(frame) {
       if (failure) throw failure;
       if (first.exitCode() !== undefined) throw exitError(first, args);
@@ -310,13 +317,16 @@ export function startEncode(ffmpeg: string, o: EncodeOptions): Encoder {
       if (first.child.stdin?.write(frame) !== false) return;
       await new Promise<void>((resolve, reject) => {
         const stdin = first.child.stdin;
-        const settle = (fn: () => void) => {
-          stdin?.off("drain", onDrain);
-          fn();
+        const onDrain = () => {
+          blocked = undefined;
+          resolve();
         };
-        const onDrain = () => settle(resolve);
+        blocked = (error) => {
+          blocked = undefined;
+          stdin?.off("drain", onDrain);
+          reject(error);
+        };
         stdin?.once("drain", onDrain);
-        void first.closed.then(() => settle(() => reject(exitError(first, args))));
       });
     },
     finish() {

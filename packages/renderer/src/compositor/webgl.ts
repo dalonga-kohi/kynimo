@@ -50,6 +50,8 @@ interface Target {
   height: number;
   /** Set on render targets that live in the pool; they are recycled, not deleted, when freed. */
   poolKey?: string;
+  /** Bytes the pooled target's texture holds. */
+  bytesHeld?: number;
   /** The frame in which a pooled target was last released. */
   released?: number;
 }
@@ -86,6 +88,9 @@ export interface Compositor {
   dispose(): void;
 }
 
+/** Most bytes of released render targets the compositor keeps for reuse. */
+const POOL_IDLE_BYTES = 64 * 1024 * 1024;
+
 export function createCompositor(gl: WebGL2RenderingContext): Compositor {
   if (gl.getExtension("EXT_color_buffer_float") === null)
     throw new CompositorError("the WebGL2 context cannot render to float (RGBA16F) targets");
@@ -117,15 +122,35 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
   /**
    * Render targets recycled across passes and frames, by size and format. Every pass draws a
    * full-screen triangle over its whole target and never blends, so a recycled target needs no
-   * clearing. A target idle for two frames is deleted.
+   * clearing. A target idle for two frames is deleted, and idle targets never hold more than
+   * `POOL_IDLE_BYTES`: past it the least recently released one goes (a frame with many distinct
+   * raster sizes would otherwise keep every one of them until the frame ends).
    */
   const idle = new Map<string, Target[]>();
+  /** Idle targets in release order, oldest first. */
+  const idleOrder = new Set<Target>();
+  let idleBytes = 0;
   const pooled = new Set<Target>();
   let frameNumber = 0;
+  const takeIdle = (t: Target) => {
+    if (idleOrder.delete(t)) idleBytes -= t.bytesHeld ?? 0;
+  };
   const deleteTarget = (t: Target) => {
+    takeIdle(t);
     pooled.delete(t);
     gl.deleteTexture(t.texture);
     if (t.framebuffer !== null) gl.deleteFramebuffer(t.framebuffer);
+  };
+  const trimBytes = () => {
+    for (const t of idleOrder) {
+      if (idleBytes <= POOL_IDLE_BYTES) return;
+      const list = idle.get(t.poolKey ?? "");
+      if (list !== undefined) {
+        list.splice(list.indexOf(t), 1);
+        if (list.length === 0) idle.delete(t.poolKey ?? "");
+      }
+      deleteTarget(t);
+    }
   };
   const trimPool = () => {
     for (const [key, list] of idle) {
@@ -137,6 +162,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       if (keep.length === 0) idle.delete(key);
       else idle.set(key, keep);
     }
+    trimBytes();
   };
   const empty = makeTexture(gl, 1, 1, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
 
@@ -154,13 +180,21 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const poolKey = `${width}x${height}${bytes ? "b" : "h"}`;
       const reused = idle.get(poolKey)?.pop();
       if (reused !== undefined) {
+        takeIdle(reused);
         live.add(reused);
         return reused;
       }
       const texture = bytes
         ? makeTexture(gl, width, height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null)
         : makeTexture(gl, width, height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
-      const t: Target = { texture, framebuffer: null, width, height, poolKey };
+      const t: Target = {
+        texture,
+        framebuffer: null,
+        width,
+        height,
+        poolKey,
+        bytesHeld: width * height * (bytes ? 4 : 8),
+      };
       live.add(t); // registered before attaching, so a failed attach is still freed
       t.framebuffer = attach(gl, texture); // completeness is checked once per pooled target
       pooled.add(t);
@@ -177,6 +211,9 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       const list = idle.get(t.poolKey);
       if (list === undefined) idle.set(t.poolKey, [t]);
       else list.push(t);
+      idleOrder.add(t);
+      idleBytes += t.bytesHeld ?? 0;
+      trimBytes();
     };
     /** Registers a texture made outside `target`, so the frame frees it on every path. */
     const track = (texture: WebGLTexture, width: number, height: number): Target => {
@@ -637,6 +674,8 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       programs.clear();
       for (const t of [...pooled]) deleteTarget(t);
       idle.clear();
+      idleOrder.clear();
+      idleBytes = 0;
       gl.deleteTexture(empty);
       gl.deleteVertexArray(vao);
     },

@@ -45,6 +45,7 @@ import {
   type ExportKind,
   type ExportPlan,
   type ExportResult,
+  ExportStoreError,
   type JobReply,
   runExport,
   sizeLimits,
@@ -365,6 +366,7 @@ function describeJobError(e: unknown): JobError {
   const message = e instanceof Error ? e.message : String(e);
   if (e instanceof ToolError) return { code: e.kind, message };
   if (e instanceof MediaError) return { code: "encode_failed", message };
+  if (e instanceof ExportStoreError) return { code: "render_failed", message };
   return { code: "render_failed", message };
 }
 
@@ -1889,6 +1891,7 @@ export class KynimoService {
       width,
       height,
       maxSize,
+      requestedMaxSize: input.max_size ?? null,
     };
   }
 
@@ -1941,7 +1944,7 @@ export class KynimoService {
                   format: plan.format,
                   from: plan.from,
                   to: plan.to,
-                  max_size: plan.maxSize,
+                  max_size: plan.requestedMaxSize,
                 }),
               },
             }),

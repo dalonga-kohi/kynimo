@@ -268,6 +268,57 @@ describe("export sessions: held frames", () => {
   }, 60_000);
 });
 
+describe("export sessions: grain", () => {
+  const grained = (animated: boolean) =>
+    doc(
+      layer("solid", {
+        width: 32,
+        height: 32,
+        color: "#336699",
+        effects: [
+          {
+            id: "g",
+            type: "grain",
+            amount: prop(0.5),
+            size: 1,
+            seed: 7,
+            animated,
+            monochrome: false,
+          },
+        ],
+      }),
+      imageAsset,
+    );
+
+  it("animated grain on a static layer is drawn every frame and matches captureFrames", async () => {
+    const document = grained(true);
+    const frames = [0, 1, 2, 3];
+    const captured = await capture.captureFrames(document, frames, { assets: PIC });
+    const session = await capture.openExport(document, { assets: PIC, alpha: "premultiplied" });
+    try {
+      const exported = await exportAll(session, frames);
+      expect(exported.map((f) => f.repeated)).toEqual([false, false, false, false]);
+      expect(exported.map((f) => sha(f.rgba))).toEqual(captured.map((f) => f.pixelsSha256));
+      expect(new Set(exported.map((f) => sha(f.rgba))).size).toBe(4);
+    } finally {
+      await session.close();
+    }
+  }, 60_000);
+
+  it("static grain on a static layer is repeated", async () => {
+    const session = await capture.openExport(grained(false), {
+      assets: PIC,
+      alpha: "premultiplied",
+    });
+    try {
+      const exported = await exportAll(session, [0, 1, 2]);
+      expect(exported.map((f) => f.repeated)).toEqual([false, true, true]);
+    } finally {
+      await session.close();
+    }
+  }, 60_000);
+});
+
 describe("export sessions: video frames", () => {
   const video = doc(layer("video", { assetId: "clip" }, prop([8, 8])), {
     id: "clip",

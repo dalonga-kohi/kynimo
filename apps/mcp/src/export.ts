@@ -53,6 +53,26 @@ export interface ExportPlan {
   width: number;
   height: number;
   maxSize: number;
+  /** The request's `max_size` as sent (null: the default), what a retry's fingerprint covers. */
+  requestedMaxSize: number | null;
+}
+
+/** A storage failure (disk full, permissions); only the error code reaches the client, never paths. */
+export class ExportStoreError extends Error {
+  constructor(cause: unknown) {
+    const code = (cause as { code?: unknown } | null)?.code;
+    super(
+      `the export could not be stored${typeof code === "string" && /^[A-Z0-9_]+$/.test(code) ? `: ${code}` : ""}`,
+    );
+  }
+}
+
+async function storing<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw new ExportStoreError(e);
+  }
 }
 
 export interface FidelityEntry {
@@ -341,7 +361,6 @@ export async function runExport(
     deps.cache.delete(key);
   }
 
-  const dir = await mkdtemp(join(tmpdir(), "kynimo-export-"));
   // The encoder is stopped on a cancel and on any failure, so FFmpeg never waits on a dead job.
   const stop = new AbortController();
   const onAbort = () => stop.abort();
@@ -349,7 +368,11 @@ export async function runExport(
   else ctx.signal.addEventListener("abort", onAbort, { once: true });
   let session: ExportSession | undefined;
   let finished = false;
+  let dir: string | undefined;
+  let encoder: Encoder | undefined;
   try {
+    const tmp = await storing(() => mkdtemp(join(tmpdir(), "kynimo-export-")));
+    dir = tmp;
     // Audio (mp4 and webm); a gif only reports what it drops.
     const audio = planAudio(doc, comp.id, from, to);
     let audioFile: string | null = null;
@@ -370,27 +393,14 @@ export async function runExport(
       const mixed = mixAudio(doc, comp.id, from, to, pcm);
       mix = { clipped: mixed.clipped, mixed: mixed.mixed };
       if (mixed.mixed.length > 0) {
-        audioFile = join(dir, "audio.f32");
+        const file = join(tmp, "audio.f32");
+        audioFile = file;
         const { samples } = mixed;
-        await writeFile(
-          audioFile,
-          Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength),
+        await storing(() =>
+          writeFile(file, Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength)),
         );
       }
     }
-
-    const out = join(dir, `out.${format}`);
-    const encoder: Encoder = deps.media.encode({
-      format,
-      width: plan.width,
-      height: plan.height,
-      fps: comp.fps,
-      frameCount,
-      audio: audioFile,
-      flatten,
-      out,
-      signal: stop.signal,
-    });
 
     const frames = Array.from({ length: frameCount }, (_, i) => from + i);
     const still = await deps.stillAssets(doc, comp.id, frames);
@@ -403,6 +413,20 @@ export async function runExport(
         flatten ? "premultiplied" : "straight",
       ),
     );
+    // Started only now: the open and the asset loads can fail, and the stall timer starts with it.
+    const out = join(tmp, `out.${format}`);
+    const encoding: Encoder = deps.media.encode({
+      format,
+      width: plan.width,
+      height: plan.height,
+      fps: comp.fps,
+      frameCount,
+      audio: audioFile,
+      flatten,
+      out,
+      signal: stop.signal,
+    });
+    encoder = encoding;
     const reports: Parameters<typeof aggregateReports>[0][number][] = [];
     let repeated = 0;
     for (let n = from; n <= to; n++) {
@@ -414,7 +438,7 @@ export async function runExport(
         throw new Error(
           `frame ${n} came back ${f.width}×${f.height}, not the planned ${plan.width}×${plan.height}`,
         );
-      await encoder.write(f.rgba);
+      await encoding.write(f.rgba);
       if (f.repeated) repeated++;
       if (f.skipped.length > 0 || f.warnings.length > 0)
         reports.push({ frame: n, skipped: f.skipped, warnings: f.warnings });
@@ -425,10 +449,12 @@ export async function runExport(
 
     if (ctx.signal.aborted) throw new Error("the export was cancelled");
     ctx.progress({ phase: "encoding" });
-    await encoder.finish();
+    await encoding.finish();
     finished = true;
+    // A cancel that landed while FFmpeg finished: nothing is stored or cached.
+    if (ctx.signal.aborted) throw new Error("the export was cancelled");
     ctx.progress({ phase: "storing" });
-    const saved = await deps.files.save(out, ctx.id, format);
+    const saved = await storing(() => deps.files.save(out, ctx.id, format));
 
     let sheet: Uint8Array | undefined;
     if (kind === "preview" && frameCount >= 2) {
@@ -496,6 +522,9 @@ export async function runExport(
     ctx.signal.removeEventListener("abort", onAbort);
     if (!finished) stop.abort();
     await session?.close().catch(() => undefined);
-    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    // FFmpeg may still be writing into the directory until it has exited.
+    await encoder?.closed;
+    if (dir !== undefined)
+      await rm(dir, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined);
   }
 }

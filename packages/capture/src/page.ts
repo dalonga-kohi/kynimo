@@ -229,12 +229,11 @@ export function closeExport(): void {
 }
 
 /**
- * JSON replacer for the repeat check: drops the evaluated frame's own index (a number `frame`; a
- * precomp's `frame` is an object and stays) and reduces `layerFrame`, which the rasterizer reads
- * only as "has the layer started" (`>= 0`), to that boolean.
+ * JSON replacer for the repeat check: reduces a numeric `layerFrame`, which the renderer reads
+ * only as "has the layer started" (`>= 0`), to that boolean. Drops nothing else: a resolved
+ * effect's own `frame` (animated grain) decides pixels and must stay in the key.
  */
 function frameIndependent(key: string, value: unknown): unknown {
-  if (key === "frame" && typeof value === "number") return undefined;
   if (key === "layerFrame" && typeof value === "number") return value >= 0;
   return value;
 }
@@ -272,8 +271,9 @@ export async function exportFrame(
     // nothing else that changes between frames (the libraries only gain the frames it names).
     // It is plain data (numbers, strings, arrays, objects); a non-finite number serializes as
     // null, which cannot make two different frames look equal in practice. Only the frame
-    // indices themselves (`frame`, `layerFrame`) differ by definition and are left out.
-    const key = JSON.stringify(evaluated, frameIndependent);
+    // root frame index and the sign of `layerFrame` differ by definition and are neutralized; every
+    // nested `frame` (grain, precomps) stays, which can only miss a dedupe, never repeat wrong pixels.
+    const key = JSON.stringify({ ...evaluated, frame: 0 }, frameIndependent);
     if (e.previousKey !== undefined && key === e.previousKey)
       return { frame, repeated: true, rgba: null, ...e.previous };
     const drawn = drawFrame(

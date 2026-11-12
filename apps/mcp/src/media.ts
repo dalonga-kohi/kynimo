@@ -68,7 +68,7 @@ export interface MediaTools {
   extractAudio(file: string, out: string, maxSeconds: number): Promise<{ durationMs: number }>;
   /** Decodes a stored FLAC (48 kHz stereo) to interleaved f32le samples; fails once more than maxSamples frames (per channel) come out. */
   decodePcm(flac: Uint8Array, maxSamples: number): Promise<Float32Array>;
-  /** Starts an encode; frames are written one PNG at a time. */
+  /** Starts an encode; frames are written one raw RGBA at a time (premultiplied when flatten, straight otherwise). */
   encode(o: EncodeOptions): Encoder;
 }
 

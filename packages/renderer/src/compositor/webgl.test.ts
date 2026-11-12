@@ -963,4 +963,98 @@ describe("WebGL2 compositor on SwiftShader", () => {
     expect(live[7]).toBe(live[6]);
     expect(leftover).toBe(0);
   });
+
+  it("caps idle pooled bytes within a frame: many distinct raster sizes stay near the cap and match the reference", async () => {
+    const layerCount = 60;
+    const size = (i: number): [number, number] => [1200 + i, 680 + i];
+    const flat = (i: number): RasterImage => {
+      const [width, height] = size(i);
+      return { width, height, pixels: new Uint8Array(width * height * 4).fill(40 + i) };
+    };
+    const big = plan(
+      Array.from({ length: layerCount }, (_, i) =>
+        solid(`l${i}`, flat(i), { opacity: 0.5, blendMode: i % 2 === 0 ? "normal" : "multiply" }),
+      ),
+      { width: 1280, height: 720 },
+    );
+    const { peak, pixels } = await gpu.page.evaluate(
+      ({ count }) => {
+        const g = globalThis as unknown as {
+          KynimoCompositor: {
+            createCompositor(gl: WebGL2RenderingContext): {
+              composite(plan: unknown): unknown;
+              dispose(): void;
+            };
+          };
+        };
+        const gl = document.createElement("canvas").getContext("webgl2") as WebGL2RenderingContext;
+        const bytes = new Map<WebGLTexture, number>();
+        let live = 0;
+        let peak = 0;
+        const realCreate = gl.createTexture.bind(gl);
+        gl.createTexture = () => {
+          const t = realCreate() as WebGLTexture;
+          bytes.set(t, 0);
+          return t;
+        };
+        const realImage = gl.texImage2D.bind(gl) as (...a: unknown[]) => void;
+        (gl as unknown as Record<string, unknown>).texImage2D = (...a: unknown[]) => {
+          const t = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture;
+          const [, , internal, width, height] = a as number[];
+          live -= bytes.get(t) ?? 0;
+          const b = (width ?? 0) * (height ?? 0) * (internal === gl.RGBA16F ? 8 : 4);
+          bytes.set(t, b);
+          live += b;
+          peak = Math.max(peak, live);
+          realImage(...a);
+        };
+        const realDelete = gl.deleteTexture.bind(gl);
+        gl.deleteTexture = (t: WebGLTexture | null) => {
+          if (t !== null) live -= bytes.get(t) ?? 0;
+          if (t !== null) bytes.delete(t);
+          realDelete(t);
+        };
+        const compositor = g.KynimoCompositor.createCompositor(gl);
+        const layers = Array.from({ length: count }, (_, i) => {
+          const width = 1200 + i;
+          const height = 680 + i;
+          return {
+            id: `l${i}`,
+            type: "solid",
+            space: "layer",
+            opacity: 0.5,
+            blendMode: i % 2 === 0 ? "normal" : "multiply",
+            mask: null,
+            matte: null,
+            matrix: [1, 0, 0, 1, 0, 0],
+            raster: { width, height, pixels: new Uint8Array(width * height * 4).fill(40 + i) },
+          };
+        });
+        const out = compositor.composite({
+          width: 1280,
+          height: 720,
+          background: null,
+          layers,
+          skipped: [],
+          warnings: [],
+        }) as { pixels: Uint8Array };
+        compositor.dispose();
+        let binary = "";
+        for (let i = 0; i < out.pixels.length; i += 0x8000)
+          binary += String.fromCharCode(...out.pixels.subarray(i, i + 0x8000));
+        return { peak, pixels: btoa(binary) };
+      },
+      { count: layerCount },
+    );
+    // In use at once: a few full-frame targets and one uploaded raster; idle adds at most 64 MiB.
+    const inUse = 8 * 1280 * 720 * 8;
+    expect(peak).toBeLessThanOrEqual(inUse + 64 * 1024 * 1024);
+    const got = Buffer.from(pixels, "base64");
+    const ref = compositeReference(big).pixels;
+    let gap = 0;
+    for (let i = 0; i < ref.length; i++)
+      gap = Math.max(gap, Math.abs((ref[i] ?? 0) - (got[i] ?? 0)));
+    expect(got.length).toBe(ref.length);
+    expect(gap).toBeLessThanOrEqual(2);
+  }, 120_000);
 });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { videoFrameKey } from "@kynimo/renderer";
@@ -408,6 +408,48 @@ describe("KynimoService: export jobs", () => {
       expect(existsSync(dirname(media.encodes[0]?.opts.out ?? ""))).toBe(false);
     });
 
+    it("does not start the encoder when the export cannot be opened", async () => {
+      renderer.failOpen = true;
+      const done = await finish(await start());
+      expect(done.state).toBe("failed");
+      expect(media.encodes).toHaveLength(0);
+    });
+
+    it("reports a storage failure by its error code only, never a path or message", async () => {
+      const failing = {
+        save: async () => {
+          throw Object.assign(new Error("ENOSPC: no space left on device, write '/secret/dir/x'"), {
+            code: "ENOSPC",
+          });
+        },
+        get: () => undefined,
+        close: async () => undefined,
+      } as unknown as ExportFiles;
+      project = await build({}, { exportFiles: failing });
+      const done = await finish(await start({ to_frame: 2 }));
+      expect(done.state).toBe("failed");
+      expect(done.error).toEqual({
+        code: "render_failed",
+        message: "the export could not be stored: ENOSPC",
+      });
+      expect(existsSync(dirname(media.encodes[0]?.opts.out ?? ""))).toBe(false);
+    });
+
+    it("ends cancelled, saving and caching nothing, when cancelled while FFmpeg finishes", async () => {
+      let id = "";
+      media.onFinish = () => {
+        svc.cancelExport(id);
+      };
+      const reply = await start({ to_frame: 2 });
+      id = reply.job_id;
+      const done = await finish(reply);
+      expect(done.state).toBe("cancelled");
+      expect(await readdir(dir)).toEqual([]);
+      media.onFinish = null;
+      const again = await run({ to_frame: 2 });
+      expect(again.result?.cached).toBe(false);
+    });
+
     it("fails when a frame comes back at another size", async () => {
       renderer.sizeError = 2;
       const done = await finish(await start({ to_frame: 2 }));
@@ -670,6 +712,18 @@ describe("KynimoService: export jobs", () => {
       // A retry after an edit still finds the original job.
       await write([layerOp({ type: "solid", name: "S", width: 10, height: 10, color: "#ffffff" })]);
       expect((await start({ idempotency_key: "same", to_frame: 3 })).job_id).toBe(first.job_id);
+      renderer.gate.resolve();
+      await finish(first);
+    });
+
+    it("fingerprints max_size as sent: an omitted size is not the same request as an explicit one", async () => {
+      renderer.gateAt = 0;
+      const first = await start({ idempotency_key: "same", to_frame: 3 });
+      expect((await start({ idempotency_key: "same", to_frame: 3 })).replayed).toBe(true);
+      const reused = await rejection(
+        start({ idempotency_key: "same", to_frame: 3, max_size: 100 }),
+      );
+      expect(reused.kind).toBe("key_reused");
       renderer.gate.resolve();
       await finish(first);
     });

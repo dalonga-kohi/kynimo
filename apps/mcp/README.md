@@ -47,7 +47,7 @@ Four tools run exports as background jobs. They need FFmpeg (see below) and the 
 
 Jobs run inside the server process, one at a time, with at most 4 queued or running per account (32 server-wide); more is answered with the `busy` error. Job records are kept for 24 hours. A restart loses queued and running jobs and download links.
 
-Finished files are kept for 24 hours (at most 4 GiB in total) in `<dir>/exports` with `--dir`, otherwise in a temporary folder. Over HTTP, `GET /exports/<token>` (and `HEAD`) downloads a file: the unguessable token in the link is the only credential and the link expires with the file. Over stdio the result gives the file's `path` instead. The same export of the same document is not rendered twice.
+Finished files are kept for 24 hours (at most 4 GiB in total) in `<dir>/exports` with `--dir`, otherwise in a temporary folder that is removed when the server shuts down (`<dir>/exports` is never removed). Over HTTP, `GET /exports/<token>` (and `HEAD`) downloads a file: the unguessable token in the link is the only credential and the link expires with the file. Over stdio the result gives the file's `path` instead. The same export of the same document is not rendered twice.
 
 Where projects live (ADR-0029):
 

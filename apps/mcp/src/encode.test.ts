@@ -161,6 +161,21 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     await expect(encoder.write(frames[1] as Uint8Array)).rejects.toThrow("cancelled");
   });
 
+  it("resolves closed only after FFmpeg has exited, also after an abort", async () => {
+    const ac = new AbortController();
+    const out = join(dir, "closed.mp4");
+    const encoder = ffmpeg.encode(options({ format: "mp4", out, signal: ac.signal }));
+    await encoder.write(frames[0] as Uint8Array);
+    ac.abort();
+    await encoder.closed;
+    if (process.platform !== "win32") {
+      // pgrep exits 1 when no process matches; the output path is in FFmpeg's command line.
+      expect(() => execFileSync("pgrep", ["-f", out], { stdio: "ignore" })).toThrow();
+    }
+    await expect(encoder.finish()).rejects.toThrow("cancelled");
+    await expect(encoder.closed).resolves.toBeUndefined();
+  });
+
   it("reports a bad frame without leaking the temp path", async () => {
     const out = join(dir, "bad.mp4");
     const encoder = ffmpeg.encode(options({ format: "mp4", out, audio: join(dir, "missing.f32") }));
