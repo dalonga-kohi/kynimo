@@ -7,6 +7,7 @@ export * from "./generator.js";
 export * from "./hash.js";
 export { lerp, lerpVector, type Vector } from "./mix.js";
 export * from "./path.js";
+export { sampleNonNegative } from "./properties.js";
 export type * from "./resolved.js";
 export * from "./text-animator.js";
 export * from "./track.js";

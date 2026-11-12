@@ -237,6 +237,12 @@ class Counting implements MediaTools {
   extractAudio(...args: Parameters<MediaTools["extractAudio"]>) {
     return this.inner.extractAudio(...args);
   }
+  decodePcm(...args: Parameters<MediaTools["decodePcm"]>) {
+    return this.inner.decodePcm(...args);
+  }
+  encode(...args: Parameters<MediaTools["encode"]>) {
+    return this.inner.encode(...args);
+  }
 }
 
 async function rejection(p: Promise<unknown>): Promise<ToolError> {
