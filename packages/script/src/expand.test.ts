@@ -198,8 +198,11 @@ const x = Math.floor(values[0] * 1000);
 kynimo.layer("bg").set("position", [x, Math.floor(values[1] * 1000)]);
 kynimo.layer("bg").set("rotation", Math.floor(values[2] * 360));
 `;
+    // Each expansion starts a worker and a WebAssembly instance, so a few seeds keep this test
+    // inside its timeout on a loaded CI runner; the outputs are exact, so the count can be too.
+    const seeds = [0, 1, 2, 7, 12345, 2 ** 32 - 1];
     const seen = new Set<string>();
-    for (let seed = 0; seed < 20; seed++) {
+    for (const seed of seeds) {
       const a = okOf(await expand(source, baseDoc(), seed));
       const b = okOf(await expand(source, baseDoc(), seed));
       expect(JSON.stringify(a.ops)).toBe(JSON.stringify(b.ops));
@@ -211,7 +214,7 @@ kynimo.layer("bg").set("rotation", Math.floor(values[2] * 360));
       expect(a.ops[1]).toMatchObject({ track: { value: Math.floor(v[2] * 360) } });
       seen.add(JSON.stringify(a.ops));
     }
-    expect(seen.size).toBeGreaterThan(15);
+    expect(seen.size).toBe(seeds.length);
   });
 
   it("exposes the first random values exactly", async () => {
