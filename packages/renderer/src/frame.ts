@@ -133,13 +133,14 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const planContent = (layer: ResolvedLayer): PlannedFrameLayer | null => {
     const { id, blendMode } = layer;
     const effects = layer.effects.filter(activeEffect);
+    const motion = planMotion(layer);
     const base = {
       id,
       opacity: layer.transform.opacity,
       blendMode,
       mask: null,
       matte: null,
-      motion: planMotion(layer),
+      motion,
       ...(effects.length > 0 ? { effects } : {}),
     };
     switch (layer.type) {
@@ -151,6 +152,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           comp.height,
           reserve,
           ctx.shapeWork,
+          motion,
         );
         return drawn === null ? null : { ...base, type: "shape", space: "composition", ...drawn };
       }
@@ -164,6 +166,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           comp.height,
           reserve,
           ctx.textWork,
+          motion,
         );
         return drawn === null ? null : { ...base, type: "text", space: "composition", ...drawn };
       }

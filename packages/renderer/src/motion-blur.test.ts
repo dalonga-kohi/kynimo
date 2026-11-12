@@ -5,11 +5,22 @@ import { bundledFonts, canvasKit, pixel } from "./canvaskit.test-util.js";
 import { type GpuSession, launchGpu } from "./compositor/browser.test-util.js";
 import { MAX_FRAME_EFFECT_SAMPLES } from "./compositor/effects.js";
 import { compositeReference } from "./compositor/reference.js";
-import { composition, layer, type Obj, project, prop, transform } from "./fixtures.test-util.js";
+import {
+  composition,
+  fill,
+  layer,
+  type Obj,
+  project,
+  prop,
+  rect,
+  shapeLayer,
+  transform,
+} from "./fixtures.test-util.js";
 import type { FontLibrary } from "./fonts.js";
 import { rasterizeFrame } from "./frame.js";
 import { ImageLibrary } from "./images.js";
 import type { FramePlan, PlannedLayer, PlannedMotionSample, RasterImage } from "./raster.js";
+import { motionCropRect } from "./rect.js";
 
 let ck: CanvasKit;
 let fonts: FontLibrary;
@@ -203,6 +214,89 @@ describe("motion blur: planning", () => {
       }),
     ]).layers[0] as PlannedLayer;
     expect(l.motion).toBeNull();
+  });
+});
+
+describe("motion blur: composition-space rasters cover the shutter's reach", () => {
+  const kf = (frame: number, value: unknown) => ({
+    frame,
+    value,
+    interpolation: { type: "linear" },
+  });
+  const blur = { shutterAngle: 360, shutterPhase: -180, samples: 16 };
+  /** A 200 px wide bar whose centre is at x = `x` + `shift` at frame 1, moving 60 px per frame. */
+  const render = (width: number, shift: number, motionBlur: Obj | null) =>
+    compositeReference(
+      rasterizeFrame(
+        ck,
+        evaluateFrame(
+          project([
+            composition(
+              "main",
+              [
+                shapeLayer("bar", [rect([0, 0], [200, 20]), fill()], {
+                  transform: transform({
+                    position: { keyframes: [kf(0, [-110 + shift, 10]), kf(10, [490 + shift, 10])] },
+                  }),
+                  motionBlur,
+                }),
+              ],
+              { width, height: 20 },
+            ),
+          ]),
+          1,
+        ),
+        { images: new ImageLibrary(ck), fonts },
+      ),
+    );
+
+  it("draws what is off-screen at the centre frame but in view during the shutter", () => {
+    const narrow = render(100, 0, blur);
+    const wide = render(400, 300, blur);
+    for (let x = 0; x <= 5; x++) {
+      const a = pixel(narrow, x, 10)[3] ?? 0;
+      const b = pixel(wide, 300 + x, 10)[3] ?? 0;
+      expect(a).toBeGreaterThan(200);
+      expect(Math.abs(a - b)).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("motionCropRect", () => {
+  const still = [{ delta: [1, 0, 0, 1, 0, 0] as const, opacity: 1 }];
+  it("is the padded composition rect without motion", () => {
+    expect(motionCropRect(100, 50, [4, 2], null)).toEqual([-4, -2, 104, 52]);
+    expect(motionCropRect(100, 50, [0, 0], undefined)).toEqual([0, 0, 100, 50]);
+    expect(motionCropRect(100, 50, [0, 0], [...still])).toEqual([0, 0, 100, 50]);
+  });
+  it("reaches back along the inverse of each delta", () => {
+    const motion = [
+      { delta: [1, 0, 0, 1, 30, 0] as const, opacity: 1 },
+      { delta: [1, 0, 0, 1, -10, 0] as const, opacity: 1 },
+    ];
+    expect(
+      motionCropRect(
+        100,
+        50,
+        [0, 0],
+        motion.map((m) => ({ ...m, delta: [...m.delta] })),
+      ),
+    ).toEqual([-30, 0, 110, 50]);
+  });
+  it("clamps to one composition size of extra margin per side", () => {
+    const fast = [
+      {
+        delta: [1, 0, 0, 1, 5000, -5000] as [number, number, number, number, number, number],
+        opacity: 1,
+      },
+    ];
+    expect(motionCropRect(100, 50, [3, 3], fast)).toEqual([-103, -3, 103, 103]);
+  });
+  it("skips samples that cannot be inverted", () => {
+    const singular = [
+      { delta: [0, 0, 0, 0, 0, 0] as [number, number, number, number, number, number], opacity: 1 },
+    ];
+    expect(motionCropRect(100, 50, [0, 0], singular)).toEqual([0, 0, 100, 50]);
   });
 });
 
