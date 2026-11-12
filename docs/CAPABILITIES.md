@@ -60,7 +60,7 @@ Status:
 | Render switches: hidden, solo                                                              | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color                                               | Layer switches   | beta   |
 
-Audio note: exports (mp4, webm) mix the audio layers of the exported composition (volume keyframes, in/out, solo and hidden respected, clipping reported); GIF has no sound; audio layers inside precomps are reported as dropped, not mixed yet (ADR-0048).
+Audio note: exports (mp4, webm) mix the audio layers of the exported composition (volume keyframes, in/out, solo and hidden respected, clipping reported); GIF has no sound; audio layers inside precomps are reported as dropped, not mixed yet (ADR-0048). Audio uploads are analysed for a steady beat (bpm, confidence, beat times stored on the asset; `list_assets` shows `bpm` and `beat_count`); assets uploaded before scene format 10 have none; tempos above about 150 bpm may be reported at half tempo (use `every`/`phase` or a grid) (ADR-0052).
 
 Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload. Limits and storage: ADR-0032 (frames as JPEG at most 1920 px and 60 fps, clips up to 60 s, audio as 48 kHz FLAC).
 
@@ -225,7 +225,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Intent   | `add_component`, `list_components`                                                                                                                                   | shipped    |
 | Intent   | `build_from_brief` (ordered headline, logo, image and video shots → one editable storyboard write with a dry run, ADR-0050)                                          | shipped    |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6         |
-| Intent   | `sync_to_beats`                                                                                                                                                      | M7         |
+| Intent   | `mark_beats` (beat markers on an audio layer from the asset's detected beats or a bpm grid), `sync_to_beats` (snap keyframes and cuts to them; `dry_run`; ADR-0052)  | shipped    |
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3         |
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export` (jobs; ADR-0048)                                                                               | M7 (built) |

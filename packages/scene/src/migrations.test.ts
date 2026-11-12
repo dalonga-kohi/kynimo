@@ -225,14 +225,14 @@ describe("migrateProject", () => {
   it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 10 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 10 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +255,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 10 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -347,7 +347,7 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v6);
-    expect(r).toMatchObject({ ok: true, from: 6, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 6, to: 10 });
     if (!r.ok) return;
     const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ behaviors: [] });
@@ -389,7 +389,7 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v7);
-    expect(r).toMatchObject({ ok: true, from: 7, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 7, to: 10 });
     if (!r.ok) return;
     const [solid, adjustment, nul] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ effects: [] });
@@ -403,8 +403,27 @@ describe("migrateProject", () => {
       compositions: [composition("main", [{ ...visual("a"), type: "adjustment", effects: [] }])],
     });
     const r = migrateProject(v8);
-    expect(r).toMatchObject({ ok: true, from: 8, to: 9 });
+    expect(r).toMatchObject({ ok: true, from: 8, to: 10 });
     if (r.ok) expect({ ...r.doc, formatVersion: 8 }).toEqual(v8);
+  });
+
+  it("9 → 10 changes nothing but the version", () => {
+    const v9 = project({
+      formatVersion: 9,
+      assets: [
+        {
+          id: "music",
+          type: "audio",
+          name: "Music",
+          uri: "assets/music.mp3",
+          sha256: "b".repeat(64),
+          durationMs: 1000,
+        },
+      ],
+    });
+    const r = migrateProject(v9);
+    expect(r).toMatchObject({ ok: true, from: 9, to: 10 });
+    if (r.ok) expect({ ...r.doc, formatVersion: 9 }).toEqual(v9);
   });
 
   it("migrates a version 1 document to the current version", () => {

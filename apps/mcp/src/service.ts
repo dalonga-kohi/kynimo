@@ -35,6 +35,7 @@ import {
 } from "@kynimo/scene";
 import { type ExpandError, expandScript, type ScriptLimits } from "@kynimo/script";
 import type { z } from "zod";
+import { BEAT_LIMITS, detectBeats } from "./beats.js";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import {
   type CachedExport,
@@ -420,6 +421,9 @@ export interface AssetSummary {
   fps?: { num: number; den: number };
   frame_count?: number;
   duration_ms?: number;
+  /** Audio with detected beats: the tempo and how many beats (the times are on the asset). */
+  bpm?: number;
+  beat_count?: number;
   /** Layers that use it (for a font: text layers of its family), up to 20. */
   used_by: string[];
 }
@@ -843,6 +847,7 @@ export class KynimoService {
         const audio = new Uint8Array(await readFile(flac));
         const sha256 = sha256Of(audio);
         const key = blobKey(sha256, "flac");
+        const beats = await this.detectAssetBeats(media, audio, durationMs);
         out.blobs.push({ key, bytes: audio, contentType: "audio/flac" });
         out.entries.push({
           type: "audio",
@@ -850,6 +855,7 @@ export class KynimoService {
           uri: key,
           sha256,
           durationMs: Math.max(1, durationMs),
+          ...(beats === undefined ? {} : { beats }),
         });
       }
       if (out.entries.length === 0) throw invalid("the file has no video or audio stream");
@@ -859,6 +865,24 @@ export class KynimoService {
       throw e;
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  /** Beats of an audio upload (ADR-0052). Detection never fails an upload: any error means no beats. */
+  private async detectAssetBeats(
+    media: MediaTools,
+    flac: Uint8Array,
+    durationMs: number,
+  ): Promise<{ bpm: number; confidence: number; timesMs: number[] } | undefined> {
+    try {
+      const pcm = await media.decodePcm(flac, Math.ceil(durationMs * 48) + 48_000);
+      const found = detectBeats(pcm);
+      if (found === undefined) return undefined;
+      const limit = Math.max(1, durationMs);
+      const timesMs = found.timesMs.filter((t) => t < limit);
+      return timesMs.length < BEAT_LIMITS.minBeats ? undefined : { ...found, timesMs };
+    } catch {
+      return undefined;
     }
   }
 
@@ -969,7 +993,14 @@ export class KynimoService {
         sha256: a.sha256,
         ...(a.type === "image" ? { width: a.width, height: a.height } : {}),
         ...(a.type === "font" ? { family: a.family, weight: a.weight } : {}),
-        ...(a.type === "audio" ? { duration_ms: a.durationMs } : {}),
+        ...(a.type === "audio"
+          ? {
+              duration_ms: a.durationMs,
+              ...(a.beats === undefined
+                ? {}
+                : { bpm: a.beats.bpm, beat_count: a.beats.timesMs.length }),
+            }
+          : {}),
         ...(a.type === "video"
           ? {
               width: a.width,

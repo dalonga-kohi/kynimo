@@ -111,6 +111,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 7, migrate: addEffects },
   // 8 → 9: generator layers and look effects are new variants; nothing to rewrite.
   { from: 8, migrate: (doc) => doc },
+  // 9 → 10: audio assets may carry detected beats; the field is optional, so nothing to rewrite.
+  { from: 9, migrate: (doc) => doc },
 ];
 
 export interface MigrationError {

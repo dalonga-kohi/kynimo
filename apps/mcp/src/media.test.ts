@@ -9,7 +9,7 @@ import {
   withLayerDefaults,
 } from "@kynimo/scene";
 import { beforeEach, describe, expect, it } from "vitest";
-import { base64, hasFfmpeg, makeClip, makeTone, solidPng } from "./assets.test-util.js";
+import { base64, clickWav, hasFfmpeg, makeClip, makeTone, solidPng } from "./assets.test-util.js";
 import { type BlobStore, MemoryBlobStore } from "./blobs.js";
 import {
   Ffmpeg,
@@ -356,6 +356,22 @@ describe.runIf(runMedia)("video and audio uploads with FFmpeg", () => {
     expect(r.asset).toMatchObject({ type: "audio", name: "tone.wav" });
     expect(r.asset.uri).toMatch(/\.flac$/);
     expect(r.audio_asset).toBeUndefined();
+  }, 60_000);
+
+  it("detects the beats of a 120 bpm click track at upload", async () => {
+    const r = await service.uploadAsset(meta(1, "beats"), {
+      name: "clicks.wav",
+      data: base64(clickWav(120, 10)),
+    });
+    const beats = (r.asset as { beats?: { bpm: number; timesMs: number[] } }).beats;
+    expect(beats).toBeDefined();
+    expect(Math.abs((beats?.bpm ?? 0) - 120)).toBeLessThanOrEqual(1);
+    expect(beats?.timesMs.length).toBeGreaterThanOrEqual(18);
+    const tone = await service.uploadAsset(meta(2, "tone"), {
+      name: "tone.wav",
+      data: base64(makeTone(1)),
+    });
+    expect((tone.asset as { beats?: unknown }).beats).toBeUndefined();
   }, 60_000);
 
   it("refuses clips over 60 s, files FFmpeg cannot read, and family", async () => {

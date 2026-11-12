@@ -87,6 +87,9 @@ describe("capability manifest", () => {
     expect(audio.status === "accepted" && audio.reason).toContain(
       "mixed into mp4 and webm exports",
     );
+    const asset = manifest.assets.audio;
+    expect(asset.status === "accepted" && asset.reason).toContain("Beats are detected at upload");
+    expect(asset.status === "accepted" && asset.reason).toContain("mark_beats and sync_to_beats");
   });
 
   it("declares SVG import as available and lists what it does not carry", () => {
@@ -169,6 +172,8 @@ describe("capability manifest", () => {
       "apply_preset",
       "stagger",
       "retime",
+      "mark_beats",
+      "sync_to_beats",
       "add_behavior",
       "add_component",
       "build_from_brief",

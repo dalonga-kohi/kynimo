@@ -5,11 +5,15 @@ import {
   addEffect,
   animate,
   applyPreset,
+  MarkBeatsInputSchema,
+  markBeats,
   presetCatalog,
   RetimeInputSchema,
   retime,
   StaggerInputSchema,
+  SyncToBeatsInputSchema,
   stagger,
+  syncToBeats,
 } from "@kynimo/intent";
 import {
   LayerSelectorSchema,
@@ -67,6 +71,7 @@ import {
   ListComponentsOutput,
   ListPresetsOutput,
   ListProjectsOutput,
+  MarkBeatsToolInput,
   PrecomposeInput,
   ProjectIdSchema,
   RenderContactSheetInput,
@@ -81,6 +86,7 @@ import {
   SetKeyframesInput,
   SetMatteInput,
   StaggerToolInput,
+  SyncToBeatsToolInput,
   UndoRedoInput,
   UpdateLayerInput,
   UploadAssetInput,
@@ -99,6 +105,7 @@ For anything beyond a few edits, write a script: run_script runs TypeScript agai
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
+Audio uploads come with detected beats: mark_beats puts them on an audio layer as markers, sync_to_beats snaps keyframes and cuts to them.
 Use list_components or kynimo://components to discover built-ins and their props. add_component places a version-pinned instance; use dry_run to validate placement and props first.
 Use build_from_brief to assemble a storyboard of headline, logo, image and video shots in one write. Translate the user's brief into the shot fields first. Use dry_run to check timing and assets, then render a contact sheet.
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
@@ -655,6 +662,26 @@ export function createServer(service: KynimoService): McpServer {
     RetimeToolInput,
     RetimeInputSchema,
     retime,
+  );
+
+  intentTool(
+    "mark_beats",
+    "Mark beats",
+    "Puts beat markers ('beat 1', 'beat 2', ...) on an audio layer from the beats detected at upload, or a grid from bpm and a first beat frame. replace clears its markers first.",
+    MarkBeatsToolInput,
+    MarkBeatsInputSchema,
+    markBeats,
+    // Up to 1000 addMarker ops; the resolved summary says what was marked.
+    { echoOps: false },
+  );
+
+  intentTool(
+    "sync_to_beats",
+    "Sync to beats",
+    "Snaps keyframes and/or cuts (layer in-points; the layer slides) of layers to the nearest beat marker of an audio layer, optionally every nth beat, within max_distance frames. Refuses collisions and squeezed springs.",
+    SyncToBeatsToolInput,
+    SyncToBeatsInputSchema,
+    syncToBeats,
   );
 
   intentTool(

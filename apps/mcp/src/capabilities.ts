@@ -80,7 +80,7 @@ const ASSET_SUPPORT: Readonly<Record<Asset["type"], Support>> = {
   },
   audio: {
     status: "accepted",
-    reason: `${LAYER_SUPPORT.audio.status === "accepted" ? LAYER_SUPPORT.audio.reason : "audio renders"}. Add with upload_asset (WAV, MP3, FLAC, Ogg, M4A, or a video's own sound), stored as 48 kHz FLAC`,
+    reason: `${LAYER_SUPPORT.audio.status === "accepted" ? LAYER_SUPPORT.audio.reason : "audio renders"}. Add with upload_asset (WAV, MP3, FLAC, Ogg, M4A, or a video's own sound), stored as 48 kHz FLAC. Beats are detected at upload (bpm, confidence); mark_beats and sync_to_beats use them`,
   },
 };
 

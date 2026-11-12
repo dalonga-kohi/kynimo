@@ -2,8 +2,10 @@ import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
   EasingInput,
+  MarkBeatsInputSchema,
   RetimeInputSchema,
   StaggerInputSchema,
+  SyncToBeatsInputSchema,
 } from "@kynimo/intent";
 import {
   AssetIdSchema,
@@ -411,6 +413,42 @@ export const StaggerToolInput = StaggerInputSchema.omit({ layers: true })
 
 export const RetimeToolInput = RetimeInputSchema.omit({ layers: true })
   .extend({ ...intentMeta, layers: Targets })
+  .strip();
+
+export const MarkBeatsToolInput = MarkBeatsInputSchema.extend({
+  ...intentMeta,
+  layer: LayerSelectorSchema.describe("The audio layer (id or selector matching one)."),
+  grid: MarkBeatsInputSchema.shape.grid
+    .unwrap()
+    .extend({
+      first_beat_frame: z.number().int().describe("Composition frame of the first beat."),
+      count: MarkBeatsInputSchema.shape.grid
+        .unwrap()
+        .shape.count.describe("At most this many beats, counted from first_beat_frame."),
+    })
+    .optional()
+    .describe("A bpm grid instead of the asset's detected beats."),
+  replace: z.boolean().optional().describe("Remove the layer's markers first."),
+}).strip();
+
+export const SyncToBeatsToolInput = SyncToBeatsInputSchema.omit({ layers: true })
+  .extend({
+    ...intentMeta,
+    layers: Targets,
+    every: SyncToBeatsInputSchema.shape.every.describe(
+      "Use every nth beat (4 = once a bar in 4/4).",
+    ),
+    phase: SyncToBeatsInputSchema.shape.phase.describe(
+      "Which beat of each group of every to use, from 0.",
+    ),
+    max_distance: SyncToBeatsInputSchema.shape.max_distance.describe(
+      "Frames; farther keyframes and cuts stay. Default: half the median beat gap.",
+    ),
+    window: SyncToBeatsInputSchema.shape.window.describe(
+      "Only what sits inside these composition frames moves.",
+    ),
+    snap: SyncToBeatsInputSchema.shape.snap.describe("What to snap; default keyframes."),
+  })
   .strip();
 
 export const ApplyPresetToolInput = z.object({
@@ -1025,6 +1063,8 @@ export const ListAssetsOutput = z.looseObject({
       name: z.string(),
       type: z.string(),
       sha256: z.string(),
+      bpm: z.number().optional(),
+      beat_count: z.number().int().optional(),
       used_by: z.array(z.string()),
     }),
   ),
