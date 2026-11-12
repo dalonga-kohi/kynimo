@@ -10,6 +10,8 @@ interface TrackOptions {
   channels?: number;
   /** Sound of each beat; default is a 1 kHz click. */
   kick?: boolean;
+  /** Only a 60 Hz decaying sine per beat, no clicks. */
+  kickOnly?: boolean;
 }
 
 /** Click (or kick plus off-beat click) track on silence, deterministic. Returns pcm and true beat times. */
@@ -20,6 +22,7 @@ function track({
   rate = 48_000,
   channels = 2,
   kick = false,
+  kickOnly = false,
 }: TrackOptions) {
   const frames = Math.round(seconds * rate);
   const pcm = new Float32Array(frames * channels);
@@ -37,7 +40,8 @@ function track({
   const truth: number[] = [];
   for (let ms = offsetMs; ms < seconds * 1000 - 50; ms += period) {
     truth.push(ms);
-    if (kick) {
+    if (kickOnly) put(ms, 60, 80, 200, 0.8);
+    else if (kick) {
       put(ms, 60, 80, 200, 0.8);
       put(ms + period / 2, 1000, 5, 20, 0.3);
     } else put(ms, 1000, 5, 20, 0.8);
@@ -100,6 +104,14 @@ describe("detectBeats on click tracks", () => {
     if (r === undefined) return;
     expect(Math.abs(r.bpm - 100)).toBeLessThanOrEqual(1);
     expectInvariants(r, durationMs);
+  });
+
+  it("places beats of a kick pattern on the kicks, not the off-beat clicks", () => {
+    expectTracksClicks({ bpm: 100, seconds: 12, offsetMs: 250, kick: true });
+  });
+
+  it("tracks a kick-only track at 110 bpm", () => {
+    expectTracksClicks({ bpm: 110, seconds: 12, offsetMs: 250, kickOnly: true });
   });
 
   it("works on mono input and at another sample rate", () => {

@@ -11,7 +11,7 @@ export const BEAT_LIMITS = {
   maxSeconds: 61,
   minBpm: 50,
   maxBpm: 220,
-  minConfidence: 0.1,
+  minConfidence: 0.2,
   minBeats: 4,
 } as const;
 
@@ -20,6 +20,8 @@ const WINDOW = 1024;
 const ENVELOPE_RATE = 100;
 /** Highest frequency that counts towards onset strength. */
 const FLUX_MAX_HZ = 8000;
+/** Cut-off of the bass band whose onsets are added to the spectral flux. */
+const LOW_BAND_HZ = 150;
 /** Half width, in envelope frames, of the moving average removed from the envelope. */
 const MEAN_RADIUS = 25;
 /** Tempo prior: log-Gaussian over octaves around 120 bpm. */
@@ -123,7 +125,63 @@ function onsetEnvelope(mono: Float64Array, rate: number): Float64Array | undefin
     [prev, cur] = [cur, prev];
   }
 
-  // Subtract a centred moving average, keep what rises above it.
+  const low = lowBandFlux(mono, rate, hop, count);
+  const spectral = normalise(flux);
+  const bass = normalise(low);
+  if (spectral === undefined && bass === undefined) return undefined;
+  const env = new Float64Array(count);
+  for (let i = 0; i < count; i++)
+    env[i] = (spectral ? (spectral[i] as number) : 0) + (bass ? (bass[i] as number) : 0);
+  return env;
+}
+
+/** Low-pass biquad (RBJ cookbook, Butterworth Q) over the whole signal, direct form I. */
+function lowPass(mono: Float64Array, rate: number, hz: number): Float64Array {
+  const w0 = (2 * Math.PI * Math.min(hz, rate / 2 - 1)) / rate;
+  const alpha = Math.sin(w0) / (2 * Math.SQRT1_2);
+  const cosW = Math.cos(w0);
+  const a0 = 1 + alpha;
+  const b0 = (1 - cosW) / 2 / a0;
+  const b1 = (1 - cosW) / a0;
+  const b2 = b0;
+  const a1 = (-2 * cosW) / a0;
+  const a2 = (1 - alpha) / a0;
+  const out = new Float64Array(mono.length);
+  let x1 = 0;
+  let x2 = 0;
+  let y1 = 0;
+  let y2 = 0;
+  for (let i = 0; i < mono.length; i++) {
+    const x = mono[i] as number;
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    out[i] = y;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+  }
+  return out;
+}
+
+/** Rise of the log energy of the bass band per envelope frame. */
+function lowBandFlux(mono: Float64Array, rate: number, hop: number, count: number): Float64Array {
+  const filtered = lowPass(mono, rate, LOW_BAND_HZ);
+  const flux = new Float64Array(count);
+  let prev = 0;
+  for (let f = 0; f < count; f++) {
+    const start = f * hop;
+    let sum = 0;
+    for (let i = 0; i < WINDOW; i++) sum += (filtered[start + i] as number) ** 2;
+    const cur = Math.log1p((1000 * sum) / WINDOW);
+    if (f > 0) flux[f] = Math.max(0, cur - prev);
+    prev = cur;
+  }
+  return flux;
+}
+
+/** Subtract a centred moving average, keep what rises above it, scale to unit std; undefined if flat. */
+function normalise(flux: Float64Array): Float64Array | undefined {
+  const count = flux.length;
   const prefix = new Float64Array(count + 1);
   for (let i = 0; i < count; i++) prefix[i + 1] = (prefix[i] as number) + (flux[i] as number);
   const env = new Float64Array(count);
