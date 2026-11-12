@@ -10,6 +10,9 @@ import {
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
+  MAX_DEFORM_COORDINATE,
+  MAX_DEFORM_TRIANGLES,
+  MAX_FRAME_DEFORM_WORK,
   MAX_FRAME_SHADER_WORK,
   MAX_SHADER_SAMPLES,
   MAX_SHADER_TOKENS,
@@ -24,11 +27,14 @@ import {
 } from "@kynimo/renderer";
 import {
   type Asset,
+  DEFORM_DENSITY,
+  DEFORM_ITERATIONS,
   MAX_ABERRATION,
   MAX_AURORA_COLORS,
   MAX_BATCH_OPS,
   MAX_BLINDS,
   MAX_CLOCK_FEATHER,
+  MAX_DEFORM_PINS,
   MAX_GENERATOR_EVOLUTION,
   MAX_GENERATOR_OFFSET,
   MAX_GENERATOR_POINT,
@@ -166,6 +172,20 @@ const THREE_D_LIMITS = {
   vectorRasterScale: { max: 8 },
 } as const;
 
+const DEFORM_SUPPORT: Support = {
+  status: "renders",
+  note: "Set updateLayer deform on drawn source layers. Masks precede center-frame pin deformation, then effects and placement follow.",
+};
+
+const DEFORM_LIMITS = {
+  pinsPerLayer: MAX_DEFORM_PINS,
+  density: DEFORM_DENSITY,
+  iterations: DEFORM_ITERATIONS,
+  trianglesPerLayer: MAX_DEFORM_TRIANGLES,
+  workPerFrame: MAX_FRAME_DEFORM_WORK,
+  maxRasterCoordinate: MAX_DEFORM_COORDINATE,
+} as const;
+
 export const SHADER_LIMITS = {
   sourceCharacters: MAX_SHADER_SOURCE,
   tokens: MAX_SHADER_TOKENS,
@@ -265,6 +285,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       transitions: TRANSITION_SUPPORT,
       motion_blur: MOTION_BLUR_SUPPORT,
       three_d: THREE_D_SUPPORT,
+      deform: DEFORM_SUPPORT,
     },
     limits: {
       text_animators: TEXT_ANIMATOR_LIMITS,
@@ -274,6 +295,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       transitions: TRANSITION_LIMITS,
       motion_blur: MOTION_BLUR_LIMITS,
       three_d: THREE_D_LIMITS,
+      deform: DEFORM_LIMITS,
     },
     assets: ASSET_SUPPORT,
     render: {

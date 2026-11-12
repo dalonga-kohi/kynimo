@@ -143,7 +143,8 @@ describe("MCP server", () => {
     // 103_500 with 2.5D layers and cameras (ADR-0054): 101.2 KB before, 102.9 KB after.
     // 112_000 with shader authoring and discovery (ADR-0055).
     // 116_000 with add_transition: ~112 KB before, 114.7 KB after.
-    expect(JSON.stringify(tools).length).toBeLessThan(116_000);
+    // 116_500 with puppet pins (ADR-0056), at 116_108 measured characters.
+    expect(JSON.stringify(tools).length).toBeLessThan(116_500);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -403,6 +404,123 @@ describe("MCP server", () => {
     expect(viaTool).toMatchObject({ error: "invalid" });
     expect(JSON.stringify(viaTool.errors)).toContain("has no motion blur");
     expect((await call(client, "get_scene", { project_id })).version).toBe(2);
+  });
+
+  it("sets, replaces and clears puppet pins through both layer update tools", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "solid",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "Card", width: 32, height: 16, color: "#ff0000" },
+    });
+    const read = async () => (await call(client, "get_layer", { project_id, layer: "s" })).layer;
+    expect(await read()).toHaveProperty("deform", null);
+
+    const fixed = { id: "root", rest: [1, 2], position: { value: [1, 2] } };
+    await call(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "fixed",
+      ops: [{ op: "updateLayer", layer: "s", set: { deform: { pins: [fixed] } } }],
+    });
+    expect(await read()).toHaveProperty("deform", { pins: [fixed], density: 24, iterations: 10 });
+
+    const animated = {
+      density: 8,
+      iterations: 6,
+      pins: [
+        {
+          id: "tip",
+          rest: [27, 13],
+          position: {
+            keyframes: [
+              { frame: 0, value: [27, 13], interpolation: { type: "linear" } },
+              { frame: 10, value: [31, 18], interpolation: { type: "hold" } },
+            ],
+          },
+        },
+      ],
+    };
+    await call(client, "update_layer", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "animated",
+      layer: "s",
+      set: { deform: animated },
+    });
+    expect(await read()).toHaveProperty("deform", animated);
+
+    await call(client, "update_layer", {
+      project_id,
+      base_version: 4,
+      idempotency_key: "clear",
+      layer: "s",
+      set: { deform: null },
+    });
+    expect(await read()).toHaveProperty("deform", null);
+  });
+
+  it("rejects malformed pin tracks and deformation on source-less layers without writing", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "solid",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "Card", width: 32, height: 16, color: "#ff0000" },
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "null",
+      composition: "main",
+      id: "n",
+      layer: { type: "null", name: "Control" },
+    });
+    const bad = await callError(client, "update_layer", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "invalid-track",
+      layer: "s",
+      set: {
+        deform: { pins: [{ id: "tip", rest: [0, 0], position: { value: [12, "down"] } }] },
+      },
+    });
+    expect(bad).toMatchObject({
+      error: "invalid",
+      errors: [{ path: ["ops", 0, "set", "deform", "pins", 0, "position", "value", 1] }],
+    });
+
+    const unsupported = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "unsupported-layer",
+      ops: [
+        { op: "updateLayer", layer: "s", set: { hidden: true } },
+        { op: "updateLayer", layer: "n", set: { deform: null } },
+      ],
+    });
+    expect(unsupported).toMatchObject({
+      error: "invalid",
+      errors: [
+        { path: ["ops", 1, "set", "deform"], message: expect.stringContaining("layer 'n'") },
+      ],
+    });
+    expect((await call(client, "get_layer", { project_id, layer: "s" })).layer).toMatchObject({
+      hidden: false,
+      deform: null,
+    });
+    expect((await call(client, "get_scene", { project_id })).version).toBe(3);
   });
 
   it("adds a camera with defaults, switches a solid to 3D and keyframes rotationY", async () => {
@@ -701,6 +819,26 @@ describe("MCP server", () => {
       const schema = r.schema as { properties: Record<string, unknown> };
       expect(schema.properties.type, type).toBeDefined();
       expect(schema.properties.id, type).toBeUndefined();
+      if (
+        ["shape", "text", "image", "video", "solid", "generator", "precomp", "component"].includes(
+          type,
+        )
+      )
+        expect(schema.properties.deform, type).toMatchObject({
+          default: null,
+          anyOf: [
+            {
+              required: ["pins"],
+              properties: {
+                pins: { type: "array", maxItems: 32 },
+                density: { type: "integer", minimum: 4, maximum: 64, default: 24 },
+                iterations: { type: "integer", minimum: 1, maximum: 30, default: 10 },
+              },
+            },
+            { type: "null" },
+          ],
+        });
+      else expect(schema.properties.deform, type).toBeUndefined();
     }
   });
 

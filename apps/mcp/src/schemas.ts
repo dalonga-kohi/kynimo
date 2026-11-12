@@ -12,6 +12,8 @@ import {
   AssetIdSchema,
   ColorSchema,
   CompositionIdSchema,
+  DeformPinIdSchema,
+  DeformSchema,
   EffectIdSchema,
   ID_PATTERN,
   JsonObjectSchema,
@@ -22,6 +24,7 @@ import {
   MASK_MODES,
   MAX_BATCH_OPS,
   MAX_COMPOSITION_SIZE,
+  MAX_DEFORM_PINS,
   MAX_DURATION_FRAMES,
   MAX_EFFECTS,
   MAX_LAYERS,
@@ -151,12 +154,30 @@ function walk(s: z.ZodType): z.ZodType {
 }
 
 /**
- * `updateLayer`'s patch with the camera tracks declared loosely: a keyframed `pointOfInterest`
- * inlines to ~2 KB, and the transition is one of ten kinds. The server validates them in full against `LayerPatchSchema`.
+ * `updateLayer`'s patch uses compact listings for camera tracks, the transition body and deform
+ * pin tracks. The server validates each in full against `LayerPatchSchema`.
  */
 export const CompactLayerPatchSchema = z
   .strictObject({
     ...LayerPatchSchema.shape,
+    deform: z
+      .strictObject({
+        pins: z
+          .array(
+            z.strictObject({
+              id: DeformPinIdSchema,
+              rest: z.array(z.number()).length(2),
+              position: z
+                .looseObject({})
+                .describe("{ value: [x, y] } or { keyframes } in layer time."),
+            }),
+          )
+          .max(MAX_DEFORM_PINS),
+        density: DeformSchema.shape.density.unwrap().optional(),
+        iterations: DeformSchema.shape.iterations.unwrap().optional(),
+      })
+      .nullable()
+      .optional(),
     zoom: z
       .looseObject({})
       .describe("Camera layers only: { value } or { keyframes } of a number 1..100000.")
