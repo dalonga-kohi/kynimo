@@ -1,0 +1,4 @@
+{
+  "description": "Built-in shader transitions on precomp layers (ADR-0057): four 640x360 shots (aurora, stripes, gradient, noise) each in its own precomp, stacked, with an iris circle, a feathered 30 degree wipe and a banded glitch bringing shots 2 to 4 in. Frames are mid-iris, mid-wipe, mid-glitch and the final frame.",
+  "frames": [25, 50, 72, 89]
+}
