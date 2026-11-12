@@ -136,6 +136,7 @@ function base(o: LayerOptions) {
     matte: null,
     masks: o.masks ?? [],
     effects: o.effects ?? [],
+    motionBlur: null,
   };
 }
 

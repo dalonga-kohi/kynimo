@@ -7,6 +7,7 @@ import type {
   FrameRate,
   Layer,
   Mask,
+  MotionBlur,
   Project,
   ShapeItem,
 } from "@kynimo/scene";
@@ -20,6 +21,7 @@ import { resolveGenerator } from "./generator.js";
 import { hashWords } from "./hash.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
+  MotionSample,
   ResolvedAudio,
   ResolvedComposition,
   ResolvedLayer,
@@ -58,6 +60,29 @@ export const MAX_EVALUATION_UNITS = 1_000_000;
  * about 0.2 s (190 to 240 ms over five runs of a 447-layer delayed chain) on the maintainer's machine, so a frame that hits the cap is rejected in about that time.
  */
 export const MAX_FRAME_LINK_STEPS = 100_000;
+
+/**
+ * Most transform resolutions (each chain link at each sample time, memoized per layer and time)
+ * motion blur may do in one evaluateFrame call, nested compositions included. Without it
+ * `samples` x chain depth x blurred layers is unbounded in the document size.
+ */
+export const MAX_FRAME_MOTION_TRANSFORMS = 65_536;
+
+/**
+ * The composition frames a motion-blurred layer is sampled at (ADR-0053): `samples` times evenly
+ * spread over the shutter interval, which starts `shutterPhase` degrees after `frame` and lasts
+ * `shutterAngle` degrees (360 is one frame). Sample i is the middle of the i-th slice.
+ */
+export function motionSampleTimes(
+  frame: number,
+  settings: Pick<MotionBlur, "shutterAngle" | "shutterPhase" | "samples">,
+): number[] {
+  const { shutterAngle, shutterPhase, samples } = settings;
+  const times: number[] = [];
+  for (let i = 0; i < samples; i++)
+    times.push(frame + shutterPhase / 360 + (shutterAngle / 360) * ((i + 0.5) / samples));
+  return times;
+}
 
 /** Units one evaluation of `comp` costs (see {@link MAX_EVALUATION_UNITS}). Iterative over shape groups. */
 function compositionCost(comp: Composition): number {
@@ -118,6 +143,8 @@ interface Context {
   budget: number;
   /** Link steps left in this call's {@link MAX_FRAME_LINK_STEPS} budget. */
   linkSteps: number;
+  /** Transform resolutions left in this call's {@link MAX_FRAME_MOTION_TRANSFORMS} budget. */
+  motionTransforms: number;
   /** Per-composition cost, computed once per call so counting is not multiplied too. */
   costs: Map<string, number>;
   /** Precomp layer ids from the root down to the composition being evaluated, for error messages. */
@@ -197,6 +224,64 @@ function evaluateComposition(
     return world.get(layer.id) as Affine;
   };
 
+  // Motion blur (ADR-0053): the layer's world matrix and own opacity at each sub-frame time, in
+  // maps of their own so the center-frame `local` and `world` stay untouched.
+  const sampled = new Map<
+    number,
+    {
+      local: Map<string, { transform: ResolvedTransform; matrix: Affine }>;
+      world: Map<string, Affine>;
+    }
+  >();
+  const motionOf = (layer: DrawnLayer): readonly MotionSample[] | null => {
+    const settings = layer.motionBlur;
+    if (settings === null || settings.shutterAngle === 0 || layer.type === "adjustment")
+      return null;
+    return motionSampleTimes(frame, settings).map((t) => {
+      let maps = sampled.get(t);
+      if (maps === undefined) {
+        maps = { local: new Map(), world: new Map() };
+        sampled.set(t, maps);
+      }
+      const { local: localAt, world: worldAt } = maps;
+      const localSample = (link: VisualLayer) => {
+        let entry = localAt.get(link.id);
+        if (entry === undefined) {
+          if (--ctx.motionTransforms < 0)
+            throw new RangeError(
+              `evaluating this frame needs more than ${MAX_FRAME_MOTION_TRANSFORMS} motion blur transform samples (layer '${layer.id}'); use fewer samples or blur fewer layers`,
+            );
+          entry =
+            link.behaviors.length === 0
+              ? resolveTransform(link.transform, t - link.startFrame, fps)
+              : behaviors.transform(link, t);
+          localAt.set(link.id, entry);
+        }
+        return entry;
+      };
+      const chain: VisualLayer[] = [];
+      let current: VisualLayer | undefined = layer;
+      while (current !== undefined && !worldAt.has(current.id)) {
+        chain.push(current);
+        const parent: Layer | undefined =
+          current.parent === null ? undefined : byId.get(current.parent);
+        current = parent?.type === "audio" ? undefined : parent;
+      }
+      let above = current === undefined ? null : (worldAt.get(current.id) as Affine);
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const link = chain[i] as VisualLayer;
+        const m =
+          above === null ? localSample(link).matrix : multiply(above, localSample(link).matrix);
+        worldAt.set(link.id, m);
+        above = m;
+      }
+      return {
+        matrix: worldAt.get(layer.id) as Affine,
+        opacity: localSample(layer).transform.opacity,
+      };
+    });
+  };
+
   // Solo is per composition and covers audio too: once any layer is soloed, only soloed layers render or play.
   const anySolo = comp.layers.some((l) => l.solo);
   const inRange = (l: Layer) => l.inFrame <= frame && frame < l.outFrame;
@@ -217,6 +302,7 @@ function evaluateComposition(
         masks: resolveMasks(layer.masks, layerFrame, fps),
         effects: resolveEffects(layer.effects, layerFrame, fps),
         matte: null,
+        motion: motionOf(layer),
       });
       resolvedById.set(layer.id, resolved);
     }
@@ -306,6 +392,7 @@ type Base = Pick<
   | "masks"
   | "effects"
   | "matte"
+  | "motion"
 >;
 
 /** Keeps eased overshoot inside the schema's range, so the renderer never strokes absurd widths. */
@@ -532,6 +619,7 @@ export function evaluateFrame(
     memo: new Map(),
     budget: MAX_EVALUATION_UNITS,
     linkSteps: MAX_FRAME_LINK_STEPS,
+    motionTransforms: MAX_FRAME_MOTION_TRANSFORMS,
     costs: new Map(),
     chain: [],
     components: options.components,

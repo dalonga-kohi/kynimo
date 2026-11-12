@@ -517,6 +517,8 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       if (hasTransform(layer)) checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
 
       if (isDrawn(layer)) {
+        if (layer.type === "adjustment" && layer.motionBlur !== null)
+          issue(at("motionBlur"), "adjustment layers have no motion blur; set motionBlur to null");
         const seenEffects = new Set<string>();
         layer.effects.forEach((effect, ei) => {
           if (seenEffects.has(effect.id))

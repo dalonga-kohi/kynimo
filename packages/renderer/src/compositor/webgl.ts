@@ -22,6 +22,7 @@ import {
   maxLevel,
   placement,
   precompUses,
+  samplePlacement,
 } from "./pipeline.js";
 import {
   blendShader,
@@ -514,21 +515,15 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       for (let i = chain.length - 1; i >= 0; i--) {
         const current = chain[i] as PlannedLayer;
         const padding = effectPadding(current.effects ?? []);
+        const motion = current.motion ?? null;
+        // Charged up front (width × height per sample) so a huge blur fails before any work is done.
+        if (motion !== null)
+          chargeSamples(
+            current.id,
+            width * height * motion.length,
+            "motion blur samples or number of blurred layers",
+          );
         const src = prepare(current, padding);
-        const inv = invert(placement(current, padding));
-        const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
-        const k = Math.floor(lod);
-        // The hi level is only sampled with a positive weight, so an exact level needs no next one.
-        const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
-        const levels = [src];
-        for (let n = 1; n <= top; n++) {
-          const prev = levels[n - 1] as Target;
-          const next = target(Math.ceil(prev.width / 2), Math.ceil(prev.height / 2));
-          pass(fixed.downsample(), next, [["u_src", prev.texture]], () => {});
-          levels.push(next);
-        }
-        const lo = levels[k] as Target;
-        const hi = levels[top] as Target;
         const out = target(width, height);
         const mode = current.matte?.mode;
         const matted = i === chain.length - 1 ? end : "source";
@@ -536,30 +531,63 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           mode === undefined || matted === "none" ? 0 : MATTE_MODES[mode]
         ) as MatteMode;
         const matteEmpty = matteMode !== 0 && (matted === "empty" || below === null);
-        const shift = inv !== null && lod === 0 ? wholePixelShift(inv) : null;
-        const copy = shift !== null && top === 0;
-        pass(
-          program(`place:${matteMode}${matteEmpty ? "e" : ""}${copy ? "c" : ""}`, () =>
-            placeShader({ matte: matteMode, empty: matteEmpty, copy }),
-          ),
-          out,
-          [
-            ["u_lo", lo.texture],
-            ["u_hi", hi.texture],
-            ["u_matte", below?.texture ?? empty],
-          ],
-          (u) => {
-            gl.uniform2f(u("u_scale"), 2 ** -k, 2 ** -top);
-            gl.uniform1f(u("u_t"), top > k ? lod - k : 0);
-            const [a, b, c, d, e, f] = inv ?? [0, 0, 0, 0, 0, 0];
-            gl.uniform3f(u("u_invX"), a, c, e);
-            gl.uniform3f(u("u_invY"), b, d, f);
-            gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
-            if (shift !== null) gl.uniform2i(u("u_shift"), shift[0], shift[1]);
-            gl.uniform1f(u("u_opacity"), current.opacity);
-          },
-        );
-        for (const level of levels) free(level);
+        // A blurred layer is drawn once per shutter sample and summed into `out` (premultiplied,
+        // additive blending); a plain layer is drawn once and replaces it.
+        const draws = motion ?? [null];
+        if (motion !== null) {
+          clear(gl, out);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.ONE, gl.ONE);
+        }
+        for (const sample of draws) {
+          const inv = invert(
+            sample === null
+              ? placement(current, padding)
+              : samplePlacement(current, sample, padding),
+          );
+          const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
+          const k = Math.floor(lod);
+          // The hi level is only sampled with a positive weight, so an exact level needs no next one.
+          const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
+          const levels = [src];
+          for (let n = 1; n <= top; n++) {
+            const prev = levels[n - 1] as Target;
+            const next = target(Math.ceil(prev.width / 2), Math.ceil(prev.height / 2));
+            pass(fixed.downsample(), next, [["u_src", prev.texture]], () => {});
+            levels.push(next);
+          }
+          const lo = levels[k] as Target;
+          const hi = levels[top] as Target;
+          const shift = sample === null && inv !== null && lod === 0 ? wholePixelShift(inv) : null;
+          const copy = shift !== null && top === 0;
+          pass(
+            program(`place:${matteMode}${matteEmpty ? "e" : ""}${copy ? "c" : ""}`, () =>
+              placeShader({ matte: matteMode, empty: matteEmpty, copy }),
+            ),
+            out,
+            [
+              ["u_lo", lo.texture],
+              ["u_hi", hi.texture],
+              ["u_matte", below?.texture ?? empty],
+            ],
+            (u) => {
+              gl.uniform2f(u("u_scale"), 2 ** -k, 2 ** -top);
+              gl.uniform1f(u("u_t"), top > k ? lod - k : 0);
+              const [a, b, c, d, e, f] = inv ?? [0, 0, 0, 0, 0, 0];
+              gl.uniform3f(u("u_invX"), a, c, e);
+              gl.uniform3f(u("u_invY"), b, d, f);
+              gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
+              if (shift !== null) gl.uniform2i(u("u_shift"), shift[0], shift[1]);
+              gl.uniform1f(
+                u("u_opacity"),
+                sample === null ? current.opacity : sample.opacity / draws.length,
+              );
+            },
+          );
+          for (const level of levels.slice(1)) free(level);
+        }
+        free(src);
+        if (motion !== null) gl.disable(gl.BLEND);
         if (below !== null) free(below);
         below = out;
       }

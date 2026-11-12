@@ -674,6 +674,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     matte: null,
     masks: [],
     behaviors: [],
+    motionBlur: null,
     effects: [],
     compositionId: compId,
   };

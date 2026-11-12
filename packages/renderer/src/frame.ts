@@ -1,5 +1,6 @@
 import {
   type Affine,
+  invert,
   multiply,
   type ResolvedComposition,
   type ResolvedLayer,
@@ -16,6 +17,7 @@ import type {
   FramePlan,
   PlannedFrameLayer,
   PlannedLayer,
+  PlannedMotionSample,
   RasterImage,
   RenderWarning,
   SkippedLayer,
@@ -98,6 +100,23 @@ export function rasterizeFrame(
   );
 }
 
+/**
+ * The layer's shutter samples as placements relative to its centre-frame placement, or `null` when
+ * it draws once: no blur, a matrix that cannot be inverted, or nothing that changes across the
+ * shutter (then the plain path keeps it byte-identical to an unblurred layer).
+ */
+function planMotion(layer: ResolvedLayer): PlannedMotionSample[] | null {
+  const motion = layer.motion;
+  if (motion === null) return null;
+  const inverse = invert(layer.matrix);
+  if (inverse === null) return null;
+  const still = motion.every(
+    (s) => s.opacity === layer.transform.opacity && s.matrix.every((v, i) => v === layer.matrix[i]),
+  );
+  if (still) return null;
+  return motion.map((s) => ({ delta: multiply(s.matrix, inverse), opacity: s.opacity }));
+}
+
 function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const { ck } = ctx;
   const reserve = (width: number, height: number) => {
@@ -120,6 +139,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       blendMode,
       mask: null,
       matte: null,
+      motion: planMotion(layer),
       ...(effects.length > 0 ? { effects } : {}),
     };
     switch (layer.type) {

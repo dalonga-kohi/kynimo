@@ -20,6 +20,7 @@ import {
   maxLevel,
   placement,
   precompUses,
+  samplePlacement,
 } from "./pipeline.js";
 
 /** Premultiplied RGBA, 0..1, rows top to bottom. */
@@ -95,17 +96,34 @@ function placed(layer: PlannedLayer, comp: FramePlan, nested: Nested): FloatImag
   for (let i = chain.length - 1; i >= 0; i--) {
     const current = chain[i] as PlannedLayer;
     const padding = effectPadding(current.effects ?? []);
-    const img = place(
-      source(current, nested, padding),
-      placement(current, padding),
-      comp.width,
-      comp.height,
-    );
+    const motion = current.motion ?? null;
+    // Charged up front (width × height per sample) so a huge blur fails before any work is done.
+    if (motion !== null)
+      chargeSamples(
+        nested,
+        current.id,
+        comp.width * comp.height * motion.length,
+        "motion blur samples or number of blurred layers",
+      );
+    const src = source(current, nested, padding);
+    let img: FloatImage;
+    if (motion === null) img = place(src, placement(current, padding), comp.width, comp.height);
+    else {
+      // One pass per shutter sample, summed (premultiplied, additive) with weight opacity / N.
+      img = blank(comp.width, comp.height);
+      for (const sample of motion) {
+        const one = place(src, samplePlacement(current, sample, padding), comp.width, comp.height);
+        const weight = sample.opacity / motion.length;
+        for (let i = 0; i < img.data.length; i++)
+          img.data[i] = (img.data[i] ?? 0) + (one.data[i] ?? 0) * weight;
+      }
+    }
     const matted = i === chain.length - 1 ? (end === "none" ? "none" : "empty") : "source";
     const mode = current.matte?.mode;
     for (let p = 0; p < img.data.length; p += 4) {
+      // A blurred layer's own opacity is already in its samples.
       const factor =
-        current.opacity *
+        (motion === null ? current.opacity : 1) *
         matteCoverage(matted === "none" ? undefined : mode, matted === "empty" ? null : below, p);
       for (let k = 0; k < 4; k++) img.data[p + k] = (img.data[p + k] ?? 0) * factor;
     }

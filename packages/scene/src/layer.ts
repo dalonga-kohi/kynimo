@@ -34,6 +34,18 @@ const timing = {
   startFrame: FrameSchema,
 };
 
+/**
+ * Transform motion blur (ADR-0053): the layer is drawn at `samples` placements spread over a
+ * shutter interval and averaged. `shutterAngle` is in degrees of a 360 degree frame (180 is half a
+ * frame), `shutterPhase` is the offset of the interval start from the frame, in the same degrees.
+ */
+export const MotionBlurSchema = z.strictObject({
+  shutterAngle: z.number().min(0).max(720).default(180),
+  shutterPhase: z.number().min(-360).max(360).default(-90),
+  samples: z.number().int().min(2).max(64).default(16),
+});
+export type MotionBlur = z.infer<typeof MotionBlurSchema>;
+
 /** Metadata the renderer ignores. */
 const EditorMetaSchema = z.strictObject({
   locked: z.boolean(),
@@ -76,6 +88,8 @@ const drawn = {
   masks: z.array(MaskSchema).max(MAX_MASKS),
   /** Absent means an empty stack, including in addLayer operations written for older versions. */
   effects: EffectStackSchema.default([]),
+  /** Transform motion blur, ADR-0053. `null` is off; absent means off, so older addLayer operations still validate. */
+  motionBlur: MotionBlurSchema.nullable().default(null),
 };
 
 export const ShapeLayerSchema = z.strictObject({
