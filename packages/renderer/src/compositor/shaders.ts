@@ -91,6 +91,7 @@ uint hashWords4(uint seed, uint a, uint b, uint c, uint d) {
   h ^= h >> 16u;
   return h;
 }
+// float(h) rounds to float32 on the GPU (the reference divides in float64), so hard thresholds (noise-dissolve feather 0, glitch band switch) may flip isolated pixels/rows within the ADR-0045 stepped tolerance.
 float hashUnit(uint h) { return float(h) / 4294967295.0; }
 `;
 

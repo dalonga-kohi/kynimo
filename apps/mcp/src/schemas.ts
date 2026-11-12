@@ -538,7 +538,7 @@ export const AddTransitionInput = z.object({
     .enum(["in", "out"])
     .optional()
     .describe(
-      "in reveals the layer over what is beneath (first frames); out lets it give way (last frames). Default in. Angles mean the on-screen direction the edge travels (out stores angle + 180, clockwise inverted).",
+      "in reveals the layer over what is beneath (first frames); out lets it give way (last frames). Default in. Angles mean the on-screen direction the edge travels; only when out is the first edge, it stores angle + 180 and inverts clockwise (a second edge keeps the existing angle/direction).",
     ),
   duration: DurationInput.optional().describe(
     "Token (fast, base, slow) or ms. Default base. Shrunk to fit the layer.",

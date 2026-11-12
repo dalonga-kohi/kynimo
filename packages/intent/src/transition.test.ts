@@ -136,6 +136,90 @@ describe("addTransition", () => {
     );
   });
 
+  it("says 'an adjustment layer'", () => {
+    const { width: _w, height: _h, color: _c, ...rest } = solid("adj");
+    const d = doc([{ ...rest, type: "adjustment", effects: [] }]);
+    expect(refusal(() => addTransition(d, { layer: sel("adj"), kind: "wipe" })).message).toContain(
+      "is an adjustment layer",
+    );
+  });
+
+  it("returns promptly on hostile angles, as an invalid params error", () => {
+    const d = doc([solid("a")]);
+    for (const kind of ["wipe", "push", "blinds"] as const)
+      for (const big of [1e300, 1e15, -1e300]) {
+        const byValue = refusal(() =>
+          addTransition(d, {
+            layer: sel("a"),
+            kind,
+            edge: "out",
+            params: { angle: { value: big } },
+          }),
+        );
+        expect(byValue.path.slice(0, 2)).toEqual(["params", "angle"]);
+        const byKeyframes = refusal(() =>
+          addTransition(d, {
+            layer: sel("a"),
+            kind,
+            edge: "out",
+            params: {
+              angle: { keyframes: [{ frame: 0, value: big, interpolation: { type: "hold" } }] },
+            },
+          }),
+        );
+        expect(byKeyframes.path.slice(0, 2)).toEqual(["params", "angle"]);
+      }
+  });
+
+  it("wraps a mirrored out angle back into range", () => {
+    const d = doc([solid("a")]);
+    const t = transitionOf(
+      applied(
+        d,
+        addTransition(d, {
+          layer: sel("a"),
+          kind: "wipe",
+          edge: "out",
+          params: { angle: { value: 3500 } },
+        }).ops,
+      ),
+      "a",
+    );
+    expect(t.angle).toEqual({ value: 3680 - 360 * 1 });
+  });
+
+  it("refuses a second edge that would overlap the first", () => {
+    const d = doc([solid("a", { inFrame: 0, outFrame: 30 })]);
+    const one = applied(
+      d,
+      addTransition(d, { layer: sel("a"), kind: "dissolve", duration: 600 }).ops,
+    );
+    const e = refusal(() =>
+      addTransition(one, { layer: sel("a"), kind: "dissolve", edge: "out", duration: 600 }),
+    );
+    expect(e.path).toEqual(["duration"]);
+    expect(e.message).toContain(
+      "the out edge (frames 11–29) would overlap the in edge (frames 0–18)",
+    );
+    expect(e.message).toContain("at most 10 frames");
+    const fits = addTransition(one, {
+      layer: sel("a"),
+      kind: "dissolve",
+      edge: "out",
+      duration: 300,
+    });
+    expect(fits.resolved.from_frame).toBeGreaterThan(18);
+    const tight = doc([solid("t", { inFrame: 0, outFrame: 4 })]);
+    const first = applied(
+      tight,
+      addTransition(tight, { layer: sel("t"), kind: "dissolve", duration: "slow" }).ops,
+    );
+    expect(
+      refusal(() => addTransition(first, { layer: sel("t"), kind: "dissolve", edge: "out" }))
+        .message,
+    ).toContain("too short for both edges");
+  });
+
   it("shrinks the duration to fit a short layer", () => {
     const d = doc([solid("a", { inFrame: 0, outFrame: 4 })]);
     const { resolved } = addTransition(d, { layer: sel("a"), kind: "dissolve", duration: "slow" });

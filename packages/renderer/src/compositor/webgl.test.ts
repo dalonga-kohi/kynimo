@@ -1564,6 +1564,38 @@ describe("WebGL2 compositor: built-in transitions", () => {
     }
   });
 
+  it("matches the reference for a transparent stand-in layer carrying push and zoom", async () => {
+    const standIn = (transition: ResolvedTransition): PlannedLayer =>
+      ({
+        id: "t",
+        type: "shape",
+        space: "composition",
+        x: 0,
+        y: 0,
+        opacity: 1,
+        blendMode: "normal",
+        mask: null,
+        matte: null,
+        raster: { width: 1, height: 1, pixels: new Uint8Array(4) },
+        transition,
+      }) as PlannedLayer;
+    const backdrop = await gpu.composite({
+      ...plan([solid("backdrop", gradient(TW, TH, 9))], { width: TW, height: TH }),
+    });
+    for (const transition of [
+      { kind: "push", progress: 0.5, angle: 30 },
+      { kind: "zoom", progress: 0.5, center: [70, 50], strength: 1 },
+    ] as ResolvedTransition[]) {
+      const p: FramePlan = {
+        ...plan([], { width: TW, height: TH }),
+        layers: [standIn(transition), solid("backdrop", gradient(TW, TH, 9))],
+      };
+      const { share } = await measure(p);
+      expect(share, transition.kind).toBeLessThanOrEqual(0.002);
+      expect((await gpu.composite(p)).pixels, transition.kind).not.toEqual(backdrop.pixels);
+    }
+  });
+
   it("matches a transition inside a nested precomp, at the nested size", async () => {
     const inner: FramePlan = {
       ...plan([], { width: 80, height: 60 }),

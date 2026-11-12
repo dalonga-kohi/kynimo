@@ -48,10 +48,11 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 /** Wraps an angle into the schema's ±3600 degree range without changing its direction. */
 function normaliseAngle(degrees: number): number {
-  let v = degrees;
-  while (v > MAX_TRANSITION_ANGLE) v -= 360;
-  while (v < -MAX_TRANSITION_ANGLE) v += 360;
-  return v;
+  if (degrees > MAX_TRANSITION_ANGLE)
+    return degrees - 360 * Math.ceil((degrees - MAX_TRANSITION_ANGLE) / 360);
+  if (degrees < -MAX_TRANSITION_ANGLE)
+    return degrees + 360 * Math.ceil((-MAX_TRANSITION_ANGLE - degrees) / 360);
+  return degrees;
 }
 
 /** A deterministic uint32 from the layer id: the engine's hash over its UTF-16 code units. */
@@ -162,7 +163,7 @@ export function addTransition(
   if (layer.type === "adjustment" || !("transition" in layer))
     throw new IntentError(
       ["layer"],
-      `'${layer.id}' is a ${layer.type} layer; transitions go on drawn layers other than adjustment layers`,
+      `'${layer.id}' is ${/^[aeiou]/.test(layer.type) ? "an" : "a"} ${layer.type} layer; transitions go on drawn layers other than adjustment layers`,
     );
 
   const edge = input.edge ?? "in";
@@ -211,20 +212,34 @@ export function addTransition(
       ...defaultFields(input.kind, composition.width, composition.height, layer.id),
       ...params,
     } as Record<string, unknown>;
-    const fields = edge === "out" ? mirrorForOut(input.kind, base) : base;
-    const parsed = TransitionSchema.safeParse(fields);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      throw new IntentError(
-        ["params", ...(issue?.path ?? []).map((p) => (typeof p === "symbol" ? String(p) : p))],
-        issue?.message ?? "invalid transition parameters",
-      );
-    }
-    transition = parsed.data;
+    // Validate before mirroring: mirroring only ever sees in-range numbers.
+    const first = parseTransition(base);
+    transition =
+      edge === "out"
+        ? parseTransition(mirrorForOut(input.kind, first as unknown as Record<string, unknown>))
+        : first;
   } else {
     const progress = existing.progress as Animatable<number>;
     const lo = from - layer.startFrame;
     const hi = to - layer.startFrame;
+    if ("keyframes" in progress) {
+      const other = otherEdgeFrames(progress.keyframes, edge);
+      if (other !== undefined) {
+        const [c, d] = [other[0] + layer.startFrame, other[1] + layer.startFrame];
+        if (from <= d && to >= c) {
+          const fit = edge === "out" ? layer.outFrame - 2 - d : c - 1 - layer.inFrame;
+          const otherName = edge === "out" ? "in" : "out";
+          throw new IntentError(
+            ["duration"],
+            `the ${edge} edge (frames ${from}–${to}) would overlap the ${otherName} edge (frames ${c}–${d}) on '${layer.id}'; ${
+              fit >= 1
+                ? `use a shorter duration (at most ${fit} frames)`
+                : "the layer is too short for both edges"
+            }`,
+          );
+        }
+      }
+    }
     const kept =
       "keyframes" in progress ? progress.keyframes.filter((k) => k.frame < lo || k.frame > hi) : [];
     const merged = [...kept, ...keyframes].sort((a, b) => a.frame - b.frame);
@@ -243,6 +258,35 @@ export function addTransition(
       easing,
     },
   };
+}
+
+function parseTransition(fields: Record<string, unknown>): Transition {
+  const parsed = TransitionSchema.safeParse(fields);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new IntentError(
+      ["params", ...(issue?.path ?? []).map((p) => (typeof p === "symbol" ? String(p) : p))],
+      issue?.message ?? "invalid transition parameters",
+    );
+  }
+  return parsed.data;
+}
+
+/** The layer-local frames [first, last] of the edge opposite to `edge`, if the progress track has one. */
+function otherEdgeFrames(
+  keyframes: Keyframe<number>[],
+  edge: "in" | "out",
+): [number, number] | undefined {
+  const n = keyframes.length;
+  if (n < 2) return undefined;
+  if (edge === "in") {
+    const a = keyframes[n - 2] as Keyframe<number>;
+    const b = keyframes[n - 1] as Keyframe<number>;
+    return a.value === 1 && b.value === 0 ? [a.frame, b.frame] : undefined;
+  }
+  const a = keyframes[0] as Keyframe<number>;
+  const b = keyframes[1] as Keyframe<number>;
+  return a.value === 0 && b.value === 1 ? [a.frame, b.frame] : undefined;
 }
 
 const alreadyHas = (id: string, kind: string) =>
