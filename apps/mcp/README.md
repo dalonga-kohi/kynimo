@@ -32,6 +32,8 @@ Audio uploads are analysed for a steady beat; `list_assets` shows `bpm` and `bea
 
 `add_effect` accepts a layer selector and a typed effect body, for example `{ "type": "gaussian-blur", "radius": { "value": 12 } }`. Use `dry_run: true` to preview its `setEffects` operation. Inspect the full parameter schema under `effects` in `get_layer_schema`, or use `apply_preset` with `blur-in` for a blur-to-sharp entrance.
 
+Motion blur (ADR-0053) is a layer field: `apply_ops` or `update_layer` with `set: { motionBlur: {} }` stores the defaults (shutter angle 180, phase -90, 16 samples), `null` turns it off. It blurs transform motion (position, scale, rotation, parents, behaviors), not animated contents, and cost grows with samples. `get_capabilities` lists its limits.
+
 Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `aurora`, ADR-0045): add one with `add_layer` (or `apply_ops` `addLayer`) and change it with the `setGenerator` operation; `get_layer_schema` with type `generator` lists the fields. Looks (`vignette`, `grain`, `chromatic-aberration`, `posterize`, `scanlines`) are effects, so they go through `add_effect`, usually on an adjustment layer. There is no separate generator tool. `get_capabilities` lists the generators and the limits of generators and looks.
 
 Use `list_components` or `kynimo://components` for built-in versions and prop descriptors. `add_component` validates props and writes a component layer pinned to `component_version` (latest if omitted). Missing props take their defaults. The layer starts at `in_frame` (default 0), with an exclusive `out_frame` (default composition duration). Use `dry_run: true` to preview the operation.
