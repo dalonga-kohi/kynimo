@@ -498,7 +498,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Update layer",
       description:
-        "Changes a layer's name, timing (inFrame, outFrame, startFrame) or render switches (hidden, solo).",
+        "Changes a layer's name, timing (inFrame, outFrame, startFrame), render switches (hidden, solo), or motion blur (`motionBlur`; null turns it off).",
       inputSchema: UpdateLayerInput,
       outputSchema: WriteOutput,
       annotations: WRITE,

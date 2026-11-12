@@ -215,6 +215,19 @@ describe("motion blur: planning", () => {
     ]).layers[0] as PlannedLayer;
     expect(l.motion).toBeNull();
   });
+
+  it("plans no motion when the inverse overflows", () => {
+    const l = frame1([
+      body({
+        transform: transform({
+          scale: prop([1e-309, 1e-309]),
+          position: { keyframes: [kf(0, [0, 0]), kf(10, [400, 0])] },
+        }),
+        motionBlur: blur,
+      }),
+    ]).layers[0] as PlannedLayer;
+    expect(l.motion).toBeNull();
+  });
 });
 
 describe("motion blur: composition-space rasters cover the shutter's reach", () => {
@@ -249,6 +262,11 @@ describe("motion blur: composition-space rasters cover the shutter's reach", () 
         { images: new ImageLibrary(ck), fonts },
       ),
     );
+
+  it("renders a fast layer in a 3840 px wide composition without exceeding the texture limit", () => {
+    const out = render(3840, 0, { shutterAngle: 360, shutterPhase: -180, samples: 4 });
+    expect(out.width).toBe(3840);
+  });
 
   it("draws what is off-screen at the centre frame but in view during the shutter", () => {
     const narrow = render(100, 0, blur);
@@ -300,6 +318,20 @@ describe("motionCropRect", () => {
       },
     ];
     expect(motionCropRect(100, 50, [3, 3], fast)).toEqual([-103, -3, 103, 103]);
+  });
+  it("never exceeds the texture limit, even for a wide composition and a fast layer", () => {
+    const fast = [
+      {
+        delta: [1, 0, 0, 1, 9000, 0] as [number, number, number, number, number, number],
+        opacity: 1,
+      },
+    ];
+    const [l, t, r, b] = motionCropRect(3840, 100, [0, 0], fast);
+    expect(r - l).toBeLessThanOrEqual(8192);
+    expect(b - t).toBeLessThanOrEqual(8192);
+    const wide = motionCropRect(3840, 100, [40, 0], fast);
+    expect(wide[2] - wide[0]).toBeLessThanOrEqual(8192);
+    expect(motionCropRect(8192, 100, [0, 0], fast)[2]).toBe(8192);
   });
   it("skips samples that cannot be inverted", () => {
     const singular = [
@@ -378,5 +410,54 @@ describe("motion blur: WebGL2 against the reference", () => {
       /layer 'huge' exceeds the frame budget of \d+ effect samples; reduce the motion blur samples or number of blurred layers/,
     );
     await compare(plan([moving()]));
+    // Blending was left off: a plain layer over a backdrop still matches the reference.
+    await compare(
+      plan([
+        layerSpace("a", flat(20, 20, [255, 0, 0, 128]), { matrix: [1, 0, 0, 1, 40, 0] }),
+        layerSpace("bg", flat(100, 20, [0, 40, 80, 255])),
+      ]),
+    );
   }, 60_000);
+
+  describe("mipmapped sources (scaled down) under additive blending", () => {
+    const solid80 = flat(80, 80, [128, 64, 32, 255]);
+    const sweep80 = (scaleIn: boolean): PlannedMotionSample[] =>
+      Array.from({ length: 16 }, (_, i) => {
+        const t = (i + 0.5) / 16;
+        const s = scaleIn ? 0.2 + 0.8 * t : 1;
+        const shift = scaleIn ? 0 : 12 * (t - 0.5);
+        return {
+          delta: [s, 0, 0, s, 50 * (1 - s) + shift, 50 * (1 - s)],
+          opacity: 1,
+        };
+      });
+    const cases: [string, number, boolean][] = [
+      ["1.0", 1, false],
+      ["0.6", 0.6, false],
+      ["0.3", 0.3, false],
+      ["a scale-in across the shutter at 0.6", 0.6, true],
+    ];
+    for (const [name, scale, scaleIn] of cases)
+      it(`matches the reference at scale ${name}, twice on one compositor`, async () => {
+        const o = 10 + 40 * (1 - scale);
+        const p = plan(
+          [
+            layerSpace("m", solid80, {
+              matrix: [scale, 0, 0, scale, o, o],
+              motion: sweep80(scaleIn),
+            }),
+          ],
+          100,
+          100,
+        );
+        const ref = compositeReference(p);
+        let worst = 0;
+        for (let round = 0; round < 2; round++) {
+          const out = await gpu.composite(p);
+          for (let i = 0; i < ref.pixels.length; i++)
+            worst = Math.max(worst, Math.abs((ref.pixels[i] ?? 0) - (out.pixels[i] ?? 0)));
+        }
+        expect(worst).toBeLessThanOrEqual(2);
+      }, 60_000);
+  });
 });

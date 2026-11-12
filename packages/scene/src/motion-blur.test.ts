@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { composition, issues, nullLayer, type Obj, project, visual } from "./fixtures.test-util.js";
+import {
+  common,
+  composition,
+  issues,
+  nullLayer,
+  type Obj,
+  project,
+  prop,
+  visual,
+} from "./fixtures.test-util.js";
 import {
   applyOps,
   LayerPatchSchema,
@@ -87,6 +96,53 @@ describe("layer motion blur", () => {
     expect(found).toContainEqual({
       path: "compositions.0.layers.0.motionBlur",
       message: "adjustment layers have no motion blur; set motionBlur to null",
+    });
+  });
+
+  describe("updateLayer on layers without motion blur", () => {
+    const withTypes = () =>
+      ProjectSchema.parse(
+        project({
+          assets: [
+            {
+              id: "m",
+              type: "audio",
+              name: "M",
+              uri: "assets/u.bin",
+              sha256: "a".repeat(64),
+              durationMs: 1000,
+            },
+          ],
+          compositions: [
+            composition("main", [
+              solid("s"),
+              nullLayer("n"),
+              { ...visual("a"), type: "adjustment", effects: [], motionBlur: null },
+              { ...common("snd"), type: "audio", assetId: "m", volume: prop(1) },
+            ]),
+          ],
+        }),
+      );
+    const set = (layer: string, motionBlur: unknown) =>
+      applyOps(withTypes(), [{ op: "updateLayer", layer, set: { motionBlur } } as never]);
+    const fails = (layer: string, motionBlur: unknown, message: string) => {
+      const r = set(layer, motionBlur);
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect(r.errors).toContainEqual({ path: ["ops", 0, "set", "motionBlur"], message });
+    };
+
+    it("fails on a null layer", () =>
+      fails(
+        "n",
+        {},
+        "layer 'n' is a null layer and has no motion blur; set motionBlur on its drawn children (a null's motion still blurs them)",
+      ));
+    it("fails on an audio layer", () =>
+      fails("snd", {}, "layer 'snd' is an audio layer and has no motion blur"));
+    it("fails on an adjustment layer unless null", () => {
+      fails("a", {}, "adjustment layers have no motion blur; set motionBlur to null");
+      expect(set("a", null).ok).toBe(true);
     });
   });
 });

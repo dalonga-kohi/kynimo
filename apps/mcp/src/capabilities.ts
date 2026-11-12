@@ -110,7 +110,7 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
 const MOTION_BLUR_SUPPORT: { transform: Support } = {
   transform: {
     status: "renders",
-    note: "set with updateLayer motionBlur on drawn layers; blurs position, scale, rotation, parents and behaviors; animated contents (text, shapes, nested layers) are drawn at the center frame; cost grows with samples",
+    note: "set with updateLayer motionBlur on drawn layers; blurs position, scale, rotation, parents and behaviors; animated contents (text, shapes, nested layers) are drawn at the center frame; each blurred layer costs composition size x samples of the 500M-sample frame budget (about 15 layers at 16 samples, 1080p)",
   },
 };
 

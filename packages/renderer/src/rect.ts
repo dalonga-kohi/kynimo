@@ -1,4 +1,5 @@
 import { type Affine, invert } from "@kynimo/engine";
+import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import type { PlannedMotionSample } from "./raster.js";
 
 /** `[left, top, right, bottom]`. */
@@ -72,10 +73,19 @@ export function motionCropRect(
     const box = transformRect(inverse, base);
     if (box !== null) reach = union(reach, box);
   }
+  // The margin is also clamped so the crop never exceeds the texture limit.
+  const marginX = Math.max(
+    0,
+    Math.min(width, Math.floor((MAX_COMPOSITION_SIZE - (width + 2 * padX)) / 2)),
+  );
+  const marginY = Math.max(
+    0,
+    Math.min(height, Math.floor((MAX_COMPOSITION_SIZE - (height + 2 * padY)) / 2)),
+  );
   return [
-    Math.max(Math.floor(reach[0]), base[0] - width),
-    Math.max(Math.floor(reach[1]), base[1] - height),
-    Math.min(Math.ceil(reach[2]), base[2] + width),
-    Math.min(Math.ceil(reach[3]), base[3] + height),
+    Math.max(Math.floor(reach[0]), base[0] - marginX),
+    Math.max(Math.floor(reach[1]), base[1] - marginY),
+    Math.min(Math.ceil(reach[2]), base[2] + marginX),
+    Math.min(Math.ceil(reach[3]), base[3] + marginY),
   ];
 }

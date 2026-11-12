@@ -109,7 +109,7 @@ function planMotion(layer: ResolvedLayer): PlannedMotionSample[] | null {
   const motion = layer.motion;
   if (motion === null) return null;
   const inverse = invert(layer.matrix);
-  if (inverse === null) return null;
+  if (inverse === null || !inverse.every(Number.isFinite)) return null;
   const still = motion.every(
     (s) => s.opacity === layer.transform.opacity && s.matrix.every((v, i) => v === layer.matrix[i]),
   );

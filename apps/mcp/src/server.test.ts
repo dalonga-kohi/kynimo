@@ -365,6 +365,40 @@ describe("MCP server", () => {
     });
   });
 
+  it("rejects motion blur on null layers through update_layer and apply_ops, leaving the version alone", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "n",
+      layer: { type: "null", name: "n" },
+    });
+    const viaApply = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      ops: [{ op: "updateLayer", layer: "n", set: { motionBlur: {} } }],
+    });
+    expect(viaApply).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(viaApply.errors)).toContain('"ops",0,"set","motionBlur"');
+    expect(JSON.stringify(viaApply.errors)).toContain("is a null layer and has no motion blur");
+    const viaTool = await callError(client, "update_layer", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w3",
+      layer: "n",
+      set: { motionBlur: {} },
+    });
+    expect(viaTool).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(viaTool.errors)).toContain("has no motion blur");
+    expect((await call(client, "get_scene", { project_id })).version).toBe(2);
+  });
+
   it("validates layer selectors in apply_ops on the server, though the listing declares them loosely", async () => {
     const { id: project_id } = await call(client, "create_project", {
       name: "P",
