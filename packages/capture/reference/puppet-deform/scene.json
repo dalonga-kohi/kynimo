@@ -1,0 +1,1228 @@
+{
+  "formatVersion": 15,
+  "name": "Reference: puppet deform",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "Puppet pins",
+      "width": 560,
+      "height": 320,
+      "fps": {
+        "num": 24,
+        "den": 1
+      },
+      "durationFrames": 30,
+      "background": "#0b1322",
+      "layers": [
+        {
+          "id": "ribbon",
+          "name": "Cyan ribbon",
+          "type": "shape",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [145, 54]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [
+            {
+              "id": "ribbon-shadow",
+              "type": "drop-shadow",
+              "radius": {
+                "value": 5
+              },
+              "offset": {
+                "value": [2, 5]
+              },
+              "color": {
+                "value": "#030812"
+              },
+              "opacity": {
+                "value": 0.7
+              }
+            }
+          ],
+          "motionBlur": null,
+          "deform": {
+            "density": 24,
+            "iterations": 10,
+            "pins": [
+              {
+                "id": "base-upper",
+                "rest": [12, 10],
+                "position": {
+                  "value": [12, 10]
+                }
+              },
+              {
+                "id": "base-lower",
+                "rest": [12, 46],
+                "position": {
+                  "value": [12, 46]
+                }
+              },
+              {
+                "id": "middle",
+                "rest": [144, 28],
+                "position": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [144, 28],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 12,
+                      "value": [142, 17],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": [144, 40],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "tip-upper",
+                "rest": [254, 15],
+                "position": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [254, 15],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 12,
+                      "value": [249, -26],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": [252, 56],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "tip-lower",
+                "rest": [254, 42],
+                "position": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [254, 42],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 12,
+                      "value": [249, 1],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": [252, 83],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "contents": [
+            {
+              "type": "group",
+              "id": "ribbon-bands",
+              "name": "ribbon-bands",
+              "transform": {
+                "anchorPoint": {
+                  "value": [0, 0]
+                },
+                "position": {
+                  "value": [0, 0]
+                },
+                "scale": {
+                  "value": [1, 1]
+                },
+                "rotation": {
+                  "value": 0
+                },
+                "skew": {
+                  "value": 0
+                },
+                "opacity": {
+                  "value": 1
+                }
+              },
+              "items": [
+                {
+                  "type": "rect",
+                  "id": "band-0",
+                  "name": "band-0",
+                  "position": {
+                    "value": [34, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-1",
+                  "name": "band-1",
+                  "position": {
+                    "value": [63, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-2",
+                  "name": "band-2",
+                  "position": {
+                    "value": [92, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-3",
+                  "name": "band-3",
+                  "position": {
+                    "value": [121, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-4",
+                  "name": "band-4",
+                  "position": {
+                    "value": [150, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-5",
+                  "name": "band-5",
+                  "position": {
+                    "value": [179, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-6",
+                  "name": "band-6",
+                  "position": {
+                    "value": [208, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "band-7",
+                  "name": "band-7",
+                  "position": {
+                    "value": [237, 28]
+                  },
+                  "size": {
+                    "value": [11, 34]
+                  },
+                  "cornerRadius": {
+                    "value": 5.5
+                  }
+                },
+                {
+                  "type": "fill",
+                  "id": "bands-fill",
+                  "name": "bands-fill",
+                  "paint": {
+                    "type": "solid",
+                    "color": {
+                      "value": "#b8fff1"
+                    }
+                  },
+                  "opacity": {
+                    "value": 1
+                  },
+                  "rule": "nonzero"
+                }
+              ]
+            },
+            {
+              "type": "group",
+              "id": "ribbon-shell",
+              "name": "ribbon-shell",
+              "transform": {
+                "anchorPoint": {
+                  "value": [0, 0]
+                },
+                "position": {
+                  "value": [0, 0]
+                },
+                "scale": {
+                  "value": [1, 1]
+                },
+                "rotation": {
+                  "value": 0
+                },
+                "skew": {
+                  "value": 0
+                },
+                "opacity": {
+                  "value": 1
+                }
+              },
+              "items": [
+                {
+                  "type": "rect",
+                  "id": "rounded-ribbon",
+                  "name": "rounded-ribbon",
+                  "position": {
+                    "value": [135, 28]
+                  },
+                  "size": {
+                    "value": [270, 56]
+                  },
+                  "cornerRadius": {
+                    "value": 24
+                  }
+                },
+                {
+                  "type": "fill",
+                  "id": "ribbon-gradient",
+                  "name": "ribbon-gradient",
+                  "paint": {
+                    "type": "linear-gradient",
+                    "start": {
+                      "value": [0, 0]
+                    },
+                    "end": {
+                      "value": [0, 56]
+                    },
+                    "stops": {
+                      "value": [
+                        {
+                          "offset": 0,
+                          "color": "#45d9c6"
+                        },
+                        {
+                          "offset": 1,
+                          "color": "#157f9c"
+                        }
+                      ]
+                    }
+                  },
+                  "opacity": {
+                    "value": 1
+                  },
+                  "rule": "nonzero"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "projected-card",
+          "name": "Projected pattern card",
+          "type": "precomp",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [115, 32]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [280, 232],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 12,
+                  "value": [277, 229],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 24,
+                  "value": [284, 232],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 20,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 12,
+                  "value": 24,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 24,
+                  "value": 19,
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.33,
+                    "y1": 0,
+                    "x2": 0.67,
+                    "y2": 1
+                  }
+                }
+              ]
+            }
+          },
+          "behaviors": [],
+          "threeD": true,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": {
+            "shutterAngle": 180,
+            "shutterPhase": -90,
+            "samples": 8
+          },
+          "deform": {
+            "density": 18,
+            "iterations": 10,
+            "pins": [
+              {
+                "id": "card-base-upper",
+                "rest": [5, 7],
+                "position": {
+                  "value": [5, 7]
+                }
+              },
+              {
+                "id": "card-base-lower",
+                "rest": [5, 57],
+                "position": {
+                  "value": [5, 57]
+                }
+              },
+              {
+                "id": "card-tip-upper",
+                "rest": [224, 7],
+                "position": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [224, 7],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 12,
+                      "value": [221, 45],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": [223, -31],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "card-tip-lower",
+                "rest": [224, 57],
+                "position": {
+                  "keyframes": [
+                    {
+                      "frame": 0,
+                      "value": [224, 57],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 12,
+                      "value": [221, 95],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    },
+                    {
+                      "frame": 24,
+                      "value": [223, 19],
+                      "interpolation": {
+                        "type": "bezier",
+                        "x1": 0.33,
+                        "y1": 0,
+                        "x2": 0.67,
+                        "y2": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "compositionId": "card-pattern"
+        },
+        {
+          "id": "guides",
+          "name": "Rest pose guide lines",
+          "type": "shape",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "deform": null,
+          "contents": [
+            {
+              "type": "rect",
+              "id": "ribbon-guide",
+              "name": "ribbon-guide",
+              "position": {
+                "value": [280, 82]
+              },
+              "size": {
+                "value": [356, 1]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "type": "rect",
+              "id": "card-guide",
+              "name": "card-guide",
+              "position": {
+                "value": [280, 232]
+              },
+              "size": {
+                "value": [356, 1]
+              },
+              "cornerRadius": {
+                "value": 0
+              }
+            },
+            {
+              "type": "rect",
+              "id": "top-left-tick",
+              "name": "top-left-tick",
+              "position": {
+                "value": [102.5, 82]
+              },
+              "size": {
+                "value": [1, 11]
+              },
+              "cornerRadius": {
+                "value": 0.5
+              }
+            },
+            {
+              "type": "rect",
+              "id": "top-right-tick",
+              "name": "top-right-tick",
+              "position": {
+                "value": [457.5, 82]
+              },
+              "size": {
+                "value": [1, 11]
+              },
+              "cornerRadius": {
+                "value": 0.5
+              }
+            },
+            {
+              "type": "rect",
+              "id": "bottom-left-tick",
+              "name": "bottom-left-tick",
+              "position": {
+                "value": [102.5, 232]
+              },
+              "size": {
+                "value": [1, 11]
+              },
+              "cornerRadius": {
+                "value": 0.5
+              }
+            },
+            {
+              "type": "rect",
+              "id": "bottom-right-tick",
+              "name": "bottom-right-tick",
+              "position": {
+                "value": [457.5, 232]
+              },
+              "size": {
+                "value": [1, 11]
+              },
+              "cornerRadius": {
+                "value": 0.5
+              }
+            },
+            {
+              "type": "fill",
+              "id": "guide-color",
+              "name": "guide-color",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#28374e"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        }
+      ],
+      "markers": []
+    },
+    {
+      "id": "card-pattern",
+      "name": "Card pattern",
+      "width": 230,
+      "height": 64,
+      "fps": {
+        "num": 24,
+        "den": 1
+      },
+      "durationFrames": 30,
+      "background": "#4f3389",
+      "layers": [
+        {
+          "id": "pattern-face",
+          "name": "Purple and amber pattern",
+          "type": "shape",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
+            }
+          },
+          "behaviors": [],
+          "threeD": false,
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "motionBlur": null,
+          "deform": null,
+          "contents": [
+            {
+              "type": "group",
+              "id": "gold-bars",
+              "name": "gold-bars",
+              "transform": {
+                "anchorPoint": {
+                  "value": [0, 32]
+                },
+                "position": {
+                  "value": [0, 32]
+                },
+                "scale": {
+                  "value": [1, 1]
+                },
+                "rotation": {
+                  "value": 0
+                },
+                "skew": {
+                  "value": -18
+                },
+                "opacity": {
+                  "value": 1
+                }
+              },
+              "items": [
+                {
+                  "type": "rect",
+                  "id": "bar-0",
+                  "name": "bar-0",
+                  "position": {
+                    "value": [29, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-1",
+                  "name": "bar-1",
+                  "position": {
+                    "value": [54, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-2",
+                  "name": "bar-2",
+                  "position": {
+                    "value": [79, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-3",
+                  "name": "bar-3",
+                  "position": {
+                    "value": [104, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-4",
+                  "name": "bar-4",
+                  "position": {
+                    "value": [129, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-5",
+                  "name": "bar-5",
+                  "position": {
+                    "value": [154, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-6",
+                  "name": "bar-6",
+                  "position": {
+                    "value": [179, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "bar-7",
+                  "name": "bar-7",
+                  "position": {
+                    "value": [204, 32]
+                  },
+                  "size": {
+                    "value": [12, 33]
+                  },
+                  "cornerRadius": {
+                    "value": 2
+                  }
+                },
+                {
+                  "type": "fill",
+                  "id": "amber",
+                  "name": "amber",
+                  "paint": {
+                    "type": "linear-gradient",
+                    "start": {
+                      "value": [0, 16]
+                    },
+                    "end": {
+                      "value": [0, 48]
+                    },
+                    "stops": {
+                      "value": [
+                        {
+                          "offset": 0,
+                          "color": "#ffe3a1"
+                        },
+                        {
+                          "offset": 1,
+                          "color": "#f3a645"
+                        }
+                      ]
+                    }
+                  },
+                  "opacity": {
+                    "value": 1
+                  },
+                  "rule": "nonzero"
+                }
+              ]
+            },
+            {
+              "type": "group",
+              "id": "inner-frame",
+              "name": "inner-frame",
+              "transform": {
+                "anchorPoint": {
+                  "value": [0, 0]
+                },
+                "position": {
+                  "value": [0, 0]
+                },
+                "scale": {
+                  "value": [1, 1]
+                },
+                "rotation": {
+                  "value": 0
+                },
+                "skew": {
+                  "value": 0
+                },
+                "opacity": {
+                  "value": 1
+                }
+              },
+              "items": [
+                {
+                  "type": "rect",
+                  "id": "upper-rail",
+                  "name": "upper-rail",
+                  "position": {
+                    "value": [115, 8]
+                  },
+                  "size": {
+                    "value": [214, 2]
+                  },
+                  "cornerRadius": {
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "rect",
+                  "id": "lower-rail",
+                  "name": "lower-rail",
+                  "position": {
+                    "value": [115, 56]
+                  },
+                  "size": {
+                    "value": [214, 2]
+                  },
+                  "cornerRadius": {
+                    "value": 1
+                  }
+                },
+                {
+                  "type": "fill",
+                  "id": "rail-color",
+                  "name": "rail-color",
+                  "paint": {
+                    "type": "solid",
+                    "color": {
+                      "value": "#b891e9"
+                    }
+                  },
+                  "opacity": {
+                    "value": 1
+                  },
+                  "rule": "nonzero"
+                }
+              ]
+            },
+            {
+              "type": "group",
+              "id": "violet-field",
+              "name": "violet-field",
+              "transform": {
+                "anchorPoint": {
+                  "value": [0, 0]
+                },
+                "position": {
+                  "value": [0, 0]
+                },
+                "scale": {
+                  "value": [1, 1]
+                },
+                "rotation": {
+                  "value": 0
+                },
+                "skew": {
+                  "value": 0
+                },
+                "opacity": {
+                  "value": 1
+                }
+              },
+              "items": [
+                {
+                  "type": "rect",
+                  "id": "background-field",
+                  "name": "background-field",
+                  "position": {
+                    "value": [115, 32]
+                  },
+                  "size": {
+                    "value": [230, 64]
+                  },
+                  "cornerRadius": {
+                    "value": 0
+                  }
+                },
+                {
+                  "type": "fill",
+                  "id": "violet-gradient",
+                  "name": "violet-gradient",
+                  "paint": {
+                    "type": "linear-gradient",
+                    "start": {
+                      "value": [0, 0]
+                    },
+                    "end": {
+                      "value": [0, 64]
+                    },
+                    "stops": {
+                      "value": [
+                        {
+                          "offset": 0,
+                          "color": "#6c4aab"
+                        },
+                        {
+                          "offset": 1,
+                          "color": "#3a256f"
+                        }
+                      ]
+                    }
+                  },
+                  "opacity": {
+                    "value": 1
+                  },
+                  "rule": "nonzero"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "markers": []
+    }
+  ]
+}
