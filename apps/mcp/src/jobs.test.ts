@@ -85,6 +85,7 @@ describe("JobQueue", () => {
       },
     });
     await tick();
+    expect(ctx.id).toBe(job.id);
     ctx.progress({ frames_done: 4 });
     ctx.progress({ phase: "encoding" });
     expect(q.get("a", job.id)?.progress).toEqual({

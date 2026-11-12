@@ -41,6 +41,8 @@ import {
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
+import { EXPORT_LIMITS } from "./export.js";
+import { JOB_LIMITS } from "./jobs.js";
 import { RENDER_LIMITS } from "./render.js";
 import { SCRIPT_CONCURRENCY } from "./service.js";
 
@@ -97,7 +99,6 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   catalogs: unavailable(
     "the token catalog arrives in M5, the component and shader catalogs in M6; the preset catalog is the resource kynimo://presets (tool list_presets)",
   ),
-  export: unavailable("MP4, WebM and GIF export and preview clips arrive in M7"),
   keyframed_text: unavailable(
     "text content is constant; keyframed source text is planned after the beta",
   ),
@@ -163,6 +164,21 @@ export function capabilityManifest(server: { name: string; version: string }) {
       tools: ["render_frames", "render_contact_sheet"],
       limits: RENDER_LIMITS,
       note: "requests over a limit are rejected with values that fit, never downscaled silently; every result lists skipped layers and warnings",
+    },
+    export: {
+      tools: ["export", "render_preview_clip", "get_export_status", "cancel_export"],
+      formats: {
+        mp4: { video: "H.264 (yuv420p, CRF 18)", audio: "AAC 192 kb/s", transparency: false },
+        webm: { video: "VP9 (CRF 30)", audio: "Opus 128 kb/s", transparency: true },
+        gif: { video: "256-color palette", audio: null, transparency: false },
+      },
+      limits: EXPORT_LIMITS,
+      jobs: {
+        concurrency: JOB_LIMITS.concurrency,
+        max_active_per_account: JOB_LIMITS.maxActivePerAccount,
+        retention_hours: JOB_LIMITS.retentionMs / 3_600_000,
+      },
+      note: "jobs run in the server process: a restart loses queued and running jobs and download links; audio layers inside precomps are not mixed yet (reported)",
     },
     scripts: {
       tool: "run_script",

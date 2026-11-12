@@ -1,4 +1,6 @@
+import { createReadStream } from "node:fs";
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
+import { basename } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
@@ -12,6 +14,7 @@ import {
   type Principal,
   resourceMetadata,
 } from "./auth.js";
+import { EXPORT_CONTENT_TYPES, type ExportFiles } from "./export-files.js";
 import { LOCAL_ACCOUNT } from "./store.js";
 
 /** Who a request acts for: whose projects it sees, and whose undo stack and keys it uses. */
@@ -34,6 +37,8 @@ export interface HttpOptions {
    * refused (DNS rebinding); requests without one (server-side clients) are unaffected.
    */
   allowedOrigins: readonly string[];
+  /** Finished exports; when set, `GET /exports/<token>` downloads one. */
+  exports?: ExportFiles;
   /** Largest request body. Default MAX_BODY_BYTES. */
   maxBodyBytes?: number;
   /** Where unexpected errors are reported; never given tokens or bodies. */
@@ -99,6 +104,39 @@ const rpcError = (code: number, message: string) => ({
   id: null,
 });
 
+const EXPORT_PATH = /^\/exports\/([A-Za-z0-9_-]{43})$/;
+
+/**
+ * Serves a finished export. No auth: the 256-bit random token in the path is the capability
+ * (like a signed URL), and it expires with the file. A file removed underneath answers 404.
+ */
+function serveExport(files: ExportFiles, token: string, req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== "GET" && req.method !== "HEAD")
+    return send(res, 405, { error: "method not allowed" }, { allow: "GET, HEAD" });
+  const saved = files.lookup(token);
+  if (saved === undefined) return send(res, 404, { error: "not found" });
+  const stream = createReadStream(saved.file);
+  stream.once("error", () => {
+    if (!res.headersSent) send(res, 404, { error: "not found" });
+    else res.destroy();
+  });
+  stream.once("open", () => {
+    res.writeHead(200, {
+      "content-type": EXPORT_CONTENT_TYPES[saved.format],
+      "content-length": String(saved.bytes),
+      "content-disposition": `attachment; filename="kynimo-${basename(saved.file)}"`,
+      "cache-control": "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+    });
+    if (req.method === "HEAD") {
+      stream.destroy();
+      return void res.end();
+    }
+    stream.pipe(res);
+    res.once("close", () => stream.destroy());
+  });
+}
+
 /**
  * The remote server's request handler (ADR-0033): stateless Streamable HTTP, so any process can
  * serve any request. Every POST to `path` is authenticated, gets its own MCP server for the
@@ -130,6 +168,9 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
         "cache-control": "public, max-age=3600",
       });
     }
+    const download = options.exports && EXPORT_PATH.exec(url.pathname);
+    if (options.exports && download?.[1] !== undefined)
+      return serveExport(options.exports, download[1], req, res);
     if (url.pathname !== options.path) return send(res, 404, { error: "not found" });
 
     const origin = req.headers.origin;

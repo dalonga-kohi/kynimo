@@ -57,6 +57,8 @@ export class JobQueueError extends Error {
 }
 
 export interface JobContext {
+  /** The job's id, e.g. to name its output. */
+  readonly id: string;
   readonly signal: AbortSignal;
   /** Merges fields into the job's progress; ignored once the job has finished. */
   progress(p: Partial<JobProgress>): void;
@@ -259,6 +261,7 @@ export class JobQueue<R> {
     record.startedAt = this.now();
     record.progress.phase = "rendering";
     const ctx: JobContext = {
+      id: record.id,
       signal: entry.controller.signal,
       progress: (p) => {
         if (record.state === "running") Object.assign(record.progress, p);

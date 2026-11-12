@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { mkdtemp } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { type AuthConfig, discoverJwksUri, isLoopback, remoteKeys } from "./auth.js";
@@ -11,6 +13,7 @@ import {
   S3BlobStore,
   s3ConfigFromEnv,
 } from "./blobs.js";
+import { ExportFiles } from "./export-files.js";
 import { createHttpHandler, remoteEnv } from "./http.js";
 import { Ffmpeg } from "./media.js";
 import { CaptureRenderer } from "./render.js";
@@ -48,7 +51,11 @@ Environment:
                         with Postgres.
   KYNIMO_FFMPEG, KYNIMO_FFPROBE
                         FFmpeg binaries for video and audio uploads (default: ffmpeg and
-                        ffprobe on PATH). Without them those uploads are off.`;
+                        ffprobe on PATH). Without them those uploads are off.
+
+Exports (MP4, WebM, GIF; tools export and render_preview_clip) are kept for 24 hours in
+<dir>/exports with --dir, otherwise in a temporary folder. Over HTTP, results carry a
+download link (GET /exports/<token>); over stdio, the file's path. Exports need FFmpeg.`;
 
 const { values } = parseArgs({
   options: {
@@ -150,8 +157,19 @@ if (values.help) {
     : "video upload off: no FFmpeg";
   // Chromium starts on the first render, not here.
   const renderer = new CaptureRenderer();
+  const exportDir = values.dir
+    ? resolve(values.dir, "exports")
+    : await mkdtemp(join(tmpdir(), "kynimo-exports-")).catch(fail);
+  const exportFiles = await ExportFiles.open(exportDir).catch(fail);
+  // The download links' origin: set once the server is listening (--no-auth) or from the public URL.
+  let downloadOrigin: string | undefined;
   const runtime = new ServiceRuntime({
     renderer,
+    exportFiles,
+    localExportPaths: !values.http,
+    ...(values.http
+      ? { downloadUrl: (token: string) => `${downloadOrigin}/exports/${token}` }
+      : {}),
     ...(hasMedia ? { media } : {}),
     ...(blobs === undefined
       ? {
@@ -163,12 +181,13 @@ if (values.help) {
   let stopHttp: () => Promise<void> = async () => undefined;
   const release = () => {
     void stopHttp()
+      .then(() => runtime.close())
       .then(() => Promise.allSettled([renderer.close(), close()]))
       .finally(() => process.exit(0));
   };
   process.once("SIGINT", release);
   process.once("SIGTERM", release);
-  const ready = `${where}; ${assetsWhere}; ${mediaWhere}`;
+  const ready = `${where}; ${assetsWhere}; ${mediaWhere}; exports in ${exportDir}`;
 
   if (!values.http) {
     process.stdin.once("end", release);
@@ -193,6 +212,7 @@ if (values.help) {
       path,
       auth,
       allowedOrigins: remote?.allowedOrigins ?? [],
+      exports: exportFiles,
       serve: (caller) =>
         createServer(
           new KynimoService(
@@ -215,6 +235,10 @@ if (values.help) {
       http.listen(port, values.host, () => r());
     }).catch(fail);
     const address = http.address();
+    // OAuth: links are on the public origin; otherwise on the address the server bound.
+    downloadOrigin = remote
+      ? remote.resource.origin
+      : `http://${values.host.includes(":") ? `[${values.host}]` : values.host}:${typeof address === "object" && address ? address.port : port}`;
     const at = typeof address === "object" && address ? `${values.host}:${address.port}` : "";
     const mode = auth ? `OAuth from ${auth.issuer}` : "no auth: local account";
     process.stderr.write(`kynimo-mcp ready on http://${at}${path} (${mode}; ${ready})\n`);

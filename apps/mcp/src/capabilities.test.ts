@@ -13,6 +13,8 @@ import {
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { describe, expect, it } from "vitest";
 import { capabilityManifest } from "./capabilities.js";
+import { EXPORT_LIMITS } from "./export.js";
+import { JOB_LIMITS } from "./jobs.js";
 import { SCRIPT_CONCURRENCY } from "./service.js";
 
 const manifest = capabilityManifest({ name: "kynimo", version: "test" });
@@ -62,6 +64,29 @@ describe("capability manifest", () => {
     });
     expect(manifest.resources.sdk).toBe("kynimo://sdk");
     expect(manifest.unavailable).not.toHaveProperty("scripts");
+  });
+
+  it("declares the export tools, formats, limits and job limits, and drops export from unavailable", () => {
+    expect(manifest.export.tools).toEqual([
+      "export",
+      "render_preview_clip",
+      "get_export_status",
+      "cancel_export",
+    ]);
+    expect(Object.keys(manifest.export.formats)).toEqual(["mp4", "webm", "gif"]);
+    expect(manifest.export.formats.webm.transparency).toBe(true);
+    expect(manifest.export.formats.gif.audio).toBeNull();
+    expect(manifest.export.limits).toEqual(EXPORT_LIMITS);
+    expect(manifest.export.jobs).toEqual({
+      concurrency: JOB_LIMITS.concurrency,
+      max_active_per_account: JOB_LIMITS.maxActivePerAccount,
+      retention_hours: 24,
+    });
+    expect(manifest.unavailable).not.toHaveProperty("export");
+    const audio = manifest.layer_types.audio;
+    expect(audio.status === "accepted" && audio.reason).toContain(
+      "mixed into mp4 and webm exports",
+    );
   });
 
   it("declares SVG import as available and lists what it does not carry", () => {
@@ -140,6 +165,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(9_000);
+    expect(JSON.stringify(manifest).length).toBeLessThan(10_000); // 9_000 before the export block (ADR-0048)
   });
 });

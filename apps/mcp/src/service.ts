@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
 import { createComponentHost } from "@kynimo/components";
 import { evaluateFrame, type ResolvedComposition, type ResolvedLayer } from "@kynimo/engine";
@@ -36,7 +36,22 @@ import {
 import { type ExpandError, expandScript, type ScriptLimits } from "@kynimo/script";
 import type { z } from "zod";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
+import {
+  type CachedExport,
+  clipLabel,
+  durationError,
+  EXPORT_LIMITS,
+  type ExportDeps,
+  type ExportKind,
+  type ExportPlan,
+  type ExportResult,
+  type JobReply,
+  runExport,
+  sizeLimits,
+} from "./export.js";
+import type { ExportFiles, ExportFormat, SavedExport } from "./export-files.js";
 import { fingerprint } from "./hash.js";
+import { type JobError, JobQueue, JobQueueError, type JobRecord } from "./jobs.js";
 import { MediaError, type MediaTools, type Rational } from "./media.js";
 import { describeMotion, type MotionDescription } from "./motion.js";
 import {
@@ -80,6 +95,7 @@ export class ToolError extends Error {
       | "key_reused"
       | "key_expired"
       | "render_failed"
+      | "busy"
       | "unavailable",
     message: string,
     readonly errors: OpError[] = [],
@@ -332,6 +348,24 @@ export interface ServiceOptions {
   maxRenderAssetBytes?: number;
   /** Overrides of SCRIPT_LIMITS, for tests. */
   scriptLimits?: Partial<ScriptLimits>;
+  /** Where finished exports are kept; without it export and preview answer `unavailable`. */
+  exportFiles?: ExportFiles;
+  /** Why there is no export storage, for the `unavailable` message. */
+  exportsUnavailable?: string;
+  /** The download link of an export token; without it results carry no `url`. */
+  downloadUrl?: (token: string) => string;
+  /** True on a server one local user runs: results carry the file's absolute `path`. */
+  localExportPaths?: boolean;
+  /** The job queue, for tests that inject a clock. */
+  jobs?: JobQueue<ExportResult>;
+}
+
+/** How a failed job is reported to the agent that polls it. */
+function describeJobError(e: unknown): JobError {
+  const message = e instanceof Error ? e.message : String(e);
+  if (e instanceof ToolError) return { code: e.kind, message };
+  if (e instanceof MediaError) return { code: "encode_failed", message };
+  return { code: "render_failed", message };
 }
 
 /** Uploads FFmpeg decodes at once; the rest wait their turn. */
@@ -547,6 +581,22 @@ export interface RenderFramesInput {
   max_size: number;
 }
 
+export interface ExportInput {
+  composition?: string | undefined;
+  format: ExportFormat;
+  from_frame?: number | undefined;
+  to_frame?: number | undefined;
+  max_size?: number | undefined;
+  idempotency_key: string;
+}
+
+export interface PreviewClipInput {
+  composition?: string | undefined;
+  from_frame?: number | undefined;
+  to_frame?: number | undefined;
+  max_size?: number | undefined;
+}
+
 export interface ContactSheetInput {
   composition?: string | undefined;
   frames?: number[] | undefined;
@@ -621,6 +671,13 @@ export class ServiceRuntime {
   readonly maxRenderAssetBytes: number;
   readonly scriptLimits: Partial<ScriptLimits>;
   readonly mediaUnavailable: string;
+  readonly exportFiles: ExportFiles | undefined;
+  readonly exportsUnavailable: string;
+  readonly downloadUrl: ((token: string) => string) | undefined;
+  readonly localExportPaths: boolean;
+  readonly jobs: JobQueue<ExportResult>;
+  /** Finished exports by content, so the same export again is not rendered again. */
+  readonly exportCache = new Map<string, CachedExport>();
 
   constructor(options: ServiceOptions = {}) {
     this.makeId = options.makeId ?? newProjectId;
@@ -634,6 +691,16 @@ export class ServiceRuntime {
     this.scriptLimits = options.scriptLimits ?? {};
     this.mediaUnavailable =
       options.mediaUnavailable ?? "this server has no FFmpeg (install ffmpeg and ffprobe)";
+    this.exportFiles = options.exportFiles;
+    this.exportsUnavailable = options.exportsUnavailable ?? "this server has no export storage";
+    this.downloadUrl = options.downloadUrl;
+    this.localExportPaths = options.localExportPaths ?? false;
+    this.jobs = options.jobs ?? new JobQueue({ describeError: describeJobError });
+  }
+
+  /** Stops the job queue: queued jobs are cancelled, running ones aborted and awaited. */
+  close(): Promise<void> {
+    return this.jobs.close();
   }
 }
 
@@ -918,12 +985,14 @@ export class KynimoService {
   /**
    * Bytes of the image and font assets the composition draws (its precomps included), by id,
    * for the renderer. Each is checked against its pin here, so a corrupt object reads as missing
-   * rather than as other pixels. Assets nothing in the tree uses are not loaded.
+   * rather than as other pixels. Assets nothing in the tree uses are not loaded. Without
+   * `video`, video frames are left out (an export loads them one frame at a time).
    */
   private async assetsFor(
     doc: Project,
     compositionId: string,
     frames: readonly number[],
+    video = true,
   ): Promise<RenderMedia> {
     const images = new Set<string>();
     const families = new Set<string>();
@@ -943,7 +1012,7 @@ export class KynimoService {
     // Evaluate the frames once, only when a component's subtree (which only exists once evaluated)
     // or a video's source frames are needed.
     const evaluated =
-      hasComponents || doc.assets.some((a) => a.type === "video")
+      hasComponents || (video && doc.assets.some((a) => a.type === "video"))
         ? walkEvaluated(doc, compositionId, frames)
         : undefined;
     for (const id of evaluated?.images ?? []) images.add(id);
@@ -952,16 +1021,7 @@ export class KynimoService {
       a.type === "image" ? images.has(a.id) : a.type === "font" && families.has(a.family),
     );
     const out = new Map<string, Uint8Array>();
-    // Two budgets: stored bytes to load, and decoded RGBA the capture page holds at once.
-    let total = 0;
-    let pixels = 0;
-    const check = () => {
-      if (total > this.rt.maxRenderAssetBytes || pixels > RENDER_LIMITS.maxDecodedAssetBytes)
-        throw new ToolError(
-          "invalid",
-          `this render needs more than ${total > this.rt.maxRenderAssetBytes ? `${this.rt.maxRenderAssetBytes} bytes of stored` : `${RENDER_LIMITS.maxDecodedAssetBytes} bytes of decoded`} images, fonts and video frames, the limit for one call; render fewer frames at a time, or use smaller assets`,
-        );
-    };
+    const budget = this.assetBudget();
     for (const a of used) {
       const failed = (why: string) =>
         new ToolError("render_failed", `asset '${a.id}' (${a.uri}) ${why}; upload the file again`);
@@ -969,13 +1029,41 @@ export class KynimoService {
       const bytes = await this.blob(a.uri, a.sha256, () =>
         failed("is missing or corrupt in this server's asset storage"),
       );
-      total += bytes.byteLength;
-      if (a.type === "image") pixels += a.width * a.height * 4;
-      check();
+      budget(bytes.byteLength, a.type === "image" ? a.width * a.height * 4 : 0);
       out.set(a.id, bytes);
     }
+    const videoFrames = video
+      ? await this.loadVideoFrames(doc, evaluated?.videoFrames ?? new Map(), budget)
+      : new Map<string, Uint8Array>();
+    return { assets: out, videoFrames };
+  }
+
+  /**
+   * Two budgets for one render: stored bytes to load, and decoded RGBA the capture page holds at
+   * once. The returned function adds to both and throws when either is over.
+   */
+  private assetBudget(): (bytes: number, pixels: number) => void {
+    let total = 0;
+    let pixels = 0;
+    return (addBytes, addPixels) => {
+      total += addBytes;
+      pixels += addPixels;
+      if (total > this.rt.maxRenderAssetBytes || pixels > RENDER_LIMITS.maxDecodedAssetBytes)
+        throw new ToolError(
+          "invalid",
+          `this render needs more than ${total > this.rt.maxRenderAssetBytes ? `${this.rt.maxRenderAssetBytes} bytes of stored` : `${RENDER_LIMITS.maxDecodedAssetBytes} bytes of decoded`} images, fonts and video frames, the limit for one call; render fewer frames at a time, or use smaller assets`,
+        );
+    };
+  }
+
+  /** The decoded source frames `usage` names (video asset id to source frames), by `videoFrameKey`. */
+  private async loadVideoFrames(
+    doc: Project,
+    usage: ReadonlyMap<string, ReadonlySet<number>>,
+    budget: (bytes: number, pixels: number) => void,
+  ): Promise<Map<string, Uint8Array>> {
     const videoFrames = new Map<string, Uint8Array>();
-    for (const [assetId, sourceFrames] of evaluated?.videoFrames ?? []) {
+    for (const [assetId, sourceFrames] of usage) {
       const asset = doc.assets.find((a) => a.id === assetId);
       if (asset?.type !== "video") continue;
       const failed = (why: string) =>
@@ -987,13 +1075,11 @@ export class KynimoService {
         const bytes = await this.blob(blobKey(sha, "jpg"), sha, () =>
           failed(`frame ${n} is missing or corrupt in this server's asset storage`),
         );
-        total += bytes.byteLength;
-        pixels += asset.width * asset.height * 4;
-        check();
+        budget(bytes.byteLength, asset.width * asset.height * 4);
         videoFrames.set(videoFrameKey(asset.id, n), bytes);
       }
     }
-    return { assets: out, videoFrames };
+    return videoFrames;
   }
 
   /** Bytes under a content key, checked against their hash and cached; `failed` when absent or wrong. */
@@ -1740,6 +1826,169 @@ export class KynimoService {
     };
   }
 
+  /** Everything an export or preview job needs, or `unavailable` naming what this server lacks. */
+  private exportTools() {
+    const { renderer, media, exportFiles: files } = this.rt;
+    const why =
+      renderer === undefined
+        ? "this server has no renderer"
+        : media === undefined
+          ? this.rt.mediaUnavailable
+          : files === undefined
+            ? this.rt.exportsUnavailable
+            : undefined;
+    if (why !== undefined || !renderer || !media || !files)
+      throw new ToolError("unavailable", `export is unavailable: ${why}`);
+    return { renderer, media, files };
+  }
+
+  /**
+   * Validates an export or preview request before anything is queued, so bad input is a tool
+   * error and never a failed job. The project is captured here: the job renders this version.
+   */
+  private async planExport(
+    kind: ExportKind,
+    projectId: string,
+    input: PreviewClipInput & { format?: ExportFormat },
+  ): Promise<ExportPlan> {
+    this.exportTools();
+    const p = await this.load(projectId);
+    const id = input.composition ?? p.doc.mainCompositionId;
+    const comp = p.doc.compositions.find((c) => c.id === id);
+    if (comp === undefined)
+      throw new ToolError(
+        "not_found",
+        `composition '${id}' does not exist; compositions: ${p.doc.compositions.map((c) => c.id).join(", ")}`,
+      );
+    const format = kind === "preview" ? "mp4" : (input.format ?? "mp4");
+    const from = input.from_frame ?? 0;
+    const to = input.to_frame ?? comp.durationFrames - 1;
+    checkFrames(comp, [from], "from_frame");
+    checkFrames(comp, [to], "to_frame");
+    if (from > to)
+      throw new ToolError("invalid", `from_frame ${from} is after to_frame ${to}`, [
+        { path: ["to_frame"], message: `must be at least ${from}` },
+      ]);
+    const tooLong = durationError(kind, format, comp.fps, from, to);
+    if (tooLong !== undefined)
+      throw new ToolError("invalid", tooLong, [{ path: ["to_frame"], message: tooLong }]);
+    const limits = sizeLimits(kind, format, comp);
+    const maxSize = input.max_size ?? limits.default;
+    if (maxSize < EXPORT_LIMITS.minSize || maxSize > limits.max) {
+      const message = `max_size must be ${EXPORT_LIMITS.minSize} to ${limits.max} for ${clipLabel(kind, format)}`;
+      throw new ToolError("invalid", message, [{ path: ["max_size"], message }]);
+    }
+    const { width, height } = fitSize(comp.width, comp.height, maxSize);
+    return {
+      kind,
+      project: { id: p.id, version: p.version, doc: p.doc },
+      comp,
+      format,
+      from,
+      to,
+      width,
+      height,
+      maxSize,
+    };
+  }
+
+  private exportDeps(): ExportDeps {
+    const { renderer, media, files } = this.exportTools();
+    return {
+      renderer,
+      media,
+      files,
+      draw: (fn) => this.draw(fn),
+      stillAssets: (doc, composition, frames) => this.assetsFor(doc, composition, frames, false),
+      videoFrames: async (doc, composition, frame) =>
+        this.loadVideoFrames(doc, shownVideoFrames(doc, composition, [frame]), this.assetBudget()),
+      allAssets: (doc, composition, frames) => this.assetsFor(doc, composition, frames),
+      audioBytes: (asset) => {
+        const failed = (why: string) =>
+          new ToolError("render_failed", `audio asset '${asset.id}' ${why}; upload the file again`);
+        if (!isBlobKey(asset.uri)) throw failed("was not stored by upload_asset");
+        return this.blob(asset.uri, asset.sha256, () =>
+          failed("is missing or corrupt in this server's asset storage"),
+        );
+      },
+      link: (saved: SavedExport) => ({
+        ...(this.rt.downloadUrl === undefined ? {} : { url: this.rt.downloadUrl(saved.token) }),
+        ...(this.rt.localExportPaths ? { path: resolve(saved.file) } : {}),
+      }),
+      cache: this.rt.exportCache,
+    };
+  }
+
+  /** Queues the job for a validated plan. Jobs belong to the actor: on every transport it identifies the account. */
+  private submitExport(plan: ExportPlan, idempotencyKey?: string): JobReply {
+    const deps = this.exportDeps();
+    try {
+      const { job, replayed } = this.rt.jobs.submit({
+        account: this.actor,
+        actor: this.actor,
+        projectId: plan.project.id,
+        kind: plan.kind,
+        ...(idempotencyKey === undefined
+          ? {}
+          : {
+              key: {
+                idempotencyKey,
+                // No document version: a retry after an edit returns the original job.
+                fingerprint: fingerprint({
+                  tool: "export",
+                  project_id: plan.project.id,
+                  composition: plan.comp.id,
+                  format: plan.format,
+                  from: plan.from,
+                  to: plan.to,
+                  max_size: plan.maxSize,
+                }),
+              },
+            }),
+        frames_total: plan.to - plan.from + 1,
+        run: (ctx) => runExport(plan, deps, ctx),
+      });
+      return jobReply(job, plan.kind === "export" ? replayed : undefined);
+    } catch (e) {
+      if (!(e instanceof JobQueueError)) throw e;
+      throw new ToolError(e.kind === "closed" ? "unavailable" : e.kind, e.message);
+    }
+  }
+
+  /** Exports a composition range to mp4, webm or gif as a background job. */
+  async exportComposition(projectId: string, input: ExportInput): Promise<JobReply> {
+    return this.submitExport(
+      await this.planExport("export", projectId, input),
+      input.idempotency_key,
+    );
+  }
+
+  /** A short low-resolution mp4 of a range, as a job; its status carries a contact sheet. */
+  async renderPreviewClip(projectId: string, input: PreviewClipInput): Promise<JobReply> {
+    return this.submitExport(await this.planExport("preview", projectId, input));
+  }
+
+  /** A job's state, waiting up to `waitSeconds` for it to finish; a finished preview carries its sheet. */
+  async getExportStatus(jobId: string, waitSeconds: number): Promise<Rendered<JobReply>> {
+    let job = this.rt.jobs.get(this.actor, jobId);
+    if (job === undefined) throw jobNotFound(jobId);
+    if (waitSeconds > 0)
+      job = (await this.rt.jobs.wait(this.actor, jobId, waitSeconds * 1000)) ?? job;
+    const sheet = job.state === "succeeded" ? job.result?.sheet : undefined;
+    return { result: jobReply(job), images: sheet === undefined ? [] : [sheet] };
+  }
+
+  /** Cancels a queued or running job; a finished one is returned unchanged. */
+  cancelExport(jobId: string): JobReply & { cancelled: boolean } {
+    const before = this.rt.jobs.get(this.actor, jobId);
+    if (before === undefined) throw jobNotFound(jobId);
+    const after = this.rt.jobs.cancel(this.actor, jobId) ?? before;
+    return {
+      ...jobReply(after),
+      cancelled: before.state === "queued" || before.state === "running",
+    };
+  }
+
   /** Whether a write with this key landed (ADR-0018). Without `projectId`, looks up `create_project` keys. */
   async getWriteOutcome(key: string, projectId?: string): Promise<OutcomeReply> {
     if (projectId !== undefined) await this.load(projectId);
@@ -1817,6 +2066,32 @@ export function shownVideoFrames(
 ): Map<string, Set<number>> {
   if (!doc.assets.some((a) => a.type === "video")) return new Map();
   return walkEvaluated(doc, compositionId, frames).videoFrames;
+}
+
+const jobNotFound = (id: string) =>
+  new ToolError(
+    "not_found",
+    `job '${id}' does not exist or has expired; jobs are kept for 24 hours and do not survive a server restart`,
+  );
+
+const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
+
+/** A job record as the tools answer it; the preview sheet is image content, never structured output. */
+function jobReply(job: JobRecord<ExportResult>, replayed?: boolean): JobReply {
+  const { sheet: _sheet, ...result } = job.result ?? ({} as Partial<ExportResult>);
+  return {
+    job_id: job.id,
+    kind: job.kind as ExportKind,
+    project_id: job.projectId,
+    state: job.state,
+    progress: { ...job.progress },
+    created_at: iso(job.createdAt) as string,
+    started_at: iso(job.startedAt),
+    finished_at: iso(job.finishedAt),
+    ...(replayed === undefined ? {} : { replayed }),
+    ...(job.result === null ? {} : { result: result as Omit<ExportResult, "sheet"> }),
+    ...(job.error === null ? {} : { error: job.error }),
+  };
 }
 
 /** Every frame must be a whole frame of the composition; errors name the field and the range. */
