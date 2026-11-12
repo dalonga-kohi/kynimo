@@ -747,6 +747,11 @@ function resolveComponent(
   const host = ctx.components;
   const seed = deriveComponentSeed(ctx.componentSeed, layer.id);
   return withChain(ctx, layer.id, () => {
+    ctx.budget -= host.work?.(layer) ?? 0;
+    if (ctx.budget < 0)
+      throw new RangeError(
+        `evaluating this frame exceeds ${MAX_EVALUATION_UNITS} units of work in component '${layer.id}' via layers ${ctx.chain.join(" > ")}; use fewer or simpler components`,
+      );
     const out = host.evaluate(layer, {
       frame: layerFrame,
       fps: { num: parent.fps.num, den: parent.fps.den },
