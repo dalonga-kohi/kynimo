@@ -44,10 +44,13 @@
  * 14: built-in shader transitions on drawn layers. The step from 13 adds `transition: null` to
  *    drawn layers, which renders exactly as version 13 did.
  *
+ * 15: puppet pin deformation (ADR-0056). The step from 14 adds `deform: null` to layers with
+ *    their own drawn source, which renders exactly as version 14 did.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 14 as const;
+export const SCENE_FORMAT_VERSION = 15 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;

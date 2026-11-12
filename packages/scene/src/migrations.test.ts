@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  common,
   composition,
   groupTransform,
   nullLayer,
@@ -14,6 +15,7 @@ import {
   migrateProject,
   runMigrations,
   SCENE_FORMAT_VERSION,
+  withLayerDefaults,
 } from "./index.js";
 
 // Synthetic chain: v1 -> v2 renames `name` to `title`, v2 -> v3 adds `tags`. Exercises the runner
@@ -585,7 +587,7 @@ describe("migrateProject", () => {
     expect(twice.ok && twice.doc).toEqual(once.doc);
   });
 
-  it("12 → 13 preserves existing effects", () => {
+  it("12 → 15 preserves existing effects", () => {
     const before = project({
       formatVersion: 12,
       compositions: [
@@ -602,10 +604,10 @@ describe("migrateProject", () => {
     expect(migrateProject(before)).toEqual({
       ok: true,
       from: 12,
-      to: 14,
+      to: 15,
       doc: {
         ...before,
-        formatVersion: 14,
+        formatVersion: 15,
         compositions: [
           composition("main", [
             {
@@ -633,7 +635,7 @@ describe("migrateProject", () => {
         composition("inner", [{ ...visual("p"), type: "adjustment", effects: [] }]),
       ],
     });
-    const r = runMigrations({ ...v13, formatVersion: 13 });
+    const r = runMigrations(v13, MIGRATIONS, 14);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     type Layers = { layers: Record<string, unknown>[] }[];
@@ -660,12 +662,61 @@ describe("migrateProject", () => {
     };
     const r = runMigrations(
       project({ formatVersion: 13, compositions: [composition("main", [solid])] }),
+      MIGRATIONS,
+      14,
     );
     expect(r.ok).toBe(true);
     if (r.ok)
       expect((r.doc.compositions as { layers: unknown[] }[])[0]?.layers[0]).toMatchObject({
         transition,
       });
+  });
+
+  it("14 → 15 adds neutral deformation only to source layers, including nested compositions", () => {
+    const types = ["shape", "text", "image", "video", "solid", "generator", "precomp", "component"];
+    const others = ["adjustment", "audio", "null", "camera", "unknown"];
+    const layers = [...types, ...others].map((type) => ({ type }));
+    const explicit = {
+      type: "shape",
+      transition: { kind: "dissolve", progress: { value: 0.5 } },
+      deform: { pins: [], density: 64, iterations: 1 },
+    };
+    const malformed = { type: "shape", deform: false };
+    const before = project({
+      formatVersion: 14,
+      compositions: [
+        composition("main", layers),
+        composition("inner", [explicit, malformed, { type: "text" }]),
+      ],
+    });
+    const migrated = runMigrations(before);
+    expect(migrated).toMatchObject({ ok: true, from: 14, to: 15 });
+    if (!migrated.ok) throw new Error(JSON.stringify(migrated.errors));
+    expect(migrated.doc.compositions).toEqual([
+      composition("main", [
+        ...types.map((type) => ({ type, deform: null })),
+        ...others.map((type) => ({ type })),
+      ]),
+      composition("inner", [explicit, malformed, { type: "text", deform: null }]),
+    ]);
+    expect(layers[0]).toEqual({ type: "shape" });
+  });
+
+  it("opens format 14 and earlier with neutral deformation and keeps camera layers valid", () => {
+    const shape = { ...visual("s"), type: "shape", contents: [] };
+    const adjust = { ...visual("adjust"), type: "adjustment" };
+    const camera = withLayerDefaults({ ...common("cam"), type: "camera" }, undefined) as Obj;
+    for (const formatVersion of [12, 13, 14]) {
+      const migrated = migrateProject(
+        project({ formatVersion, compositions: [composition("main", [shape, adjust, camera])] }),
+      );
+      if (!migrated.ok) throw new Error(JSON.stringify(migrated.errors));
+      expect(migrated.doc.formatVersion).toBe(15);
+      const [drawn, adjustment, cameraLayer] = migrated.doc.compositions[0]?.layers ?? [];
+      expect(drawn).toMatchObject({ deform: null, transition: null });
+      expect(adjustment).not.toHaveProperty("deform");
+      expect(cameraLayer).not.toHaveProperty("deform");
+    }
   });
 
   it("migrates a version 1 document to the current version", () => {

@@ -212,5 +212,5 @@ describe("setShapeContents", () => {
 });
 
 it("ops don't move the scene format version", () => {
-  expect(SCENE_FORMAT_VERSION).toBe(14);
+  expect(SCENE_FORMAT_VERSION).toBe(15);
 });

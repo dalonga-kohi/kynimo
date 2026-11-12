@@ -12,6 +12,7 @@ import {
 } from "./changes.js";
 import type { Mask } from "./compositing.js";
 import type { Composition } from "./composition.js";
+import { isDeformableLayerType } from "./deform.js";
 import type { AssetId, BehaviorId, CompositionId, LayerId, MarkerId, MaskId } from "./ids.js";
 import type { Layer } from "./layer.js";
 import { BatchSchema, type BehaviorInput, type Op } from "./ops.js";
@@ -270,6 +271,11 @@ function run(ctx: Ctx, op: Op, i: number): void {
         if (layer.type === "adjustment" && op.set.transition !== null)
           fail(where, "adjustment layers have no transition; set transition to null");
       }
+      if ("deform" in op.set && !isDeformableLayerType(layer.type))
+        fail(
+          [i, "set", "deform"],
+          `layer '${layer.id}' has type '${layer.type}'; set deform on a drawn layer that has its own source`,
+        );
       for (const [key, value] of Object.entries(op.set))
         setLayerValue(ctx, i, layer, [key], value as Json);
       return;
@@ -719,6 +725,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     behaviors: [],
     motionBlur: null,
     transition: null,
+    deform: null,
     effects: [],
     compositionId: compId,
   };

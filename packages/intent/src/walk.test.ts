@@ -134,6 +134,35 @@ describe("diffLayerOps", () => {
     expect(layerOf(applied(d, ops), "t")).toEqual(after);
   });
 
+  it("moves a puppet pin's position keyframes and writes the whole mesh back", () => {
+    const rest = [6, 7];
+    const d = doc([
+      solid("puppet", {
+        deform: {
+          pins: [{ id: "tip", rest, position: keyed(kf(0, rest), kf(24, [8, 9])) }],
+        },
+      }),
+    ]);
+    const before = layerOf(d, "puppet");
+    const after = mapLayerKeyframes(before, plus10);
+    expect(frames(after)).toEqual([["deform.pins.0.position.keyframes", [10, 34]]]);
+    const ops = diffLayerOps(before, after);
+    expect(ops).toEqual([
+      {
+        op: "updateLayer",
+        layer: "puppet",
+        set: {
+          deform: {
+            density: 24,
+            iterations: 10,
+            pins: [{ id: "tip", rest, position: keyed(kf(10, rest), kf(34, [8, 9])) }],
+          },
+        },
+      },
+    ]);
+    expect(layerOf(applied(d, ops), "puppet")).toEqual(after);
+  });
+
   it("writes back every kind of change, in order, and the result matches the mapped layer", () => {
     const d = doc([
       solid("m", {

@@ -79,7 +79,8 @@ const vertexCount = (path: Animatable<BezierPath>): number =>
 
 /**
  * Most work one `evaluateFrame` call may do inside precomps, in units: 1 per layer, plus 1 per
- * shape item, effect, mask, path or mask vertex and gradient stop, summed over every distinct (composition, local frame)
+ * shape item, effect, transition, mask, path or mask vertex, gradient stop and deform pin, summed
+ * over every distinct (composition, local frame)
  * a precomp evaluates. The root composition is not charged: its work is linear in the document, except
  * that link behaviors with delays (ADR-0039) can make a chain of N links touch N² (layer, frame) pairs
  * (see {@link MAX_FRAME_LINK_STEPS}, which caps it). Other behaviors are not charged: each costs
@@ -131,6 +132,7 @@ function compositionCost(comp: Composition): number {
     if (layer.type === "audio" || layer.type === "null" || layer.type === "camera") continue;
     units += layer.effects.length;
     if (layer.transition !== null) units += 1;
+    if (layer.type !== "adjustment") units += layer.deform?.pins.length ?? 0;
     for (const mask of layer.masks) units += 1 + vertexCount(mask.path);
     if (layer.type !== "shape") continue;
     const stack: ShapeItem[] = [...layer.contents];
@@ -602,10 +604,26 @@ function resolveLayer(
   parent: Composition,
   layer: DrawnLayer,
   frame: number,
-  base: Base,
+  common: Base,
   shader?: ResolveShader,
 ): ResolvedLayer {
   const fps = parent.fps;
+  if (layer.type === "adjustment") return { ...common, type: "adjustment" };
+  const deform = layer.deform;
+  const base = {
+    ...common,
+    deform:
+      deform == null
+        ? null
+        : {
+            ...deform,
+            pins: deform.pins.map(({ id, rest, position }) => ({
+              id,
+              rest,
+              position: sampleVector(position, frame, fps),
+            })),
+          },
+  };
   switch (layer.type) {
     case "shape":
       return { ...base, type: "shape", contents: resolveShapeItems(layer.contents, frame, fps) };
@@ -687,8 +705,6 @@ function resolveLayer(
             : null,
       };
     }
-    case "adjustment":
-      return { ...base, type: "adjustment" };
     case "component":
       return {
         ...base,

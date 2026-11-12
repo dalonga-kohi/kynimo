@@ -83,6 +83,7 @@ export function importSvgExpansion(
     effects: [],
     motionBlur: null,
     transition: null,
+    deform: null,
     behaviors: [],
     contents: result.contents,
   };

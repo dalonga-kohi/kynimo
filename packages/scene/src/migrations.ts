@@ -1,4 +1,5 @@
 import { clone } from "./changes.js";
+import { isDeformableLayerType } from "./deform.js";
 import { BUNDLED_FONT_FAMILIES } from "./fonts.js";
 import { type Project, ProjectSchema } from "./project.js";
 import { SCENE_FORMAT_VERSION } from "./version.js";
@@ -144,6 +145,18 @@ function addThreeD(doc: Json): Json {
   return doc;
 }
 
+/** 14 → 15: layers with their own drawn source gain `deform: null` (ADR-0056). */
+function addDeform(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers)
+      if (isJson(layer) && isDeformableLayerType(layer.type) && !("deform" in layer))
+        layer.deform = null;
+  }
+  return doc;
+}
+
 /**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
@@ -170,6 +183,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 12, migrate: (doc) => doc },
   // 13 → 14: built-in shader transitions; drawn layers gain `transition: null`.
   { from: 13, migrate: addTransition },
+  { from: 14, migrate: addDeform },
 ];
 
 export interface MigrationError {

@@ -5,6 +5,15 @@ export type { Change, MarkerOwner } from "./changes.js";
 export * from "./compositing.js";
 export * from "./composition.js";
 export { withLayerDefaults } from "./defaults.js";
+export {
+  DEFORM_DENSITY,
+  DEFORM_ITERATIONS,
+  type Deform,
+  type DeformPin,
+  DeformPinSchema,
+  DeformSchema,
+  MAX_DEFORM_PINS,
+} from "./deform.js";
 export * from "./effect.js";
 export * from "./fonts.js";
 export * from "./generator.js";
