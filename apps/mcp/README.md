@@ -34,6 +34,29 @@ Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `
 
 Use `list_components` or `kynimo://components` for built-in versions and prop descriptors. `add_component` validates props and writes a component layer pinned to `component_version` (latest if omitted). Missing props take their defaults. The layer starts at `in_frame` (default 0), with an exclusive `out_frame` (default composition duration). Use `dry_run: true` to preview the operation.
 
+### Build a storyboard
+
+The MCP client turns the user's brief into the structured `shots` passed to `build_from_brief`. The server assembles them deterministically into one editable, undoable write. Create a project with enough frames, upload media, and call the tool with the write metadata and storyboard.
+
+```json
+{
+  "project_id": "YOUR_PROJECT_ID",
+  "base_version": 2,
+  "idempotency_key": "preview-launch",
+  "dry_run": true,
+  "transition": "wipe",
+  "shots": [
+    { "type": "headline", "text": "Meet Atlas", "duration_frames": 45 },
+    { "type": "image", "asset_id": "atlas-screen", "duration_frames": 60 },
+    { "type": "logo", "wordmark": "Atlas", "duration_frames": 45 }
+  ]
+}
+```
+
+Shots are contiguous from `start_frame` (default 0) in the selected composition (default main). A shot can include `lower_third: { title, subtitle? }`. The shared background follows the project's style. Use `background: "transparent"` to leave the existing background visible through uncovered areas. Media is centered and contained by default. Use `fit: "cover"` for a centered crop. A video shot's `source_offset_frames` trims its visual track in composition frames. Use a separate audio layer for sound.
+
+The dry run returns the planned operations and resolved shot and transition windows. A requested wipe becomes a hard cut when adjacent shots are too short. When the timing fits, submit the write and use `render_contact_sheet` to inspect the result.
+
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
 
 ## Export (MP4, WebM, GIF; ADR-0048)

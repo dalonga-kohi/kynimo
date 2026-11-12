@@ -521,6 +521,158 @@ describe("intent tools", () => {
     expect(JSON.stringify(invalid)).not.toContain(unknownVersion);
   });
 
+  describe("build_from_brief", () => {
+    const asset = (id: string, type: "image" | "video") => ({
+      type,
+      name: id,
+      uri: `assets/${id}`,
+      sha256: "1".repeat(64),
+      width: 320,
+      height: 320,
+      ...(type === "video" ? { fps: { num: 24, den: 1 }, frameCount: 20 } : {}),
+    });
+
+    const addMedia = () =>
+      call(client, "apply_ops", {
+        ...meta(3, "brief-assets"),
+        ops: [
+          { op: "addAsset", id: "poster", asset: asset("poster", "image") },
+          { op: "addAsset", id: "clip", asset: asset("clip", "video") },
+        ],
+      });
+
+    it("previews and commits a mixed storyboard as one replayable, undoable version", async () => {
+      await addMedia();
+      const args = {
+        ...meta(4, "storyboard"),
+        start_frame: 10,
+        transition: "wipe",
+        shots: [
+          { type: "headline", text: "Launch", duration_frames: 30 },
+          { type: "image", asset_id: "poster", duration_frames: 20 },
+          {
+            type: "video",
+            asset_id: "clip",
+            duration_frames: 11,
+            source_offset_frames: 6,
+            fit: "cover",
+            lower_third: { title: "Demo" },
+          },
+          { type: "logo", wordmark: "Studio", duration_frames: 10 },
+        ],
+      };
+      const preview = await call(client, "build_from_brief", { ...args, dry_run: true });
+      expect(preview).toMatchObject({
+        version: 4,
+        dry_run: true,
+        resolved: {
+          composition: "main",
+          in_frame: 10,
+          out_frame: 81,
+          shots: [
+            { type: "headline", in_frame: 10, out_frame: 40 },
+            { type: "image", in_frame: 40, out_frame: 60 },
+            { type: "video", in_frame: 60, out_frame: 71 },
+            { type: "logo", in_frame: 71, out_frame: 81 },
+          ],
+          transitions: [
+            { type: "wipe", frame: 40, in_frame: 36, out_frame: 45 },
+            { type: "wipe", frame: 60, in_frame: 56, out_frame: 65 },
+            { type: "wipe", frame: 71, in_frame: 67, out_frame: 76 },
+          ],
+        },
+        ops: [
+          { layer: { componentId: "background", componentVersion: "1.0.0" } },
+          { layer: { componentId: "kinetic-type", props: { text: "Launch" } } },
+          {
+            layer: {
+              type: "image",
+              assetId: "poster",
+              transform: { scale: { value: [3.375, 3.375] } },
+            },
+          },
+          {
+            layer: {
+              type: "video",
+              assetId: "clip",
+              startFrame: 54,
+              transform: { scale: { value: [6, 6] } },
+            },
+          },
+          { layer: { componentId: "lower-third", props: { title: "Demo", subtitle: "" } } },
+          { layer: { componentId: "logo-reveal", props: { wordmark: "Studio" } } },
+          { layer: { componentId: "transition" } },
+          { layer: { componentId: "transition" } },
+          { layer: { componentId: "transition" } },
+        ],
+      });
+      expect(await version()).toBe(4);
+      const written = await call(client, "build_from_brief", args);
+      expect(written).toMatchObject({ version: 5, ops: preview.ops });
+      expect(written.layers_added).toEqual(preview.layers_added);
+      expect(written.layers_added).toHaveLength(9);
+      expect(await call(client, "build_from_brief", args)).toMatchObject({
+        version: 5,
+        replayed: true,
+      });
+      expect(await call(client, "undo", meta(5, "undo-storyboard"))).toMatchObject({ version: 6 });
+      const scene = (await call(client, "get_scene", { project_id })) as {
+        compositions: { layers: { id: string }[] }[];
+      };
+      expect(scene.compositions[0]?.layers.map(({ id }) => id)).toEqual(["b", "a"]);
+    });
+
+    it("reports a hard cut when an adjacent shot has no room for a wipe", async () => {
+      const r = await call(client, "build_from_brief", {
+        ...meta(3, "short-storyboard"),
+        dry_run: true,
+        background: "transparent",
+        transition: "wipe",
+        shots: [
+          { type: "headline", text: "One", duration_frames: 1 },
+          { type: "headline", text: "Two", duration_frames: 2 },
+        ],
+      });
+      expect(r).toMatchObject({ resolved: { transitions: [{ type: "cut", frame: 1 }] } });
+      expect(r.ops).toHaveLength(2);
+    });
+
+    it("reports existing solo without changing it", async () => {
+      await call(client, "update_layer", { ...meta(3, "solo"), layer: "a", set: { solo: true } });
+      const r = await call(client, "build_from_brief", {
+        ...meta(4, "solo-brief"),
+        shots: [{ type: "headline", text: "Launch", duration_frames: 30 }],
+      });
+      expect(r).toMatchObject({
+        version: 5,
+        resolved: { warnings: [expect.stringContaining("Clear solo with update_layer")] },
+      });
+      expect(await call(client, "get_layer", { project_id, layer: "a" })).toMatchObject({
+        layer: { solo: true },
+      });
+    });
+
+    it.each([
+      [{ type: "headline", text: "Long", duration_frames: 150 }, "duration_frames"],
+      [{ type: "logo", duration_frames: 1 }, "wordmark"],
+      [{ type: "headline", text: "W".repeat(200), duration_frames: 1 }, "text"],
+      [{ type: "image", asset_id: "clip", duration_frames: 1 }, "asset_id"],
+      [
+        { type: "video", asset_id: "clip", duration_frames: 1, source_offset_frames: 25 },
+        "source_offset_frames",
+      ],
+      [{ type: "video", asset_id: "clip", duration_frames: 26 }, "duration_frames"],
+    ])("rejects shot %j without writing its valid predecessors", async (shot, field) => {
+      await addMedia();
+      const r = await callError(client, "build_from_brief", {
+        ...meta(4, "invalid-storyboard"),
+        shots: [{ type: "headline", text: "Valid", duration_frames: 1 }, shot],
+      });
+      expect(r).toMatchObject({ error: "invalid", errors: [{ path: ["shots", 1, field] }] });
+      expect(await version()).toBe(4);
+    });
+  });
+
   describe("import_svg", () => {
     const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50"><title>Logo</title><rect x="0" y="0" width="100" height="50" fill="#ff0000"/></svg>`;
     const NOISY = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><clipPath id="c"><rect width="5" height="5"/></clipPath></defs><text x="1" y="5">Hi</text><rect width="10" height="10" fill="#00f" clip-path="url(#c)"/></svg>`;

@@ -223,7 +223,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4         |
 | Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4         |
 | Intent   | `add_component`, `list_components`                                                                                                                                   | shipped    |
-| Intent   | `build_from_brief`                                                                                                                                                   | M6         |
+| Intent   | `build_from_brief` (ordered headline, logo, image and video shots → one editable storyboard write with a dry run, ADR-0050)                                          | shipped    |
 | Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6         |
 | Intent   | `sync_to_beats`                                                                                                                                                      | M7         |
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |

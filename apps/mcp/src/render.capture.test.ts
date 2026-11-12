@@ -3,6 +3,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { base64, solidPng } from "./assets.test-util.js";
+import { MemoryBlobStore } from "./blobs.js";
 import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
 import { KynimoService } from "./service.js";
@@ -18,7 +20,9 @@ let project: string;
 
 beforeAll(async () => {
   renderer = new CaptureRenderer();
-  const server = createServer(new KynimoService(new MemoryStore(), "agent", { renderer }));
+  const server = createServer(
+    new KynimoService(new MemoryStore(), "agent", { renderer, blobs: new MemoryBlobStore() }),
+  );
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   client = new Client({ name: "test", version: "0.0.0" });
@@ -286,6 +290,86 @@ describe("render tools with the capture renderer", () => {
       [255, 0, 0, 255],
       [16, 32, 48, 255],
     ]);
+  }, 60_000);
+
+  it("renders headline, contained image, and logo shots with a wipe covering the cut", async () => {
+    const created = await call("create_project", {
+      name: "Storyboard",
+      idempotency_key: "storyboard",
+      width: 320,
+      height: 180,
+      duration_frames: 72,
+    });
+    const project_id = created.structuredContent?.id as string;
+    const uploaded = await call("upload_asset", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "storyboard-image",
+      name: "poster.png",
+      data: base64(solidPng(40, 80, [0, 255, 0, 255])),
+    });
+    await call("build_from_brief", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "storyboard-build",
+      transition: "wipe",
+      shots: [
+        { type: "headline", text: "A new chapter", duration_frames: 24 },
+        {
+          type: "image",
+          asset_id: (uploaded.structuredContent?.asset as { id: string } | undefined)?.id,
+          duration_frames: 24,
+        },
+        { type: "logo", wordmark: "Studio", duration_frames: 24 },
+      ],
+    });
+    const result = await call("render_frames", { project_id, frames: [16, 24, 36, 68] });
+    expect(result.structuredContent?.skipped).toEqual([]);
+    const frames = images(result);
+    expect(new Set(frames.map(({ data }) => data)).size).toBe(4);
+    const wipe = decodePng(frames[1]?.data ?? "");
+    expect(wipe.at(1, 1)).toEqual([41, 151, 255, 255]);
+    expect(wipe.at(318, 178)).toEqual([41, 151, 255, 255]);
+    const poster = decodePng(frames[2]?.data ?? "");
+    expect(poster.at(160, 90)).toEqual([0, 255, 0, 255]);
+    expect(poster.at(16, 90)[1]).toBeLessThan(40);
+  }, 60_000);
+
+  it("keeps wide and tall storyboard headlines inside the portrait frame", async () => {
+    const created = await call("create_project", {
+      name: "Portrait storyboard",
+      idempotency_key: "portrait-storyboard",
+      width: 180,
+      height: 320,
+      duration_frames: 120,
+    });
+    const project_id = created.structuredContent?.id as string;
+    await call("build_from_brief", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "portrait-build",
+      shots: [
+        { type: "headline", text: "A new chapter", duration_frames: 60 },
+        { type: "headline", text: Array(20).fill("W").join("\n"), duration_frames: 60 },
+      ],
+    });
+    const result = await call("render_frames", { project_id, frames: [59, 119] });
+    const frames = images(result);
+    expect(frames).toHaveLength(2);
+    for (const { data } of frames) {
+      const frame = decodePng(data);
+      let lit = 0;
+      let litOutside = 0;
+      for (let y = 0; y < frame.height; y++) {
+        for (let x = 0; x < frame.width; x++) {
+          if ((frame.at(x, y)[0] ?? 0) <= 180) continue;
+          lit++;
+          if (x < 12 || x >= frame.width - 12 || y < 18 || y >= frame.height - 18) litOutside++;
+        }
+      }
+      expect(lit).toBeGreaterThan(100);
+      expect(litOutside).toBe(0);
+    }
   }, 60_000);
 
   it("returns downscaled PNG frames and caches by document", async () => {

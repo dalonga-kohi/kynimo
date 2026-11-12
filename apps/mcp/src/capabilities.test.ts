@@ -152,6 +152,11 @@ describe("capability manifest", () => {
       resource: "kynimo://components",
       built_ins: [...new Set(BUILT_IN_COMPONENTS.map(({ id }) => id))].sort(),
     });
+    expect(manifest.brief).toEqual({
+      tool: "build_from_brief",
+      max_shots: 24,
+      shot_types: ["headline", "logo", "image", "video"],
+    });
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {
@@ -166,6 +171,7 @@ describe("capability manifest", () => {
       "retime",
       "add_behavior",
       "add_component",
+      "build_from_brief",
     ])
       expect(text).not.toMatch(new RegExp(`\\b${tool}\\b.*arrive`));
   });

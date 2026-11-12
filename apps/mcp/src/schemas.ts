@@ -6,6 +6,7 @@ import {
   StaggerInputSchema,
 } from "@kynimo/intent";
 import {
+  AssetIdSchema,
   ColorSchema,
   CompositionIdSchema,
   EffectIdSchema,
@@ -33,6 +34,7 @@ import { SCRIPT_LIMITS } from "@kynimo/script";
 import { SVG_LIMITS } from "@kynimo/svg";
 import { z } from "zod";
 import { MAX_ASSET_BASE64 } from "./blobs.js";
+import { MAX_BRIEF_SHOTS } from "./build-from-brief.js";
 import { EXPORT_LIMITS } from "./export.js";
 import { RENDER_LIMITS } from "./render.js";
 
@@ -505,6 +507,66 @@ export const AddComponentRequest = z.strictObject({
 });
 
 export const AddComponentInput = AddComponentRequest.extend(intentMeta);
+
+const BriefOffset = z.number().int().min(0).max(MAX_DURATION_FRAMES);
+const BriefShot = {
+  duration_frames: z.number().int().min(1).max(MAX_DURATION_FRAMES),
+  lower_third: z
+    .strictObject({ title: z.string().min(1).max(120), subtitle: z.string().max(160).optional() })
+    .optional(),
+};
+const BriefMedia = {
+  asset_id: AssetIdSchema,
+  fit: z.enum(["contain", "cover"]).optional().describe("Default: contain."),
+};
+
+export const BuildFromBriefRequest = z.strictObject({
+  composition: CompositionIdSchema.optional().describe("Default: the main composition."),
+  start_frame: BriefOffset.optional().describe("First frame of the storyboard. Default: 0."),
+  background: z
+    .enum(["style", "transparent"])
+    .optional()
+    .describe("Shared style background or no background layer. Default: style."),
+  transition: z
+    .enum(["cut", "wipe"])
+    .optional()
+    .describe("Between shots. A wipe falls back to a cut when there is no room. Default: cut."),
+  shots: z
+    .array(
+      z.discriminatedUnion("type", [
+        z.strictObject({
+          ...BriefShot,
+          type: z.literal("headline"),
+          text: z.string().min(1).max(500).describe("Headline copy. Use newlines for line breaks."),
+        }),
+        z.strictObject({
+          ...BriefShot,
+          type: z.literal("logo"),
+          asset_id: AssetIdSchema.optional().describe("Uploaded image. Supply this or wordmark."),
+          wordmark: z
+            .string()
+            .min(1)
+            .max(60)
+            .optional()
+            .describe("Shown when no asset is supplied."),
+          tagline: z.string().max(120).optional(),
+        }),
+        z.strictObject({ ...BriefShot, ...BriefMedia, type: z.literal("image") }),
+        z.strictObject({
+          ...BriefShot,
+          ...BriefMedia,
+          type: z.literal("video"),
+          source_offset_frames: BriefOffset.optional().describe(
+            "Trim from the start of the clip, in composition frames. Default: 0.",
+          ),
+        }),
+      ]),
+    )
+    .min(1)
+    .max(MAX_BRIEF_SHOTS),
+});
+
+export const BuildFromBriefInput = BuildFromBriefRequest.extend(intentMeta);
 
 export const ListComponentsOutput = z.object({
   components: z.array(

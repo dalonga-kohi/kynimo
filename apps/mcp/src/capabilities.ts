@@ -42,6 +42,7 @@ import {
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
+import { MAX_BRIEF_SHOTS } from "./build-from-brief.js";
 import { EXPORT_LIMITS } from "./export.js";
 import { JOB_LIMITS } from "./jobs.js";
 import { RENDER_LIMITS } from "./render.js";
@@ -96,7 +97,6 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   ),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
   custom_components: unavailable("custom components (define_component) arrive in M6"),
-  build_from_brief: unavailable("build_from_brief arrives in M6"),
   catalogs: unavailable(
     "the token catalog arrives in M5 and the shader catalog in M6; kynimo://presets and kynimo://components are available",
   ),
@@ -198,6 +198,11 @@ export function capabilityManifest(server: { name: string; version: string }) {
       tools: ["add_component", "list_components"],
       resource: RESOURCES.components,
       built_ins: [...new Set(builtInRegistry.list().map(({ id }) => id))],
+    },
+    brief: {
+      tool: "build_from_brief",
+      max_shots: MAX_BRIEF_SHOTS,
+      shot_types: ["headline", "logo", "image", "video"],
     },
     unavailable: UNAVAILABLE,
     resources: RESOURCES,
