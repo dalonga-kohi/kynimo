@@ -1716,10 +1716,11 @@ export class KynimoService {
         replayed,
       };
     };
-    const done = await this.rt.shaderSlots.run(() =>
-      this.store.transact(
+    type Validation = { ok: true } | { ok: false; message: string };
+    const attempt = async (validation?: Validation) => {
+      const done = await this.store.transact(
         projectId,
-        async (tx): Promise<Step<ReturnType<typeof reply> | ToolError>> => {
+        async (tx): Promise<Step<ReturnType<typeof reply> | ToolError | undefined>> => {
           const earlier = await previousUse(
             await tx.lookup(this.actor, key),
             key,
@@ -1754,7 +1755,6 @@ export class KynimoService {
               "version",
               "this shader version is immutable; publish a new version",
             );
-          const definition = existing ?? { ...input, hash };
           if (existing === undefined) {
             if (definitions.length >= MAX_PROJECT_DEFINITIONS)
               return reject(
@@ -1762,20 +1762,10 @@ export class KynimoService {
                 "id",
                 `the project already stores ${MAX_PROJECT_DEFINITIONS} definition versions`,
               );
-            try {
-              await validateShaderProgram(input);
-            } catch (error) {
-              if (
-                error instanceof ShaderSourceError ||
-                (error instanceof CaptureError && error.pageError === "ShaderSourceError")
-              )
-                return reject("invalid", "source", error.message.slice(0, 300));
-              throw new ToolError(
-                "unavailable",
-                "shader validation could not start or communicate with the pinned Chromium",
-              );
-            }
+            if (validation === undefined) return { value: undefined };
+            if (!validation.ok) return reject("invalid", "source", validation.message);
           }
+          const definition = existing ?? { ...input, hash };
           const version = tx.project.version;
           const result: WriteResult = {
             ...summarizeChanges(projectId, version, []),
@@ -1790,10 +1780,37 @@ export class KynimoService {
             value: reply(result, false),
           };
         },
-      ),
-    );
-    if (done === undefined) throw notFound(projectId);
-    return unwrap(done.value);
+      );
+      if (done === undefined) throw notFound(projectId);
+      return unwrap(done.value);
+    };
+
+    const ready = await attempt();
+    if (ready !== undefined) return ready;
+
+    // Browser startup and compilation can take seconds. Recheck the write under the lock once
+    // validation finishes so normal scene edits and other publications can proceed in the meantime.
+    const validation = await this.rt.shaderSlots.run(async (): Promise<Validation> => {
+      try {
+        await validateShaderProgram(input);
+        return { ok: true };
+      } catch (error) {
+        if (
+          error instanceof ShaderSourceError ||
+          (error instanceof CaptureError && error.pageError === "ShaderSourceError")
+        )
+          return { ok: false, message: error.message.slice(0, 300) };
+        throw new ToolError(
+          "unavailable",
+          error instanceof CaptureError && error.pageError === "ShaderValidationUnavailable"
+            ? error.message
+            : "shader validation could not start or communicate with the pinned Chromium",
+        );
+      }
+    });
+    const result = await attempt(validation);
+    if (result === undefined) throw new Error("shader validation outcome was not committed");
+    return result;
   }
 
   async listDefinitions(projectId: string): Promise<{ definitions: ShaderDefinitionSummary[] }> {

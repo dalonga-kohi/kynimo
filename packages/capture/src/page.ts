@@ -175,6 +175,7 @@ interface ExportState {
   maxSize: number | null;
   alpha: ExportRequest["alpha"];
   options: EvaluateOptions;
+  shaderKeys: ReadonlyMap<object, string>;
   images: ImageLibrary;
   fonts: FontLibrary;
   videos: VideoFrameLibrary;
@@ -216,6 +217,12 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
       maxSize: request.maxSize,
       alpha: request.alpha,
       options: evaluationOptions(project, request.shaders),
+      shaderKeys: new Map(
+        request.shaders.map((definition) => [
+          definition,
+          `${definition.id}@${definition.version}:${definition.hash}`,
+        ]),
+      ),
       images,
       fonts,
       videos,
@@ -278,7 +285,13 @@ export async function exportFrame(
     // null, which cannot make two different frames look equal in practice. Only the frame
     // root frame index and the sign of `layerFrame` differ by definition and are neutralized; every
     // nested `frame` (grain, precomps) stays, which can only miss a dedupe, never repeat wrong pixels.
-    const key = JSON.stringify({ ...evaluated, frame: 0 }, frameIndependent);
+    const key = JSON.stringify({ ...evaluated, frame: 0 }, (key, value: unknown) => {
+      // Shared precomps can reference one definition thousands of times. Keep its immutable pin
+      // in the key and leave per-frame values (frame, seed, uniforms) in the resolved instance.
+      if (key === "definition" && value !== null && typeof value === "object")
+        return e.shaderKeys.get(value) ?? value;
+      return frameIndependent(key, value);
+    });
     if (e.previousKey !== undefined && key === e.previousKey)
       return { frame, repeated: true, rgba: null, ...e.previous };
     const drawn = drawFrame(

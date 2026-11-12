@@ -1353,3 +1353,38 @@ it("rejects custom shader work before allocating its target", async () => {
   await expect(gpu.composite(p)).rejects.toThrow(/oversized-shader.*custom shader work/);
   expect(() => compositeReference(p)).toThrow(/oversized-shader.*custom shader work/);
 });
+
+it("rounds custom shader intermediates like GLSL highp", async () => {
+  const shader: PlannedLayer = {
+    id: "rounding",
+    type: "generator",
+    width: W,
+    height: H,
+    generator: {
+      type: "custom-shader",
+      definition: {
+        id: "custom-rounding",
+        version: "1.0.0",
+        title: "Rounding",
+        hash: "0".repeat(64),
+        kind: "generator",
+        uniforms: { u_offset: { type: "float", default: 500000 } },
+        source:
+          "float offset = u_offset + 0.01; return vec4((offset - u_offset) * 100.0, 0.0, 0.0, 1.0);",
+      },
+      frame: 0,
+      fps: 30,
+      seed: 0,
+      uniforms: [[500000]],
+    },
+    space: "layer",
+    opacity: 1,
+    blendMode: "normal",
+    mask: null,
+    matte: null,
+    matrix: [1, 0, 0, 1, 0, 0],
+  };
+  const p = plan([shader]);
+  expect([...compositeReference(p).pixels.slice(0, 4)]).toEqual([0, 0, 0, 255]);
+  await expectMatches(p);
+});

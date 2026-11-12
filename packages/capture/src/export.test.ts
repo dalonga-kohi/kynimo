@@ -169,13 +169,15 @@ it("exports frame-driven shader pins with the same pixels as frame capture", asy
     ...doc(layer("generator", { generator, width: 16, height: 16 }), null),
     assets: [],
   };
-  const frames = [3, 0, 1];
+  const frames = [3, 0, 1, 1];
   const shaders = [definition];
   const captured = await capture.captureFrames(document, frames, { shaders });
   const session = await capture.openExport(document, { shaders, alpha: "premultiplied" });
   try {
-    expect(new Set(captured.map((frame) => frame.pixelsSha256)).size).toBe(frames.length);
-    expect((await exportAll(session, frames)).map((frame) => sha(frame.rgba))).toEqual(
+    expect(new Set(captured.map((frame) => frame.pixelsSha256)).size).toBe(3);
+    const exported = await exportAll(session, frames);
+    expect(exported.map((frame) => frame.repeated)).toEqual([false, false, false, true]);
+    expect(exported.map((frame) => sha(frame.rgba))).toEqual(
       captured.map((frame) => frame.pixelsSha256),
     );
   } finally {

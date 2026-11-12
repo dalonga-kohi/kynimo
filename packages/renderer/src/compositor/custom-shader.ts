@@ -6,15 +6,15 @@ export const MAX_FRAME_SHADER_WORK = 128_000_000;
 
 type Width = 1 | 2 | 3 | 4;
 type Register = { slot: number; width: Width };
-type Instruction = (values: Float64Array, sample: ShaderSample | undefined) => void;
-type ShaderSample = (u: number, v: number, out: Float64Array, offset: number) => void;
+type Instruction = (values: Float32Array, sample: ShaderSample | undefined) => void;
+type ShaderSample = (u: number, v: number, out: Float32Array, offset: number) => void;
 const widths = { float: 1, vec2: 2, vec3: 3, vec4: 4 } as const;
 const types = ["", "float", "vec2", "vec3", "vec4"] as const;
 const channels = "xyzw";
 const max = MAX_SHADER_VALUE;
 const clip = (x: number) => Math.min(max, Math.max(-max, x));
 const unit = (x: number) => Math.min(1, Math.max(0, x));
-const epsilon = 0.000001;
+const epsilon = Math.fround(0.000001);
 const divisor = (x: number) => (x < 0 ? -1 : 1) * Math.max(Math.abs(x), epsilon);
 
 const inputs = [
@@ -87,7 +87,7 @@ const math = new Map<string, MathFunction>([
   ["sin", builtIn("sin", 1, Math.sin)],
   ["min", builtIn("min", 2, Math.min)],
   ["max", builtIn("max", 2, Math.max)],
-  ["mix", builtIn("mix", 3, (a, b, t) => a * (1 - t) + b * t)],
+  ["mix", builtIn("mix", 3, (a, b, t) => Math.fround(a * Math.fround(1 - t)) + Math.fround(b * t))],
   [
     "clamp",
     {
@@ -174,7 +174,7 @@ export function compileShader(definition: ShaderDefinitionInput): CompiledShader
   function lanes(
     width: Width,
     code: (lane: number) => string,
-    run: (values: Float64Array, lane: number) => number,
+    run: (values: Float32Array, lane: number) => number,
   ): Register {
     const parts = Array.from({ length: width }, (_, lane) => code(lane));
     return emit(
@@ -387,7 +387,8 @@ export function compileShader(definition: ShaderDefinitionInput): CompiledShader
     fragment,
     work,
     reference(draw, sample) {
-      const values = new Float64Array(slots);
+      // GLSL highp stores each scalar intermediate at float32 precision.
+      const values = new Float32Array(slots);
       const [uv, pixel, resolution, frame, fps, seed] = inputRegisters as [
         Register,
         Register,
