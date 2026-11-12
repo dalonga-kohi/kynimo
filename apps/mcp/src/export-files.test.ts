@@ -8,7 +8,7 @@ let root: string;
 let clock: number;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "kynimo-exports-test-"));
-  clock = 1_000_000;
+  clock = Date.UTC(2026, 0, 3);
 });
 afterEach(() => rm(root, { recursive: true, force: true }));
 
@@ -79,7 +79,8 @@ describe("ExportFiles", () => {
     clock += 1;
     expect(files.lookup(saved.token)).toBeUndefined();
     await files.sweep();
-    expect(await exists(saved.file)).toBe(false);
+    // The expired lookup may already have started an asynchronous unlink.
+    await expect.poll(() => exists(saved.file)).toBe(false);
     await files.sweep();
   });
 
