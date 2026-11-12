@@ -23,6 +23,7 @@ export {
   CompositorError,
   createCompositor,
 } from "./compositor/webgl.js";
+export { MAX_DEFORM_COORDINATE, MAX_DEFORM_TRIANGLES, MAX_FRAME_DEFORM_WORK } from "./deform.js";
 export * from "./fonts.js";
 export { MAX_FRAME_RASTER_PIXELS, RenderError, rasterizeFrame } from "./frame.js";
 export * from "./geometry.js";

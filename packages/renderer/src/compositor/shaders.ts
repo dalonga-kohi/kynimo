@@ -46,6 +46,39 @@ void main() {
   outColor = c;
 }`;
 
+export const DEFORM_VERTEX = `#version 300 es
+layout(location = 0) in vec2 a_dst;
+layout(location = 1) in vec2 a_src;
+uniform vec2 u_targetSize;
+uniform vec2 u_pad;
+out highp vec2 v_src;
+void main() {
+  v_src = a_src;
+  gl_Position = vec4((a_dst + u_pad) * (2.0 / u_targetSize) - 1.0, 0.0, 1.0);
+}`;
+
+/** Bilinear sampling after masking each source texel, with transparent samples outside. */
+export const DEFORM = `${HEADER}
+uniform sampler2D u_src;
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+in highp vec2 v_src;
+vec4 maskedTexel(ivec2 p, ivec2 size) {
+  if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size))) return vec4(0.0);
+  vec4 c = texelFetch(u_src, p, 0);
+  if (u_hasMask) c *= texelFetch(u_mask, p, 0).r;
+  return c;
+}
+void main() {
+  vec2 q = v_src - 0.5;
+  ivec2 p = ivec2(floor(q));
+  vec2 f = fract(q);
+  ivec2 size = textureSize(u_src, 0);
+  vec4 top = mix(maskedTexel(p, size), maskedTexel(p + ivec2(1, 0), size), f.x);
+  vec4 bottom = mix(maskedTexel(p + ivec2(0, 1), size), maskedTexel(p + ivec2(1), size), f.x);
+  outColor = mix(top, bottom, f.y);
+}`;
+
 const TRANSPARENT_FETCH = `
 vec4 at(sampler2D s, ivec2 p) {
   ivec2 size = textureSize(s, 0);
