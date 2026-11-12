@@ -78,6 +78,7 @@ describe("background", () => {
       for (const [width, height] of [
         [1920, 1080],
         [1080, 1920],
+        [7680, 4320],
       ] as const)
         it(`evaluates '${kind}' over ${duration} frames at ${width}x${height}`, () => {
           for (const frame of framesOf(duration)) {
@@ -96,6 +97,23 @@ describe("background", () => {
             expect(comp.background).toBeNull();
           }
         });
+
+  it("keeps generator points within the scene's limit for a far-off origin", () => {
+    for (const kind of ["radial", "conic"])
+      for (const [width, height] of [
+        [1920, 1080],
+        [7680, 4320],
+      ] as const)
+        for (const origin of [
+          [65536, 65536],
+          [-65536, -65536],
+        ])
+          for (const frame of [0, 75, 149])
+            expect(
+              () => run(ID, { kind, origin }, { frame, duration: 150, width, height }),
+              `${kind} ${origin} ${width}`,
+            ).not.toThrow();
+  });
 
   it("draws the generator each kind names", () => {
     const g = (kind: string) => generator({ kind });

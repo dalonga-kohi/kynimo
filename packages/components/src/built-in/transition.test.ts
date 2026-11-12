@@ -18,6 +18,11 @@ const SIZES = [
   [1920, 1080],
   [1080, 1920],
 ] as const;
+/** Sizes up to the largest composition: only evaluated, since sampling every pixel there is slow. */
+const LARGE = [
+  [7680, 4320],
+  [8192, 8192],
+] as const;
 
 /** Is `p` inside the circle a four-vertex mask path describes? */
 function inCircle(m: ResolvedMask, [x, y]: [number, number]): boolean {
@@ -38,10 +43,19 @@ function covers(l: ResolvedLayer, p: [number, number]): boolean {
   if (l.type === "solid")
     inside = x >= -1e-6 && y >= -1e-6 && x <= l.width + 1e-6 && y <= l.height + 1e-6;
   else if (l.type === "shape") {
+    const r = l.contents.find((i) => i.type === "rect");
     const e = l.contents.find((i) => i.type === "ellipse");
-    if (e?.type !== "ellipse") return false;
-    const [ex, ey] = [(x - e.position[0]) / (e.size[0] / 2), (y - e.position[1]) / (e.size[1] / 2)];
-    inside = ex * ex + ey * ey <= 1;
+    if (r?.type === "rect")
+      inside =
+        Math.abs(x - r.position[0]) <= r.size[0] / 2 + 1e-6 &&
+        Math.abs(y - r.position[1]) <= r.size[1] / 2 + 1e-6;
+    else if (e?.type === "ellipse") {
+      const [ex, ey] = [
+        (x - e.position[0]) / (e.size[0] / 2),
+        (y - e.position[1]) / (e.size[1] / 2),
+      ];
+      inside = ex * ex + ey * ey <= 1;
+    } else return false;
   }
   if (!inside) return false;
   if (l.masks.length === 0) return true;
@@ -113,6 +127,16 @@ describe("transition", () => {
             expect(comp.layers.length).toBeLessThanOrEqual(600);
           }
         });
+
+  for (const kind of KINDS)
+    for (const [width, height] of LARGE)
+      it(`evaluates '${kind}' at ${width}x${height}`, () => {
+        for (const frame of [0, 74, 149]) {
+          const comp = run(ID, { kind }, { frame, duration: 150, width, height });
+          expect(comp.layers.length).toBeGreaterThan(0);
+          expect(comp.layers.length).toBeLessThanOrEqual(600);
+        }
+      });
 
   describe("coverage", () => {
     for (const kind of KINDS)
@@ -277,10 +301,11 @@ describe("transition", () => {
     it("diagonal: a tilted square larger than the frame's diagonal", () => {
       const l = layer({ kind: "diagonal" }, 74, "diagonal");
       expect(l.transform.rotation).toBe(20);
-      expect(l.type === "solid" && l.width).toBeGreaterThanOrEqual(
-        Math.hypot(1920, 1080) * 1.2 - 1,
-      );
-      expect(l.type === "solid" && l.width).toBe(l.type === "solid" && l.height);
+      const rect = l.type === "shape" ? l.contents.find((i) => i.type === "rect") : undefined;
+      if (rect?.type !== "rect") throw new Error("expected a rect");
+      expect(rect.size[0]).toBeGreaterThanOrEqual(Math.hypot(1920, 1080) * 1.2 - 1);
+      expect(rect.size[0]).toBe(rect.size[1]);
+      expect(rect.position).toEqual([0, 0]);
     });
 
     it("blinds: strips grow from their middle, staggered, and leave in the other order", () => {

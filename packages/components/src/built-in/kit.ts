@@ -488,7 +488,7 @@ export interface Envelope {
  * together fit in `span - 1` frames (so the last frame is the end state of the exit, and with no
  * exit the last frame is fully entered): if they don't, both shrink in proportion (at least one
  * frame each, an exit of 0 stays 0), and an exit that still doesn't fit is dropped. A one-frame
- * instance shows its end state.
+ * instance shows the entered state (no exit).
  */
 export function envelope(
   ctx: ComponentEvalContext,

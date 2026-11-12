@@ -3,6 +3,7 @@ import {
   type Effect,
   type Generator,
   MAX_GENERATOR_OFFSET,
+  MAX_GENERATOR_POINT,
   MAX_NOISE_SCALE,
   MAX_PATTERN_SIZE,
   MIN_NOISE_SCALE,
@@ -56,6 +57,12 @@ const MAX_SEGMENTS = 512;
 const PULSE = 0.08;
 const RAD = Math.PI / 180;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+/** A generator point, kept within the scene's limit (a far-off `origin` would pass it). */
+const point = (x: number, y: number): Vec2 =>
+  vec(
+    clamp(x, -MAX_GENERATOR_POINT, MAX_GENERATOR_POINT),
+    clamp(y, -MAX_GENERATOR_POINT, MAX_GENERATOR_POINT),
+  );
 
 export const background = defineComponent({
   id: "background",
@@ -101,7 +108,7 @@ export const background = defineComponent({
     loops: {
       type: "number",
       description:
-        "How many times the motion repeats over the instance, from 0 (still) to 8; whole numbers loop seamlessly.",
+        "Motion repeats from 0 (still) to 8 times; whole numbers loop seamlessly. Patterns repeat fewer times when period × loops would pass the offset limit, as on very large frames.",
       default: 1,
       min: 0,
       max: 8,
@@ -238,12 +245,12 @@ export const background = defineComponent({
           start: sampled((turns) => {
             const a = turn(turns);
             const length = Math.abs(W * Math.cos(a)) + Math.abs(H * Math.sin(a));
-            return vec(cx - (Math.cos(a) * length) / 2, cy - (Math.sin(a) * length) / 2);
+            return point(cx - (Math.cos(a) * length) / 2, cy - (Math.sin(a) * length) / 2);
           }),
           end: sampled((turns) => {
             const a = turn(turns);
             const length = Math.abs(W * Math.cos(a)) + Math.abs(H * Math.sin(a));
-            return vec(cx + (Math.cos(a) * length) / 2, cy + (Math.sin(a) * length) / 2);
+            return point(cx + (Math.cos(a) * length) / 2, cy + (Math.sin(a) * length) / 2);
           }),
           stops: still(spread(colors, false)),
         };
@@ -255,9 +262,11 @@ export const background = defineComponent({
         generator = {
           type: "gradient",
           kind: "radial",
-          start: still(vec(x, y)),
+          start: still(point(x, y)),
           // Breathes by 8% once per loop.
-          end: sampled((turns) => vec(x + radius * (1 + PULSE * Math.sin(2 * Math.PI * turns)), y)),
+          end: sampled((turns) =>
+            point(x + radius * (1 + PULSE * Math.sin(2 * Math.PI * turns)), y),
+          ),
           stops: still(spread(colors, false)),
         };
         break;
@@ -266,9 +275,9 @@ export const background = defineComponent({
         generator = {
           type: "gradient",
           kind: "conic",
-          start: still(vec(cx + ox, cy + oy)),
+          start: still(point(cx + ox, cy + oy)),
           end: sampled((turns) =>
-            vec(cx + ox + 100 * Math.cos(turn(turns)), cy + oy + 100 * Math.sin(turn(turns))),
+            point(cx + ox + 100 * Math.cos(turn(turns)), cy + oy + 100 * Math.sin(turn(turns))),
           ),
           // The last stop is the first color again, so the seam where the angle wraps is invisible.
           stops: still(spread(colors, true)),

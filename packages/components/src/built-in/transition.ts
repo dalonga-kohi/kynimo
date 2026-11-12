@@ -8,6 +8,7 @@ import {
   keys,
   LINEAR,
   pathMask,
+  rectItem,
   round3,
   shapeLayer,
   solidLayer,
@@ -333,9 +334,20 @@ export const transition = defineComponent({
         // Far enough that the tilted square, corner first, has fully left the frame.
         const distance = (side / 2) * (Math.cos(rad) + Math.sin(rad)) + extent / 2 + 1;
         layers.push(
-          solid("diagonal", "Diagonal", side, side, color, {
-            position: slide(pos(W / 2, H / 2), 1, distance, together, noPlan),
-            rotation: TILT,
+          // A shape layer, not a solid: a solid is capped at 8192 and this square reaches 1.2 times
+          // the frame diagonal. The rect is centered on the layer origin, so it rotates about its middle.
+          shapeLayer({
+            id: "diagonal",
+            name: "Diagonal",
+            span,
+            contents: [
+              rectItem("diagonal-rect", { position: vec(0, 0), size: vec(side, side) }),
+              fillItem("diagonal-fill", color),
+            ],
+            transform: {
+              position: slide(pos(W / 2, H / 2), 1, distance, together, noPlan),
+              rotation: still(TILT),
+            },
           }),
         );
         break;
