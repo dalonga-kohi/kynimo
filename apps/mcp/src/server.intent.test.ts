@@ -566,7 +566,7 @@ describe("intent tools", () => {
     expect(JSON.parse(first.text)).toEqual(tool);
   });
 
-  it("lists the same component versions and prop descriptors in the tool and resource", async () => {
+  it("lists built-in component versions and prop descriptors in the tool and authoring catalog", async () => {
     const catalog = await call(client, "list_components", {});
     expect(catalog.components).toMatchObject([
       { id: "background", version: "1.0.0" },
@@ -581,7 +581,14 @@ describe("intent tools", () => {
     ]);
     const [first] = (await client.readResource({ uri: "kynimo://components" })).contents;
     if (first === undefined || !("text" in first)) throw new Error("expected text contents");
-    expect(JSON.parse(first.text)).toEqual(catalog);
+    expect(JSON.parse(first.text)).toMatchObject({
+      ...catalog,
+      custom: {
+        language: expect.stringContaining("TypeScript"),
+        tools: ["define_component", "list_definitions", "add_component"],
+        prop_descriptor_schema: expect.any(Object),
+      },
+    });
   });
 
   it("previews and writes one pinned component layer, with idempotent retry and undo", async () => {

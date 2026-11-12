@@ -58,7 +58,7 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
   component: {
     status: "renders",
-    note: "evaluated by @kynimo/components into a subtree, then drawn like a precomp; no built-in components exist yet",
+    note: "built-in and pinned project components evaluate to layer subtrees drawn like precomps",
   },
   audio: {
     status: "accepted",

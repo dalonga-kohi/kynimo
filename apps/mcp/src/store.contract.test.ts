@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { ComponentProjectDefinitionSchema } from "@kynimo/components";
 import { SCENE_FORMAT_VERSION, type ShaderDefinition, withLayerDefaults } from "@kynimo/scene";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { KynimoService, ToolError } from "./service.js";
@@ -12,6 +13,7 @@ import {
   LOCAL_ACCOUNT,
   MemoryStore,
   type ProjectStore,
+  type WriteRecord,
 } from "./store.js";
 import {
   type Database,
@@ -285,6 +287,86 @@ for (const [name, make] of Object.entries(backends)) {
       if ("forAccount" in reopened)
         expect(
           await (reopened as AccountStore).forAccount("other").listShaderDefinitions(id),
+        ).toBeUndefined();
+    });
+
+    it("commits component definitions and their keys together, and rejects duplicate versions", async () => {
+      const { id, store, write } = await setup();
+      const program = `export function evaluate(props, ctx) {
+        const layers = [];
+        return { width: ctx.width, height: ctx.height, layers };
+      }`;
+      const definition = ComponentProjectDefinitionSchema.parse({
+        id: "custom-meter",
+        version: "1.0.0",
+        title: "Meter",
+        description: "An animated meter",
+        props: {
+          progress: { type: "number", default: 0, description: "Progress", animatable: true },
+        },
+        source: program,
+        program,
+        hash: "a".repeat(64),
+      });
+      const { source: _source, program: _program, ...summary } = definition;
+      const record: WriteRecord = {
+        actor: "agent",
+        key: "define-component",
+        fingerprint: "request",
+        outcome: {
+          status: "applied",
+          version: 1,
+          result: {
+            project_id: id,
+            version: 1,
+            changed: false,
+            component_definition: { kind: "component", ...summary },
+            definition_created: true,
+            layers_added: [],
+            layers_removed: [],
+            layers_changed: [],
+            markers_added: [],
+            markers_removed: [],
+          },
+        },
+      };
+      expect(await store.listComponentDefinitions(id)).toEqual([]);
+      await store.transact(id, async (tx) => {
+        expect(await tx.componentDefinitions()).toEqual([]);
+        return { value: undefined, commit: { componentDefinition: definition, record } };
+      });
+
+      await expect(
+        store.transact(id, async (tx) => {
+          expect(await tx.componentDefinitions()).toEqual([definition]);
+          return {
+            value: undefined,
+            commit: {
+              componentDefinition: { ...definition, title: "Different meter" },
+              project: { ...tx.project, version: 2 },
+              record: { ...record, key: "duplicate-component" },
+            },
+          };
+        }),
+      ).rejects.toThrow();
+      expect(await store.lookupWrite(id, "agent", "duplicate-component")).toEqual({
+        status: "unknown",
+      });
+      expect(await store.get(id)).toMatchObject({ version: 1 });
+      await write(1, "layer", [addSolid("new")]);
+      if (!backend) throw new Error("no backend");
+      const reopened = await backend.open();
+      expect(await reopened.listComponentDefinitions(id)).toEqual([definition]);
+      expect(await reopened.listShaderDefinitions(id)).toEqual([]);
+      expect(await reopened.lookupWrite(id, "agent", record.key)).toEqual({
+        status: "found",
+        record,
+      });
+      expect(await reopened.get(id)).toMatchObject({ version: 2 });
+      expect(await reopened.get(id)).not.toHaveProperty("componentDefinitions");
+      if ("forAccount" in reopened)
+        expect(
+          await (reopened as AccountStore).forAccount("other").listComponentDefinitions(id),
         ).toBeUndefined();
     });
 

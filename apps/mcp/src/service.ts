@@ -10,7 +10,14 @@ import {
   sheetSize,
   validateShaderProgram,
 } from "@kynimo/capture";
-import { createComponentHost } from "@kynimo/components";
+import {
+  type ComponentDefinitionInput,
+  type ComponentProjectDefinition,
+  createComponentHost,
+  createProjectComponentRegistry,
+  MAX_PROJECT_COMPONENT_DEFINITIONS,
+  type RenderComponentDefinition,
+} from "@kynimo/components";
 import {
   evaluateFrame,
   indexShaderDefinitions,
@@ -55,6 +62,17 @@ import { type ExpandError, expandScript, type ScriptLimits } from "@kynimo/scrip
 import type { z } from "zod";
 import { BEAT_LIMITS, detectBeats } from "./beats.js";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
+import {
+  compareComponentVersions,
+  compileComponentSource,
+  componentBindingError,
+  componentBindings,
+  componentHash,
+  componentKey,
+  componentSummary,
+  projectComponentId,
+  verifiedComponents,
+} from "./components.js";
 import {
   type CachedExport,
   clipLabel,
@@ -1053,6 +1071,7 @@ export class KynimoService {
     frames: readonly number[],
     video = true,
     shaders: readonly ShaderDefinition[] = [],
+    components: readonly RenderComponentDefinition[] = [],
   ): Promise<RenderMedia> {
     const images = new Set<string>();
     const families = new Set<string>();
@@ -1073,7 +1092,7 @@ export class KynimoService {
     // or a video's source frames are needed.
     const evaluated =
       hasComponents || (video && doc.assets.some((a) => a.type === "video"))
-        ? walkEvaluated(doc, compositionId, frames, shaders)
+        ? walkEvaluated(doc, compositionId, frames, shaders, components)
         : undefined;
     for (const id of evaluated?.images ?? []) images.add(id);
     for (const family of evaluated?.families ?? []) families.add(family);
@@ -1095,7 +1114,12 @@ export class KynimoService {
     const videoFrames = video
       ? await this.loadVideoFrames(doc, evaluated?.videoFrames ?? new Map(), budget)
       : new Map<string, Uint8Array>();
-    return { assets: out, videoFrames, ...(shaders.length === 0 ? {} : { shaders }) };
+    return {
+      assets: out,
+      videoFrames,
+      ...(shaders.length === 0 ? {} : { shaders }),
+      ...(components.length === 0 ? {} : { components }),
+    };
   }
 
   /**
@@ -1513,6 +1537,11 @@ export class KynimoService {
         const shaderError = await shaderBindingError(step.state.doc, tx.definitions);
         if (shaderError !== undefined)
           return reject("invalid", "the scene contains an invalid shader binding", [shaderError]);
+        const componentError = await componentBindingError(step.state.doc, tx.componentDefinitions);
+        if (componentError !== undefined)
+          return reject("invalid", "the scene contains an invalid component binding", [
+            componentError,
+          ]);
 
         const version = step.changes.length > 0 ? p.version + 1 : p.version;
         const result = summarizeChanges(p.id, version, step.changes);
@@ -1610,6 +1639,17 @@ export class KynimoService {
           "invalid",
           "the scene contains an invalid shader binding",
           [shaderError],
+          p.version,
+        );
+      const componentError = await componentBindingError(
+        step.state.doc,
+        async () => (await this.store.listComponentDefinitions(p.id)) ?? [],
+      );
+      if (componentError !== undefined)
+        throw new ToolError(
+          "invalid",
+          "the scene contains an invalid component binding",
+          [componentError],
           p.version,
         );
       onDryRun?.(step.state.doc);
@@ -1813,7 +1853,129 @@ export class KynimoService {
     return result;
   }
 
-  async listDefinitions(projectId: string): Promise<{ definitions: ShaderDefinitionSummary[] }> {
+  async defineComponent(projectId: string, key: string, input: ComponentDefinitionInput) {
+    const print = fingerprint({ tool: "define_component", input });
+    const reply = (result: WriteResult, replayed: boolean) => {
+      if (result.component_definition === undefined || result.definition_created === undefined)
+        throw new Error("define_component outcome is missing its definition");
+      return {
+        project_id: projectId,
+        definition: result.component_definition,
+        created: result.definition_created,
+        replayed,
+      };
+    };
+    const done = await this.store.transact(
+      projectId,
+      async (tx): Promise<Step<ReturnType<typeof reply> | ToolError>> => {
+        const earlier = await previousUse(
+          await tx.lookup(this.actor, key),
+          key,
+          print,
+          "define_component",
+          (o) => reply(o.result, true),
+        );
+        if (earlier !== undefined) return { value: earlier };
+        const version = tx.project.version;
+        const record = (outcome: WriteOutcome): WriteRecord => ({
+          actor: this.actor,
+          key,
+          fingerprint: print,
+          outcome,
+        });
+        const reject = (kind: "invalid" | "conflict", path: string, message: string) => {
+          const errors = [{ path: [path], message }];
+          return {
+            commit: {
+              record: record({
+                status: "rejected",
+                kind,
+                message,
+                errors,
+                currentVersion: version,
+              }),
+            },
+            value: new ToolError(kind, message, errors, version),
+          };
+        };
+        const definitions = verifiedComponents(await tx.componentDefinitions());
+        const existing = definitions.find(
+          (def) => def.id === input.id && def.version === input.version,
+        );
+        let definition: ComponentProjectDefinition;
+        if (existing === undefined) {
+          if (definitions.length >= MAX_PROJECT_COMPONENT_DEFINITIONS)
+            return reject(
+              "invalid",
+              "id",
+              `the project already stores ${MAX_PROJECT_COMPONENT_DEFINITIONS} component versions`,
+            );
+          let program: string;
+          try {
+            program = compileComponentSource(input);
+          } catch (error) {
+            return reject(
+              "invalid",
+              "source",
+              (error instanceof Error ? error.message : String(error)).slice(0, 300),
+            );
+          }
+          const content = { ...input, program };
+          definition = { ...content, hash: componentHash(content) };
+        } else {
+          if (componentHash({ ...input, program: existing.program }) !== existing.hash)
+            return reject(
+              "conflict",
+              "version",
+              "this component version is immutable; publish a new version",
+            );
+          definition = existing;
+        }
+        const result: WriteResult = {
+          ...summarizeChanges(projectId, version, []),
+          component_definition: componentSummary(definition),
+          definition_created: existing === undefined,
+        };
+        return {
+          commit: {
+            record: record({ status: "applied", version, result }),
+            ...(existing === undefined ? { componentDefinition: definition } : {}),
+          },
+          value: reply(result, false),
+        };
+      },
+    );
+    if (done === undefined) throw notFound(projectId);
+    return unwrap(done.value);
+  }
+
+  async listDefinitions(projectId: string) {
+    const [shaders, { component_definitions }] = await Promise.all([
+      this.listShaderDefinitions(projectId),
+      this.listComponentDefinitions(projectId),
+    ]);
+    return { ...shaders, ...(component_definitions.length === 0 ? {} : { component_definitions }) };
+  }
+
+  async listComponentDefinitions(projectId: string) {
+    const definitions = await this.store.listComponentDefinitions(projectId);
+    if (definitions === undefined) throw notFound(projectId);
+    return {
+      component_definitions: verifiedComponents(definitions)
+        .sort(compareComponentVersions)
+        .map(componentSummary),
+    };
+  }
+
+  async componentDefinitionsForPlacement(projectId: string, componentId: string) {
+    if (!projectComponentId(componentId)) return [];
+    const { component_definitions } = await this.listComponentDefinitions(projectId);
+    return component_definitions.filter(({ id }) => id === componentId);
+  }
+
+  async listShaderDefinitions(
+    projectId: string,
+  ): Promise<{ definitions: ShaderDefinitionSummary[] }> {
     const definitions = await this.store.listShaderDefinitions(projectId);
     if (definitions === undefined) throw notFound(projectId);
     return {
@@ -1825,6 +1987,19 @@ export class KynimoService {
         })
         .map(shaderSummary),
     };
+  }
+
+  private async componentsFor(
+    projectId: string,
+    doc: Project,
+  ): Promise<RenderComponentDefinition[]> {
+    const pins = new Set<string>();
+    for (const { layer } of componentBindings(doc))
+      pins.add(componentKey(layer.componentId, layer.componentVersion));
+    if (pins.size === 0) return [];
+    return verifiedComponents((await this.store.listComponentDefinitions(projectId)) ?? [])
+      .filter(({ id, version }) => pins.has(componentKey(id, version)))
+      .map(({ source: _source, hash: _hash, ...definition }) => definition);
   }
 
   private async shadersFor(projectId: string, doc: Project): Promise<ShaderDefinition[]> {
@@ -1918,6 +2093,7 @@ export class KynimoService {
         misses,
         true,
         await this.shadersFor(p.id, p.doc),
+        await this.componentsFor(p.id, p.doc),
       );
       const drawn = await this.draw(() =>
         renderer.frames(p.doc, comp.id, misses, input.max_size, media),
@@ -2029,6 +2205,7 @@ export class KynimoService {
         frames,
         true,
         await this.shadersFor(p.id, p.doc),
+        await this.componentsFor(p.id, p.doc),
       );
       sheet = await this.draw(() =>
         renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, media),
@@ -2126,22 +2303,46 @@ export class KynimoService {
   private exportDeps(plan: ExportPlan): ExportDeps {
     const { renderer, media, files } = this.exportTools();
     let shaders: Promise<ShaderDefinition[]> | undefined;
-    const definitions = () => (shaders ??= this.shadersFor(plan.project.id, plan.project.doc));
+    let components: Promise<RenderComponentDefinition[]> | undefined;
+    const shaderDefinitions = () =>
+      (shaders ??= this.shadersFor(plan.project.id, plan.project.doc));
+    const componentDefinitions = () =>
+      (components ??= this.componentsFor(plan.project.id, plan.project.doc));
     return {
       renderer,
       media,
       files,
       draw: (fn) => this.draw(fn),
       stillAssets: async (doc, composition, frames) =>
-        this.assetsFor(doc, composition, frames, false, await definitions()),
+        this.assetsFor(
+          doc,
+          composition,
+          frames,
+          false,
+          await shaderDefinitions(),
+          await componentDefinitions(),
+        ),
       videoFrames: async (doc, composition, frame) =>
         this.loadVideoFrames(
           doc,
-          shownVideoFrames(doc, composition, [frame], await definitions()),
+          shownVideoFrames(
+            doc,
+            composition,
+            [frame],
+            await shaderDefinitions(),
+            await componentDefinitions(),
+          ),
           this.assetBudget(),
         ),
       allAssets: async (doc, composition, frames) =>
-        this.assetsFor(doc, composition, frames, true, await definitions()),
+        this.assetsFor(
+          doc,
+          composition,
+          frames,
+          true,
+          await shaderDefinitions(),
+          await componentDefinitions(),
+        ),
       audioBytes: (asset) => {
         const failed = (why: string) =>
           new ToolError("render_failed", `audio asset '${asset.id}' ${why}; upload the file again`);
@@ -2262,6 +2463,7 @@ function walkEvaluated(
   compositionId: string,
   frames: readonly number[],
   shaders: readonly ShaderDefinition[],
+  definitions: readonly RenderComponentDefinition[],
 ): EvaluatedUsage {
   const usage: EvaluatedUsage = { images: new Set(), families: new Set(), videoFrames: new Map() };
   const onLayer = (l: ResolvedLayer) => {
@@ -2273,7 +2475,7 @@ function walkEvaluated(
       usage.videoFrames.set(l.assetId, set);
     }
   };
-  const components = createComponentHost(doc);
+  const components = createComponentHost(doc, createProjectComponentRegistry(definitions));
   const options = {
     components,
     ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
@@ -2308,9 +2510,10 @@ export function shownVideoFrames(
   compositionId: string,
   frames: readonly number[],
   shaders: readonly ShaderDefinition[] = [],
+  components: readonly RenderComponentDefinition[] = [],
 ): Map<string, Set<number>> {
   if (!doc.assets.some((a) => a.type === "video")) return new Map();
-  return walkEvaluated(doc, compositionId, frames, shaders).videoFrames;
+  return walkEvaluated(doc, compositionId, frames, shaders, components).videoFrames;
 }
 
 const jobNotFound = (id: string) =>

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ComponentDefinitionSummary, ComponentProjectDefinition } from "@kynimo/components";
 import {
   type Change,
   migrateProject,
@@ -42,6 +43,7 @@ export interface WriteResult {
   version: number;
   changed: boolean;
   definition?: ShaderDefinitionSummary;
+  component_definition?: ComponentDefinitionSummary;
   definition_created?: boolean;
   layers_added: string[];
   layers_removed: string[];
@@ -83,6 +85,7 @@ export interface ProjectState {
 /** `FileStore`'s file format: the state plus its write keys. Plain JSON. */
 export interface StoredProject extends ProjectState {
   definitions?: ShaderDefinition[];
+  componentDefinitions?: ComponentProjectDefinition[];
   /** Most recent last; capped at MAX_WRITE_KEYS. */
   writes: WriteRecord[];
 }
@@ -112,6 +115,7 @@ export interface ProjectTx extends KeyReader {
   /** The project as of this transaction; a copy, free to change. */
   readonly project: ProjectState;
   definitions(): Promise<ShaderDefinition[]>;
+  componentDefinitions(): Promise<ComponentProjectDefinition[]>;
 }
 
 /** The run_script program that wrote a version (ADR-0036, ADR-0044). The document never depends on it. */
@@ -131,6 +135,7 @@ export interface Commit {
   project?: ProjectState;
   script?: { source: string; seed: number };
   definition?: ShaderDefinition;
+  componentDefinition?: ComponentProjectDefinition;
 }
 
 /** A transaction's result; its commit, if any, is saved atomically before the call returns. */
@@ -149,6 +154,8 @@ export interface ProjectStore {
   list(): Promise<ProjectMeta[]>;
   /** Immutable shader versions, or undefined for a missing or inaccessible project. */
   listShaderDefinitions(id: string): Promise<ShaderDefinition[] | undefined>;
+  /** Immutable component versions, or undefined for a missing or inaccessible project. */
+  listComponentDefinitions(id: string): Promise<ComponentProjectDefinition[] | undefined>;
   get(id: string): Promise<ProjectState | undefined>;
   /** The document as it was at `version`, or undefined if the store has no such version. */
   getVersion(id: string, version: number): Promise<Project | undefined>;
@@ -186,6 +193,18 @@ export interface AccountStore extends ProjectStore {
 }
 
 const copy = <T>(value: T): T => structuredClone(value);
+
+function appendComponent(
+  definitions: ComponentProjectDefinition[] | undefined,
+  definition: ComponentProjectDefinition | undefined,
+): ComponentProjectDefinition[] | undefined {
+  if (definition === undefined) return definitions;
+  if (
+    definitions?.some(({ id, version }) => id === definition.id && version === definition.version)
+  )
+    throw new Error("component definition version already exists");
+  return [...(definitions ?? []), definition];
+}
 
 /** Runs tasks one at a time per key, in arrival order; a failed task does not block the next. */
 export class KeyedMutex {
@@ -235,6 +254,7 @@ interface MemoryEntry {
   /** Superseded versions; the current one is `state.doc`. */
   versions: Map<number, Project>;
   definitions: ShaderDefinition[];
+  componentDefinitions: ComponentProjectDefinition[];
   /** The script that wrote each version, where there is one. */
   scripts: Map<number, { source: string; seed: number }>;
 }
@@ -315,6 +335,11 @@ export class MemoryStore implements AccountStore {
     return entry && copy(entry.definitions);
   }
 
+  async listComponentDefinitions(id: string): Promise<ComponentProjectDefinition[] | undefined> {
+    const entry = this.entry(id);
+    return entry && copy(entry.componentDefinitions);
+  }
+
   async lookupWrite(projectId: string | undefined, actor: string, key: string): Promise<KeyLookup> {
     if (projectId === undefined) return find(this.data.creates.get(this.account) ?? [], actor, key);
     return find(this.entry(projectId)?.writes ?? [], actor, key);
@@ -329,10 +354,12 @@ export class MemoryStore implements AccountStore {
       const step = await fn({
         project: copy(entry.state),
         definitions: async () => copy(entry.definitions),
+        componentDefinitions: async () => copy(entry.componentDefinitions),
         lookup: async (actor, key) => find(entry.writes, actor, key),
       });
       if (step.commit) {
-        const { record, project, script, definition } = copy(step.commit);
+        const { record, project, script, definition, componentDefinition } = copy(step.commit);
+        const components = appendComponent(entry.componentDefinitions, componentDefinition);
         if (project) {
           if (project.version !== entry.state.version) {
             entry.versions.set(entry.state.version, entry.state.doc);
@@ -341,6 +368,7 @@ export class MemoryStore implements AccountStore {
           entry.state = project;
         }
         if (definition !== undefined) entry.definitions.push(definition);
+        if (components !== undefined) entry.componentDefinitions = components;
         entry.writes = [...entry.writes, record].slice(-this.data.maxWriteKeys);
       }
       return { value: step.value };
@@ -361,6 +389,7 @@ export class MemoryStore implements AccountStore {
             versions: new Map(),
             scripts: new Map(),
             definitions: [],
+            componentDefinitions: [],
           });
         this.data.creates.set(this.account, [...creates, record].slice(-this.data.maxWriteKeys));
       }
@@ -520,7 +549,12 @@ export class FileStore implements ProjectStore {
   async get(id: string): Promise<ProjectState | undefined> {
     const stored = await this.read(id);
     if (!stored) return undefined;
-    const { writes: _, definitions: _definitions, ...state } = stored;
+    const {
+      writes: _,
+      definitions: _definitions,
+      componentDefinitions: _components,
+      ...state
+    } = stored;
     return state;
   }
 
@@ -579,6 +613,11 @@ export class FileStore implements ProjectStore {
     return stored && (stored.definitions ?? []);
   }
 
+  async listComponentDefinitions(id: string): Promise<ComponentProjectDefinition[] | undefined> {
+    const stored = await this.read(id);
+    return stored && (stored.componentDefinitions ?? []);
+  }
+
   private async put(project: StoredProject): Promise<void> {
     if (!PROJECT_ID_PATTERN.test(project.id)) throw new Error(`invalid project id ${project.id}`);
     await mkdir(this.projectsDir(), { recursive: true });
@@ -598,14 +637,19 @@ export class FileStore implements ProjectStore {
     return this.mutex.run(id, async () => {
       const stored = await this.read(id);
       if (!stored) return undefined;
-      const { writes, definitions, ...state } = stored;
+      const { writes, definitions, componentDefinitions, ...state } = stored;
       const step = await fn({
         project: copy(state),
         definitions: async () => copy(definitions ?? []),
+        componentDefinitions: async () => copy(componentDefinitions ?? []),
         lookup: async (actor, key) => find(writes, actor, key),
       });
       if (step.commit) {
         const { record, project = state } = step.commit;
+        const nextComponents = appendComponent(
+          componentDefinitions,
+          step.commit.componentDefinition,
+        );
         if (project.version !== state.version) {
           await mkdir(join(this.dir, "versions", id), { recursive: true });
           await writeAtomic(this.versionPath(id, state.version), JSON.stringify(state.doc));
@@ -619,6 +663,7 @@ export class FileStore implements ProjectStore {
           id,
           writes: [...writes, record].slice(-MAX_WRITE_KEYS),
           ...(nextDefinitions === undefined ? {} : { definitions: nextDefinitions }),
+          ...(nextComponents === undefined ? {} : { componentDefinitions: nextComponents }),
         });
         if (project.version !== state.version && step.commit.script) {
           const { source, seed } = step.commit.script;

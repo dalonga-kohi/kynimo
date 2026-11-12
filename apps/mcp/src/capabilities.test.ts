@@ -1,4 +1,9 @@
-import { BUILT_IN_COMPONENTS } from "@kynimo/components";
+import {
+  BUILT_IN_COMPONENTS,
+  COMPONENT_PROGRAM_LIMITS,
+  MAX_PROJECT_COMPONENT_DEFINITIONS,
+  MAX_PROPS_PER_COMPONENT,
+} from "@kynimo/components";
 import {
   MAX_DEFORM_COORDINATE,
   MAX_DEFORM_TRIANGLES,
@@ -242,12 +247,18 @@ describe("capability manifest", () => {
     expect(manifest.features.effects["custom-shader"].status).toBe("renders");
     expect(manifest.layer_types.generator.status).toBe("renders");
     expect(manifest.layer_types.component.status).toBe("renders");
-    expect(manifest.unavailable.custom_components?.reason).toContain("define_component");
+    expect(manifest.unavailable).not.toHaveProperty("custom_components");
     expect(manifest.components).toEqual({
-      tools: ["add_component", "list_components"],
+      tools: ["add_component", "list_components", "define_component", "list_definitions"],
       resource: "kynimo://components",
       built_ins: [...new Set(BUILT_IN_COMPONENTS.map(({ id }) => id))].sort(),
+      limits: {
+        ...COMPONENT_PROGRAM_LIMITS,
+        definitionsPerProject: MAX_PROJECT_COMPONENT_DEFINITIONS,
+        propsPerDefinition: MAX_PROPS_PER_COMPONENT,
+      },
     });
+    expect(manifest.resources.projectComponents).toBe("kynimo://components/{project_id}");
     expect(manifest.brief).toEqual({
       tool: "build_from_brief",
       max_shots: 24,
