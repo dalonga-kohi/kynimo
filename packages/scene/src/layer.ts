@@ -23,6 +23,7 @@ import {
 import { MAX_SHAPE_ITEMS, ShapeItemSchema } from "./shape.js";
 import { MAX_TEXT_ANIMATORS, TextAnimatorSchema } from "./text-animator.js";
 import { animatable, TransformSchema } from "./transform.js";
+import { TransitionSchema } from "./transition.js";
 
 /**
  * Timing. A layer is visible on frames `inFrame <= f < outFrame` (composition frames).
@@ -101,6 +102,11 @@ const drawn = {
   effects: EffectStackSchema.default([]),
   /** Transform motion blur, ADR-0053. `null` is off; absent means off, so older addLayer operations still validate. */
   motionBlur: MotionBlurSchema.nullable().default(null),
+  /**
+   * Built-in shader transition from what is beneath the layer to the layer itself. `null` is none;
+   * absent means none, so older addLayer operations still validate.
+   */
+  transition: TransitionSchema.nullable().default(null),
 };
 
 export const ShapeLayerSchema = z.strictObject({

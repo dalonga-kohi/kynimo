@@ -150,7 +150,7 @@ function walk(s: z.ZodType): z.ZodType {
 
 /**
  * `updateLayer`'s patch with the camera tracks declared loosely: a keyframed `pointOfInterest`
- * inlines to ~2 KB. The server validates them in full against `LayerPatchSchema`.
+ * inlines to ~2 KB, and the transition is one of ten kinds. The server validates them in full against `LayerPatchSchema`.
  */
 export const CompactLayerPatchSchema = z
   .strictObject({
@@ -164,6 +164,13 @@ export const CompactLayerPatchSchema = z
       .nullable()
       .describe(
         "Camera layers only: { value: [x, y, z] } or { keyframes }; null aims along the camera's own rotation.",
+      )
+      .optional(),
+    transition: z
+      .looseObject({})
+      .nullable()
+      .describe(
+        "Drawn layers except adjustment: a built-in shader transition { kind, progress: { value } or { keyframes } (0..1), ...kind fields }, replacing the whole value; null removes it. Kinds: dissolve, noise-dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch.",
       )
       .optional(),
   })

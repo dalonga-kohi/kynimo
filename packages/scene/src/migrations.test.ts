@@ -416,7 +416,7 @@ describe("migrateProject", () => {
         ...v8,
         compositions: [
           composition("main", [
-            { ...visual("a"), type: "adjustment", effects: [], motionBlur: null },
+            { ...visual("a"), type: "adjustment", effects: [], motionBlur: null, transition: null },
           ]),
         ],
       });
@@ -602,9 +602,70 @@ describe("migrateProject", () => {
     expect(migrateProject(before)).toEqual({
       ok: true,
       from: 12,
-      to: 13,
-      doc: { ...before, formatVersion: 13 },
+      to: 14,
+      doc: {
+        ...before,
+        formatVersion: 14,
+        compositions: [
+          composition("main", [
+            {
+              ...visual("a"),
+              type: "adjustment",
+              motionBlur: null,
+              transition: null,
+              effects: [{ id: "blur", type: "gaussian-blur", radius: { value: 8 } }],
+            },
+          ]),
+        ],
+      },
     });
+  });
+
+  it("13 → 14 adds transition: null to drawn layers only and changes nothing else", () => {
+    const solid = { ...visual("s"), type: "solid", width: 16, height: 16, color: "#ff0000" };
+    const { blendMode: _bm, matte: _m, masks: _ms, ...flat } = visual("c") as Obj;
+    const camera = { ...flat, type: "camera" };
+    const audio = { id: "au", type: "audio" };
+    const v13 = project({
+      formatVersion: 13,
+      compositions: [
+        composition("main", [solid, nullLayer("n"), camera, audio]),
+        composition("inner", [{ ...visual("p"), type: "adjustment", effects: [] }]),
+      ],
+    });
+    const r = runMigrations({ ...v13, formatVersion: 13 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    type Layers = { layers: Record<string, unknown>[] }[];
+    const comps = r.doc.compositions as Layers;
+    expect(comps[0]?.layers[0]).toEqual({ ...solid, transition: null });
+    expect(comps[0]?.layers[1]).not.toHaveProperty("transition");
+    expect(comps[0]?.layers[2]).not.toHaveProperty("transition");
+    expect(comps[0]?.layers[3]).not.toHaveProperty("transition");
+    expect(comps[1]?.layers[0]).toMatchObject({ transition: null });
+    const { compositions: _a, ...restBefore } = v13;
+    const { compositions: _b, ...restAfter } = r.doc;
+    expect(restAfter).toEqual({ ...restBefore, formatVersion: 14 });
+  });
+
+  it("13 → 14 keeps an existing transition", () => {
+    const transition = { kind: "dissolve", progress: { value: 0.5 } };
+    const solid = {
+      ...visual("s"),
+      type: "solid",
+      width: 16,
+      height: 16,
+      color: "#ff0000",
+      transition,
+    };
+    const r = runMigrations(
+      project({ formatVersion: 13, compositions: [composition("main", [solid])] }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok)
+      expect((r.doc.compositions as { layers: unknown[] }[])[0]?.layers[0]).toMatchObject({
+        transition,
+      });
   });
 
   it("migrates a version 1 document to the current version", () => {

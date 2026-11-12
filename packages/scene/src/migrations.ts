@@ -112,6 +112,18 @@ function addMotionBlur(doc: Json): Json {
   return doc;
 }
 
+/** 13 → 14: drawn layers gain `transition: null`, which renders exactly as before. */
+function addTransition(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers)
+      if (isJson(layer) && "blendMode" in layer && !("transition" in layer))
+        layer.transition = null;
+  }
+  return doc;
+}
+
 /**
  * 11 → 12: visual layers (drawn and null) gain `threeD: false` and their transforms gain zero
  * `positionZ`, `rotationX` and `rotationY` tracks (ADR-0054), which render exactly as before.
@@ -156,6 +168,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 11, migrate: addThreeD },
   // 12 → 13: custom shaders are new variants.
   { from: 12, migrate: (doc) => doc },
+  // 13 → 14: built-in shader transitions; drawn layers gain `transition: null`.
+  { from: 13, migrate: addTransition },
 ];
 
 export interface MigrationError {

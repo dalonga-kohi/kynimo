@@ -47,6 +47,7 @@ import { type ResolveShader, resolveShader, type ShaderDefinitions } from "./sha
 import { resolveShapeItems, samplePath } from "./shape.js";
 import { resolveTextAnimators } from "./text-animator.js";
 import { sampleColor, sampleNumber, sampleVector } from "./track.js";
+import { resolveTransition } from "./transition.js";
 
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
 type DrawnLayer = Exclude<VisualLayer, { type: "null" | "camera" }>;
@@ -129,6 +130,7 @@ function compositionCost(comp: Composition): number {
     units += 1;
     if (layer.type === "audio" || layer.type === "null" || layer.type === "camera") continue;
     units += layer.effects.length;
+    if (layer.transition !== null) units += 1;
     for (const mask of layer.masks) units += 1 + vertexCount(mask.path);
     if (layer.type !== "shape") continue;
     const stack: ShapeItem[] = [...layer.contents];
@@ -444,6 +446,8 @@ function evaluateComposition(
           blendMode: layer.blendMode,
           masks: resolveMasks(layer.masks, layerFrame, fps),
           effects: resolveEffects(layer.effects, layerFrame, fps, shader),
+          transition:
+            layer.transition === null ? null : resolveTransition(layer.transition, layerFrame, fps),
           matte: null,
           motion: motionOf(layer),
         },
@@ -567,6 +571,7 @@ type Base = Pick<
   | "blendMode"
   | "masks"
   | "effects"
+  | "transition"
   | "matte"
   | "motion"
 >;

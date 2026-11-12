@@ -39,6 +39,7 @@ import {
   type TransformProperty,
   TransformSchema,
 } from "./transform.js";
+import { TransitionSchema } from "./transition.js";
 
 export const MAX_BATCH_OPS = 500;
 
@@ -63,6 +64,8 @@ export const LayerPatchSchema = z
     solo: z.boolean(),
     /** Drawn layers only; `null` turns it off, `{}` is the defaults. */
     motionBlur: MotionBlurSchema.nullable(),
+    /** Drawn layers only (not adjustment); replaces the whole transition, `null` removes it. */
+    transition: TransitionSchema.nullable(),
     /** Layers with a transform but not adjustment (true), camera or audio layers: puts the layer in 3D space (ADR-0054). */
     threeD: z.boolean(),
     /** Camera layers only (ADR-0054). */
