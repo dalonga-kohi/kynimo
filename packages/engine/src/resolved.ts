@@ -4,9 +4,11 @@ import type { Rgba } from "./color.js";
 import type { ResolvedEffect } from "./effect.js";
 import type { ResolvedGenerator } from "./generator.js";
 import type { Projective } from "./projective.js";
+import type { ResolvedTransition } from "./transition.js";
 
 export type { ResolvedEffect } from "./effect.js";
 export type { ResolvedGenerator } from "./generator.js";
+export type { ResolvedTransition } from "./transition.js";
 
 import type { ResolvedTextAnimator } from "./text-animator.js";
 
@@ -87,6 +89,8 @@ interface LayerBase {
   masks: ResolvedMask[];
   /** Active effects in document order, with parameters sampled in layer time. */
   effects: ResolvedEffect[];
+  /** The built-in shader transition sampled in layer time, or `null`. Adjustment layers never have one. */
+  transition: ResolvedTransition | null;
   matte: ResolvedMatte | null;
   /**
    * Transform motion blur: the layer's placements at the shutter samples, in time order, to be drawn

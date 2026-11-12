@@ -260,6 +260,16 @@ function run(ctx: Ctx, op: Op, i: number): void {
         if (layer.type === "adjustment" && op.set.motionBlur !== null)
           fail(where, "adjustment layers have no motion blur; set motionBlur to null");
       }
+      if ("transition" in op.set) {
+        const where = [i, "set", "transition"];
+        if (layer.type === "camera" || layer.type === "null" || layer.type === "audio")
+          fail(
+            where,
+            `layer '${layer.id}' is ${/^[aeiou]/.test(layer.type) ? "an" : "a"} ${layer.type} layer and has no transition; transitions go on drawn layers`,
+          );
+        if (layer.type === "adjustment" && op.set.transition !== null)
+          fail(where, "adjustment layers have no transition; set transition to null");
+      }
       for (const [key, value] of Object.entries(op.set))
         setLayerValue(ctx, i, layer, [key], value as Json);
       return;
@@ -708,6 +718,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     masks: [],
     behaviors: [],
     motionBlur: null,
+    transition: null,
     effects: [],
     compositionId: compId,
   };

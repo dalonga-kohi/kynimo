@@ -293,7 +293,11 @@ describe("3D scene end to end", () => {
     return { ref, gap };
   };
 
-  it("sorts each run of 3D layers by depth around a 2D layer, and both compositors agree", async () => {
+  // The float64 reference of this projective scene takes about 4.5 s on a CI runner, so the
+  // default 5 s timeout fails whenever the runner is loaded.
+  it("sorts each run of 3D layers by depth around a 2D layer, and both compositors agree", {
+    timeout: 30_000,
+  }, async () => {
     const p = plan(layers);
     expect(p.layers.map((l) => l.id)).toEqual(["near", "far", "title", "back"]);
     const { ref, gap } = await parity(p);

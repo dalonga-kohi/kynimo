@@ -3,6 +3,7 @@ import type {
   ResolvedEffect,
   ResolvedGenerator,
   ResolvedLayer,
+  ResolvedTransition,
   Rgba,
 } from "@kynimo/engine";
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
@@ -66,6 +67,12 @@ interface PlannedBase {
    * it once at `matrix` with `opacity`.
    */
   motion?: readonly PlannedMotionSample[] | null;
+  /**
+   * A built-in shader transition (ADR-0045) between the frame below the layer (A) and the layer
+   * composited over it (B). Omitted or `null` draws the layer normally; planned only while
+   * progress is below 1. At progress 0 the compositor keeps A and skips the blend.
+   */
+  transition?: ResolvedTransition | null;
 }
 
 /**

@@ -51,6 +51,11 @@ export {
 export * from "./style.js";
 export { resolveTargets, type Target } from "./targets.js";
 export {
+  AddTransitionInputSchema,
+  type AddTransitionResolved,
+  addTransition,
+} from "./transition.js";
+export {
   checkMovedTracks,
   diffLayerOps,
   type KeyframeTrack,

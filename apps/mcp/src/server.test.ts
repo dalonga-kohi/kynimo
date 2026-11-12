@@ -57,6 +57,7 @@ describe("MCP server", () => {
       "add_effect",
       "add_layer",
       "add_mask",
+      "add_transition",
       "animate",
       "apply_ops",
       "apply_preset",
@@ -141,7 +142,8 @@ describe("MCP server", () => {
     // 102_000 after describing the sync_to_beats fields (review fixes): 101.2 KB.
     // 103_500 with 2.5D layers and cameras (ADR-0054): 101.2 KB before, 102.9 KB after.
     // 112_000 with shader authoring and discovery (ADR-0055).
-    expect(JSON.stringify(tools).length).toBeLessThan(112_000);
+    // 116_000 with add_transition: ~112 KB before, 114.7 KB after.
+    expect(JSON.stringify(tools).length).toBeLessThan(116_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

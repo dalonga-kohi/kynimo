@@ -15,6 +15,7 @@ export {
   MAX_SHADER_TOKENS,
   ShaderSourceError,
 } from "./compositor/custom-shader.js";
+export { transitionSamples } from "./compositor/effects.js";
 export { compositeReference } from "./compositor/reference.js";
 export { VERTEX as FULLSCREEN_VERTEX_SHADER } from "./compositor/shaders.js";
 export {

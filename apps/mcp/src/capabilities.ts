@@ -19,34 +19,50 @@ import {
   type Support,
   TEXT_ANIMATOR_LIMITS,
   TEXT_ANIMATOR_SUPPORT,
+  TRANSITION_SUPPORT,
+  transitionSamples,
 } from "@kynimo/renderer";
 import {
   type Asset,
   MAX_ABERRATION,
   MAX_AURORA_COLORS,
   MAX_BATCH_OPS,
+  MAX_BLINDS,
+  MAX_CLOCK_FEATHER,
   MAX_GENERATOR_EVOLUTION,
   MAX_GENERATOR_OFFSET,
   MAX_GENERATOR_POINT,
   MAX_GENERATOR_STOPS,
+  MAX_GLITCH_BANDS,
   MAX_GRAIN_SIZE,
+  MAX_NOISE_DISSOLVE_SCALE,
   MAX_NOISE_OCTAVES,
   MAX_NOISE_SCALE,
   MAX_PATTERN_ANGLE,
   MAX_PATTERN_SIZE,
+  MAX_PIXELATE_CELL,
   MAX_POSTERIZE_LEVELS,
   MAX_PROJECT_DEFINITIONS,
   MAX_SCANLINE_SPACING,
   MAX_SHADER_SOURCE,
   MAX_SHADER_UNIFORMS,
+  MAX_TRANSITION_ANGLE,
+  MAX_TRANSITION_FEATHER,
+  MAX_TRANSITION_POINT,
   MAX_VIGNETTE_FEATHER,
   MAX_VIGNETTE_RADIUS,
+  MAX_ZOOM_STRENGTH,
+  MIN_BLINDS,
+  MIN_GLITCH_BANDS,
+  MIN_NOISE_DISSOLVE_SCALE,
   MIN_NOISE_SCALE,
   MIN_PATTERN_SIZE,
+  MIN_PIXELATE_CELL,
   MIN_POSTERIZE_LEVELS,
   MIN_SCANLINE_SPACING,
   MIN_VIGNETTE_FEATHER,
   SCENE_FORMAT_VERSION,
+  TRANSITION_KINDS,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { MAX_BRIEF_SHOTS } from "./build-from-brief.js";
@@ -215,6 +231,20 @@ const LOOK_LIMITS = {
   vignetteFeather: { min: MIN_VIGNETTE_FEATHER, max: MAX_VIGNETTE_FEATHER },
 } as const;
 
+/** Built-in transition limits: the scene schema's bounds, stated for agents, and the per-pixel sample cost of each kind. */
+const TRANSITION_LIMITS = {
+  feather: { min: 0, max: MAX_TRANSITION_FEATHER },
+  clockFeather: { min: 0, max: MAX_CLOCK_FEATHER },
+  point: { min: -MAX_TRANSITION_POINT, max: MAX_TRANSITION_POINT },
+  angle: { min: -MAX_TRANSITION_ANGLE, max: MAX_TRANSITION_ANGLE },
+  pixelateCell: { min: MIN_PIXELATE_CELL, max: MAX_PIXELATE_CELL },
+  noiseScale: { min: MIN_NOISE_DISSOLVE_SCALE, max: MAX_NOISE_DISSOLVE_SCALE },
+  zoomStrength: { min: 0, max: MAX_ZOOM_STRENGTH },
+  blindsCount: { min: MIN_BLINDS, max: MAX_BLINDS },
+  glitchBands: { min: MIN_GLITCH_BANDS, max: MAX_GLITCH_BANDS },
+  samplesPerPixel: Object.fromEntries(TRANSITION_KINDS.map((k) => [k, transitionSamples(k)])),
+} as const;
+
 /** The capability manifest (ADR-0018), built from the renderer's tables, so it cannot drift from them. */
 export function capabilityManifest(server: { name: string; version: string }) {
   return {
@@ -232,6 +262,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       behaviors: BEHAVIOR_SUPPORT,
       effects: EFFECT_SUPPORT,
       generators: GENERATOR_SUPPORT,
+      transitions: TRANSITION_SUPPORT,
       motion_blur: MOTION_BLUR_SUPPORT,
       three_d: THREE_D_SUPPORT,
     },
@@ -240,6 +271,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       behaviors: BEHAVIOR_LIMITS,
       effects: { ...EFFECT_LIMITS, ...LOOK_LIMITS },
       generators: GENERATOR_LIMITS,
+      transitions: TRANSITION_LIMITS,
       motion_blur: MOTION_BLUR_LIMITS,
       three_d: THREE_D_LIMITS,
     },

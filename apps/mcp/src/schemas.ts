@@ -1,6 +1,7 @@
 import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
+  DurationInput,
   EasingInput,
   MarkBeatsInputSchema,
   RetimeInputSchema,
@@ -32,6 +33,7 @@ import {
   ShaderDefinitionInputSchema,
   ShaderDefinitionSummarySchema,
   TRANSFORM_PROPERTIES,
+  TRANSITION_KINDS,
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
@@ -150,7 +152,7 @@ function walk(s: z.ZodType): z.ZodType {
 
 /**
  * `updateLayer`'s patch with the camera tracks declared loosely: a keyframed `pointOfInterest`
- * inlines to ~2 KB. The server validates them in full against `LayerPatchSchema`.
+ * inlines to ~2 KB, and the transition is one of ten kinds. The server validates them in full against `LayerPatchSchema`.
  */
 export const CompactLayerPatchSchema = z
   .strictObject({
@@ -164,6 +166,13 @@ export const CompactLayerPatchSchema = z
       .nullable()
       .describe(
         "Camera layers only: { value: [x, y, z] } or { keyframes }; null aims along the camera's own rotation.",
+      )
+      .optional(),
+    transition: z
+      .looseObject({})
+      .nullable()
+      .describe(
+        "Drawn layers except adjustment: a built-in shader transition { kind, progress: { value } or { keyframes } (0..1), ...kind fields }, replacing the whole value; null removes it. add_transition builds one with defaults. Kinds: dissolve, noise-dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch.",
       )
       .optional(),
   })
@@ -517,6 +526,33 @@ export const AddEffectInput = z.object({
     ),
   id: EffectIdSchema.optional(),
   index: z.number().int().nonnegative().optional().describe("Stack position; default appends."),
+});
+
+export const AddTransitionInput = z.object({
+  ...intentMeta,
+  layer: CompactLayerSelectorSchema,
+  kind: z
+    .enum(TRANSITION_KINDS)
+    .describe("Transition kind; fields and limits: get_capabilities (transitions)."),
+  edge: z
+    .enum(["in", "out"])
+    .optional()
+    .describe(
+      "in reveals the layer over what is beneath (first frames); out lets it give way (last frames). Default in. Angles mean the on-screen direction the edge travels; only when out is the first edge, it stores angle + 180 and inverts clockwise (a second edge keeps the existing angle/direction).",
+    ),
+  duration: DurationInput.optional().describe(
+    "Token (fast, base, slow) or ms. Default base. Shrunk to fit the layer.",
+  ),
+  easing: z
+    .union([EasingInput.options[0], z.looseObject({})])
+    .optional()
+    .describe("Token (default move) or { type: bezier | spring | linear | hold, ... }."),
+  params: z
+    .looseObject({})
+    .optional()
+    .describe(
+      "Any of the kind's fields except kind and progress, e.g. { angle: { value: 90 } }; defaults fit the composition. Not allowed when the layer already has this transition.",
+    ),
 });
 
 /** What the import is, without the write fields. */

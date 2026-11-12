@@ -8,6 +8,14 @@ import { KynimoService } from "./service.js";
 import { MemoryStore } from "./store.js";
 
 type Structured = Record<string, unknown>;
+interface Kf {
+  frame: number;
+  value: number;
+}
+interface TransitionJson {
+  progress: { keyframes: Kf[] };
+  [field: string]: unknown;
+}
 
 async function connect(): Promise<Client> {
   const server = createServer(new KynimoService(new MemoryStore(), "agent"));
@@ -98,6 +106,163 @@ describe("intent tools", () => {
     await call(client, "undo", meta(4, "undo-effect"));
     expect(await call(client, "get_layer", { project_id, layer: "a" })).toMatchObject({
       layer: { effects: [] },
+    });
+  });
+
+  describe("add_transition", () => {
+    const transitionOf = async (id: string) =>
+      (
+        (await call(client, "get_layer", { project_id, layer: id })) as {
+          layer: { transition: TransitionJson | null };
+        }
+      ).layer.transition;
+
+    it("writes an in edge with defaults, previews with dry_run and replays", async () => {
+      const args = { ...meta(3, "tr"), layer: "a", kind: "wipe", duration: 500 };
+      const dry = await call(client, "add_transition", { ...args, dry_run: true });
+      expect(dry).toMatchObject({
+        version: 3,
+        resolved: { layer: "a", kind: "wipe", edge: "in", from_frame: 0, to_frame: 15 },
+      });
+      expect(await version()).toBe(3);
+      const written = await call(client, "add_transition", args);
+      expect(written).toMatchObject({ version: 4, ops: dry.ops });
+      const t = await transitionOf("a");
+      expect(t).toMatchObject({ kind: "wipe", angle: { value: 0 } });
+      expect(t?.progress.keyframes.map((k: Kf) => [k.frame, k.value])).toEqual([
+        [0, 0],
+        [15, 1],
+      ]);
+      const replay = await call(client, "add_transition", args);
+      expect(replay).toMatchObject({ version: 4, replayed: true });
+      expect(replay).not.toHaveProperty("ops");
+      expect(replay).not.toHaveProperty("resolved");
+    });
+
+    it("centres point kinds and seeds deterministically from the layer id", async () => {
+      await call(client, "add_transition", { ...meta(3, "i"), layer: "a", kind: "iris" });
+      expect((await transitionOf("a"))?.center).toEqual({ value: [960, 540] });
+      const first = await call(client, "add_transition", {
+        ...meta(4, "g1"),
+        layer: "b",
+        kind: "glitch",
+        dry_run: true,
+      });
+      const second = await call(client, "add_transition", {
+        ...meta(4, "g2"),
+        layer: "b",
+        kind: "glitch",
+        dry_run: true,
+      });
+      expect(first.ops).toEqual(second.ops);
+    });
+
+    it("mirrors the out edge and merges a second edge of the same kind", async () => {
+      await call(client, "add_transition", {
+        ...meta(3, "o"),
+        layer: "a",
+        kind: "clock",
+        edge: "out",
+      });
+      const out = await transitionOf("a");
+      expect(out?.clockwise).toBe(false);
+      await call(client, "add_transition", { ...meta(4, "in"), layer: "a", kind: "clock" });
+      const both = await transitionOf("a");
+      expect(both?.clockwise).toBe(false);
+      expect(both?.progress.keyframes.map((k: Kf) => k.value)).toEqual([0, 1, 1, 0]);
+
+      await call(client, "add_transition", {
+        ...meta(5, "w"),
+        layer: "b",
+        kind: "wipe",
+        edge: "out",
+      });
+      expect((await transitionOf("b"))?.angle).toEqual({ value: 180 });
+    });
+
+    it("refuses a different kind or params on an existing transition and leaves the version", async () => {
+      await call(client, "add_transition", { ...meta(3, "t"), layer: "a", kind: "wipe" });
+      const other = await callError(client, "add_transition", {
+        ...meta(4, "k"),
+        layer: "a",
+        kind: "push",
+      });
+      expect(other).toMatchObject({ error: "invalid", errors: [{ path: ["kind"] }] });
+      const withParams = await callError(client, "add_transition", {
+        ...meta(4, "p"),
+        layer: "a",
+        kind: "wipe",
+        params: { feather: { value: 3 } },
+      });
+      expect(withParams).toMatchObject({ errors: [{ path: ["params"] }] });
+      expect(await version()).toBe(4);
+    });
+
+    it("refuses adjustment layers, one-frame layers and invalid params", async () => {
+      await call(client, "add_layer", {
+        ...meta(3, "adj"),
+        composition: "main",
+        id: "adj",
+        layer: { type: "adjustment", name: "adj" },
+      });
+      await call(client, "add_layer", {
+        ...meta(4, "one"),
+        composition: "main",
+        id: "one",
+        layer: {
+          type: "solid",
+          name: "one",
+          width: 10,
+          height: 10,
+          color: "#ffffff",
+          inFrame: 5,
+          outFrame: 6,
+        },
+      });
+      const adj = await callError(client, "add_transition", {
+        ...meta(5, "x1"),
+        layer: "adj",
+        kind: "wipe",
+      });
+      expect(adj.message).toContain("adjustment");
+      const one = await callError(client, "add_transition", {
+        ...meta(5, "x2"),
+        layer: "one",
+        kind: "wipe",
+      });
+      expect(JSON.stringify(one)).toContain("one frame long");
+      const bad = await callError(client, "add_transition", {
+        ...meta(5, "x3"),
+        layer: "a",
+        kind: "blinds",
+        params: { count: 1 },
+      });
+      expect(bad).toMatchObject({ errors: [{ path: ["params", "count"] }] });
+      expect(await version()).toBe(5);
+    });
+
+    it("shrinks the duration to fit a short layer", async () => {
+      await call(client, "add_layer", {
+        ...meta(3, "short"),
+        composition: "main",
+        id: "short",
+        layer: {
+          type: "solid",
+          name: "s",
+          width: 10,
+          height: 10,
+          color: "#ffffff",
+          inFrame: 0,
+          outFrame: 5,
+        },
+      });
+      const r = await call(client, "add_transition", {
+        ...meta(4, "s"),
+        layer: "short",
+        kind: "dissolve",
+        duration: "slow",
+      });
+      expect(r.resolved).toMatchObject({ from_frame: 0, to_frame: 4, duration_frames: 4 });
     });
   });
 

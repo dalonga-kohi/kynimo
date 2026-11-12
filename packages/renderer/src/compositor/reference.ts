@@ -1,4 +1,9 @@
-import { hashWords, type ResolvedEffect, type ResolvedShader } from "@kynimo/engine";
+import {
+  hashWords,
+  type ResolvedEffect,
+  type ResolvedShader,
+  type ResolvedTransition,
+} from "@kynimo/engine";
 import type {
   FramePlan,
   PlannedAdjustmentLayer,
@@ -16,6 +21,7 @@ import {
   generatorSamples,
   MAX_FRAME_EFFECT_SAMPLES,
   smoothstep,
+  transitionSamples,
 } from "./effects.js";
 import { renderGenerator } from "./generators.js";
 import {
@@ -34,6 +40,7 @@ import {
   projectiveSample,
   samplePlacement,
 } from "./pipeline.js";
+import { transitionUniforms } from "./transition.js";
 
 /** Premultiplied RGBA, 0..1, rows top to bottom. */
 interface FloatImage {
@@ -94,13 +101,199 @@ function compositeFloat(plan: FramePlan, nested: Nested): FloatImage {
       adjust(layer, acc, plan, nested);
       continue;
     }
+    const transition = layer.transition ?? null;
+    // At progress 0 the result is the backdrop: the layer is still placed (budgets and skip
+    // reports stay the same) but not blended or charged for a transition pass.
+    const drawn = transition !== null && transition.progress > 0 ? transition : null;
+    if (drawn !== null)
+      chargeSamples(
+        nested,
+        layer.id,
+        plan.width * plan.height * transitionSamples(drawn.kind),
+        "composition size or number of transitions",
+      );
     const src = placed(layer, plan, nested);
+    if (transition !== null && drawn === null) continue;
+    const below = drawn === null ? null : { ...acc, data: acc.data.slice() };
     for (let p = 0; p < acc.data.length; p += 4) {
       backdrop.set(acc.data.subarray(p, p + 4));
       blendPixel(layer.blendMode, backdrop, src.data.subarray(p, p + 4), acc.data, p);
     }
+    if (below !== null && drawn !== null) transit(below, acc, drawn);
   }
   return acc;
+}
+
+/**
+ * Replaces `b` (the layer composited over `a`) with the transition's output, in place. The twin
+ * of the transition shaders in shaders.ts: uniforms are rounded to float32 as the GPU gets them,
+ * pixel centres are (x + 0.5, y + 0.5), and displaced samples are bilinear and clamped to the
+ * texel-centre range, so they never read transparent black from outside.
+ */
+function transit(a: FloatImage, b: FloatImage, transition: ResolvedTransition) {
+  const { width, height } = a;
+  const values = transitionUniforms(transition, width, height);
+  const u = (name: string): number[] => (values[name] ?? []).map(Math.fround);
+  const [p = 0] = u("p");
+  const [dirX = 0, dirY = 0] = u("dir");
+  const [centerX = 0, centerY = 0] = u("center");
+  const [rangeMin = 0, rangeLength = 0] = u("range");
+  const [feather = 0] = u("feather");
+  const at = (img: FloatImage, x: number, y: number, k: number) =>
+    bilinear(
+      img,
+      Math.min(width - 0.5, Math.max(0.5, x)),
+      Math.min(height - 0.5, Math.max(0.5, y)),
+      k,
+    );
+  const out = new Float64Array(a.data.length);
+  /** Coverage of B at pixel centre (cx, cy), or null for the kinds that sample displaced. */
+  let coverage: ((cx: number, cy: number) => number) | null = null;
+  /** For the sampling kinds: writes the output pixel `o` from the inputs at (cx, cy). */
+  let sample: ((cx: number, cy: number, o: number) => void) | null = null;
+  const smooth = (e: number, v: number, f: number) => Math.min(1, Math.max(0, (e - v) / f));
+  switch (transition.kind) {
+    case "dissolve":
+      coverage = () => p;
+      break;
+    case "noise-dissolve": {
+      const [scale = 1] = u("scale");
+      const seed = transition.seed;
+      const lattice = (x: number, y: number) => hashWords(seed, [x, y, 0, 0]) / 4294967295;
+      coverage = (cx, cy) => {
+        const gx = cx / scale;
+        const gy = cy / scale;
+        const ix = Math.floor(gx);
+        const iy = Math.floor(gy);
+        const fade = (f: number) => f * f * f * (f * (f * 6 - 15) + 10);
+        const ux = fade(gx - ix);
+        const uy = fade(gy - iy);
+        const n = mix(
+          mix(lattice(ix, iy), lattice(ix + 1, iy), ux),
+          mix(lattice(ix, iy + 1), lattice(ix + 1, iy + 1), ux),
+          uy,
+        );
+        if (feather > 0) return smooth(p * (1 + feather), n, feather);
+        return n < p ? 1 : 0;
+      };
+      break;
+    }
+    case "wipe":
+      coverage = (cx, cy) =>
+        smooth(rangeMin + p * (rangeLength + feather), cx * dirX + cy * dirY, feather);
+      break;
+    case "clock": {
+      const [dx = 0, dy = 0] = u("dir0");
+      const [turn = 1] = u("turn");
+      coverage = (cx, cy) => {
+        const vx = cx - centerX;
+        const vy = cy - centerY;
+        let phi = 0;
+        if (vx !== 0 || vy !== 0) {
+          const deg = Math.atan2(turn * (dx * vy - dy * vx), dx * vx + dy * vy) * (180 / Math.PI);
+          phi = deg < 0 ? deg + 360 : deg;
+        }
+        if (feather > 0) return smooth(p * (360 + feather), phi, feather);
+        return phi < p * 360 ? 1 : 0;
+      };
+      break;
+    }
+    case "iris": {
+      const [rMax = 0] = u("rmax");
+      const shape = transition.shape;
+      coverage = (cx, cy) => {
+        const vx = Math.abs(cx - centerX);
+        const vy = Math.abs(cy - centerY);
+        const r =
+          shape === "circle"
+            ? Math.hypot(vx, vy)
+            : shape === "diamond"
+              ? vx + vy
+              : Math.max(vx, vy);
+        return smooth(p * (rMax + feather), r, feather);
+      };
+      break;
+    }
+    case "blinds": {
+      const [sMin = 0] = u("smin");
+      const [period = 1] = u("period");
+      coverage = (cx, cy) => {
+        const s = cx * dirX + cy * dirY - sMin;
+        const within = s - period * Math.floor(s / period);
+        return smooth(p * (period + feather), within, feather);
+      };
+      break;
+    }
+    case "pixelate": {
+      const [cell = 1] = u("cell");
+      const [w = 0] = u("mix");
+      sample = (cx, cy, o) => {
+        const qx = (Math.floor(cx / cell) + 0.5) * cell;
+        const qy = (Math.floor(cy / cell) + 0.5) * cell;
+        for (let k = 0; k < 4; k++) out[o + k] = mix(at(a, qx, qy, k), at(b, qx, qy, k), w);
+      };
+      break;
+    }
+    case "push":
+      sample = (cx, cy, o) => {
+        const m = Math.min(
+          1,
+          Math.max(0, rangeMin + p * rangeLength - (cx * dirX + cy * dirY) + 0.5),
+        );
+        const ax = cx - p * rangeLength * dirX;
+        const ay = cy - p * rangeLength * dirY;
+        const bx = cx - (p - 1) * rangeLength * dirX;
+        const by = cy - (p - 1) * rangeLength * dirY;
+        for (let k = 0; k < 4; k++) out[o + k] = mix(at(a, ax, ay, k), at(b, bx, by, k), m);
+      };
+      break;
+    case "zoom": {
+      const [scaleA = 1, scaleB = 1] = u("scale");
+      sample = (cx, cy, o) => {
+        const vx = cx - centerX;
+        const vy = cy - centerY;
+        for (let k = 0; k < 4; k++)
+          out[o + k] = mix(
+            at(a, centerX + vx / scaleA, centerY + vy / scaleA, k),
+            at(b, centerX + vx / scaleB, centerY + vy / scaleB, k),
+            p,
+          );
+      };
+      break;
+    }
+    case "glitch": {
+      const [bands = 1] = u("bands");
+      const [step = 0] = u("step");
+      const [amp = 0] = u("amp");
+      const seed = transition.seed;
+      const unit = (row: number, word: number) =>
+        hashWords(seed, [row, step, word, 0]) / 4294967295;
+      sample = (cx, cy, o) => {
+        const row = Math.floor((cy * bands) / height);
+        const img = unit(row, 0) < p ? b : a;
+        const x = cx + (2 * unit(row, 1) - 1) * amp;
+        const ca = 0.25 * amp;
+        const red = (k: number) => at(img, x + ca, cy, k);
+        const green = (k: number) => at(img, x, cy, k);
+        const blue = (k: number) => at(img, x - ca, cy, k);
+        out[o] = red(0);
+        out[o + 1] = green(1);
+        out[o + 2] = blue(2);
+        out[o + 3] = Math.max(red(3), green(3), blue(3));
+      };
+      break;
+    }
+  }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4;
+      if (sample !== null) sample(x + 0.5, y + 0.5, o);
+      else if (coverage !== null) {
+        const m = coverage(x + 0.5, y + 0.5);
+        for (let k = 0; k < 4; k++) out[o + k] = mix(a.data[o + k] ?? 0, b.data[o + k] ?? 0, m);
+      }
+    }
+  b.data.set(out);
 }
 
 /** The layer in composition space with its matte and opacity applied, before blending. */

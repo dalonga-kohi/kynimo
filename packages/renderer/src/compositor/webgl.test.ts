@@ -1,4 +1,9 @@
-import type { ResolvedEffect, ResolvedGenerator, ResolvedShader } from "@kynimo/engine";
+import type {
+  ResolvedEffect,
+  ResolvedGenerator,
+  ResolvedShader,
+  ResolvedTransition,
+} from "@kynimo/engine";
 import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -1387,4 +1392,235 @@ it("rounds custom shader intermediates like GLSL highp", async () => {
   const p = plan([shader]);
   expect([...compositeReference(p).pixels.slice(0, 4)]).toEqual([0, 0, 0, 255]);
   await expectMatches(p);
+});
+
+describe("WebGL2 compositor: built-in transitions", () => {
+  const TW = 160;
+  const TH = 120;
+  /** A busy backdrop, then a translucent, masked, rotated layer carrying `transition`. */
+  const scene = (transition: ResolvedTransition | null): FramePlan => ({
+    ...plan([], { width: TW, height: TH }),
+    layers: [
+      solid("layer", gradient(100, 80, 3), {
+        mask: coverage(100, 80),
+        opacity: 0.85,
+        matrix: [0.9, 0.35, -0.35, 0.9, 38, 8],
+        ...(transition === null ? {} : { transition }),
+      }),
+      solid("backdrop", gradient(TW, TH, 9)),
+    ],
+  });
+  const without = (): FramePlan => ({ ...scene(null), layers: scene(null).layers.slice(1) });
+
+  /** Largest channel gap, and the share of pixels with a channel more than 2/255 off. */
+  async function measure(p: FramePlan) {
+    const ref = compositeReference(p);
+    const out = await gpu.composite(p);
+    let gap = 0;
+    let off = 0;
+    for (let i = 0; i < ref.pixels.length; i += 4) {
+      let worst = 0;
+      for (let k = 0; k < 4; k++)
+        worst = Math.max(worst, Math.abs((ref.pixels[i + k] ?? 0) - (out.pixels[i + k] ?? 0)));
+      gap = Math.max(gap, worst);
+      if (worst > 2) off++;
+    }
+    return { gap, share: off / (ref.pixels.length / 4) };
+  }
+
+  const smooth = (name: string, make: (progress: number) => ResolvedTransition) =>
+    [name, make, true] as const;
+  const stepped = (name: string, make: (progress: number) => ResolvedTransition) =>
+    [name, make, false] as const;
+  const cases = [
+    smooth("dissolve", (progress) => ({ kind: "dissolve", progress })),
+    smooth("noise-dissolve feather 0.3", (progress) => ({
+      kind: "noise-dissolve",
+      progress,
+      seed: 4,
+      scale: 14,
+      feather: 0.3,
+    })),
+    smooth("wipe 24 px", (progress) => ({ kind: "wipe", progress, angle: 33, feather: 24 })),
+    smooth("clock 20 deg", (progress) => ({
+      kind: "clock",
+      progress,
+      startAngle: 20,
+      clockwise: true,
+      center: [70, 50],
+      feather: 20,
+    })),
+    smooth("clock 20 deg counter-clockwise", (progress) => ({
+      kind: "clock",
+      progress,
+      startAngle: -75,
+      clockwise: false,
+      center: [90.5, 40],
+      feather: 20,
+    })),
+    smooth("iris circle 16 px", (progress) => ({
+      kind: "iris",
+      progress,
+      shape: "circle",
+      center: [70, 50],
+      feather: 16,
+    })),
+    smooth("iris diamond 16 px", (progress) => ({
+      kind: "iris",
+      progress,
+      shape: "diamond",
+      center: [100, 30],
+      feather: 16,
+    })),
+    smooth("iris square 16 px", (progress) => ({
+      kind: "iris",
+      progress,
+      shape: "square",
+      center: [40, 80],
+      feather: 16,
+    })),
+    smooth("blinds feather 0.2", (progress) => ({
+      kind: "blinds",
+      progress,
+      count: 5,
+      angle: 20,
+      feather: 0.2,
+    })),
+    smooth("push", (progress) => ({ kind: "push", progress, angle: 200 })),
+    smooth("zoom", (progress) => ({
+      kind: "zoom",
+      progress,
+      center: [60.5, 47],
+      strength: 1.5,
+    })),
+    stepped("noise-dissolve feather 0", (progress) => ({
+      kind: "noise-dissolve",
+      progress,
+      seed: 4,
+      scale: 14,
+      feather: 0,
+    })),
+    stepped("clock feather 0", (progress) => ({
+      kind: "clock",
+      progress,
+      startAngle: 20,
+      clockwise: true,
+      center: [70, 50],
+      feather: 0,
+    })),
+    stepped("blinds feather 0", (progress) => ({
+      kind: "blinds",
+      progress,
+      count: 5,
+      angle: 20,
+      feather: 0,
+    })),
+    stepped("pixelate", (progress) => ({ kind: "pixelate", progress, cell: 10 })),
+    stepped("glitch", (progress) => ({
+      kind: "glitch",
+      progress,
+      seed: 11,
+      bands: 12,
+      amount: 0.6,
+    })),
+  ];
+
+  for (const [name, make, smoothKind] of cases)
+    for (const progress of [0.3, 0.7])
+      it(`matches the reference for ${name} at progress ${progress}`, async () => {
+        const p = scene(make(progress));
+        const { gap, share } = await measure(p);
+        console.info(
+          `transition ${name} p=${progress}: max gap ${gap}/255, ${(share * 100).toFixed(3)}% of pixels over 2/255`,
+        );
+        if (smoothKind) expect(gap).toBeLessThanOrEqual(2);
+        else expect(share).toBeLessThanOrEqual(0.002);
+        // The transition shows: early on it differs from the plain layer.
+        if (progress < 0.5)
+          expect((await gpu.composite(p)).pixels).not.toEqual(
+            (await gpu.composite(scene(null))).pixels,
+          );
+      });
+
+  it("draws exactly the backdrop at progress 0, and the plain layer without a transition", async () => {
+    const plain = (await gpu.composite(scene(null))).pixels;
+    const backdrop = (await gpu.composite(without())).pixels;
+    for (const [name, make] of cases) {
+      expect((await gpu.composite(scene(make(0)))).pixels, name).toEqual(backdrop);
+    }
+    expect(plain).not.toEqual(backdrop);
+    const omitted = scene(null);
+    const explicit: FramePlan = {
+      ...omitted,
+      layers: omitted.layers.map((layer, i) => (i === 0 ? { ...layer, transition: null } : layer)),
+    };
+    expect((await gpu.composite(explicit)).pixels).toEqual(plain);
+  });
+
+  it("renders the same plan to the same bytes, every kind", async () => {
+    for (const [name, make] of cases) {
+      const p = scene(make(0.5));
+      expect((await gpu.composite(p)).pixels, name).toEqual((await gpu.composite(p)).pixels);
+    }
+  });
+
+  it("matches the reference for a transparent stand-in layer carrying push and zoom", async () => {
+    const standIn = (transition: ResolvedTransition): PlannedLayer =>
+      ({
+        id: "t",
+        type: "shape",
+        space: "composition",
+        x: 0,
+        y: 0,
+        opacity: 1,
+        blendMode: "normal",
+        mask: null,
+        matte: null,
+        raster: { width: 1, height: 1, pixels: new Uint8Array(4) },
+        transition,
+      }) as PlannedLayer;
+    const backdrop = await gpu.composite({
+      ...plan([solid("backdrop", gradient(TW, TH, 9))], { width: TW, height: TH }),
+    });
+    for (const transition of [
+      { kind: "push", progress: 0.5, angle: 30 },
+      { kind: "zoom", progress: 0.5, center: [70, 50], strength: 1 },
+    ] as ResolvedTransition[]) {
+      const p: FramePlan = {
+        ...plan([], { width: TW, height: TH }),
+        layers: [standIn(transition), solid("backdrop", gradient(TW, TH, 9))],
+      };
+      const { share } = await measure(p);
+      expect(share, transition.kind).toBeLessThanOrEqual(0.002);
+      expect((await gpu.composite(p)).pixels, transition.kind).not.toEqual(backdrop.pixels);
+    }
+  });
+
+  it("matches a transition inside a nested precomp, at the nested size", async () => {
+    const inner: FramePlan = {
+      ...plan([], { width: 80, height: 60 }),
+      layers: [
+        solid("in-b", gradient(80, 60, 5), {
+          transition: { kind: "wipe", progress: 0.5, angle: 30, feather: 10 },
+        }),
+        solid("in-a", gradient(80, 60, 6)),
+      ],
+    };
+    const precomp = {
+      id: "pre",
+      type: "precomp",
+      space: "layer",
+      opacity: 1,
+      blendMode: "normal",
+      mask: null,
+      matte: null,
+      matrix: [1, 0, 0, 1, 20, 20],
+      frame: inner,
+    } as PlannedLayer;
+    await expectMatches({
+      ...plan([precomp, solid("bg", gradient(TW, TH, 2))]),
+      width: TW,
+      height: TH,
+    });
+  });
 });

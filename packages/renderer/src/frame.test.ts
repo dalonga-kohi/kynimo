@@ -951,3 +951,63 @@ describe("video layers", () => {
 });
 
 const encodeImageSync = () => new TextEncoder().encode("GIF89a not a frame");
+
+describe("layer transitions", () => {
+  const withTransition = (progress: number | null) =>
+    shapeLayer("s", [rect([50, 50], [20, 10]), fill()], {
+      ...(progress === null ? {} : { transition: { kind: "dissolve", progress: prop(progress) } }),
+    });
+
+  it("plans a transition below progress 1, and no transition at progress 1", () => {
+    expect(only(plan([withTransition(0.4)])).transition).toEqual({
+      kind: "dissolve",
+      progress: 0.4,
+    });
+    // A layer in progress 0 still goes through placement, so budgets and skip reports stay.
+    expect(only(plan([withTransition(0)])).transition).toEqual({ kind: "dissolve", progress: 0 });
+    const done = plan([withTransition(1)]);
+    expect(only(done)).not.toHaveProperty("transition");
+    expect(done).toEqual(plan([withTransition(null)]));
+  });
+
+  it("draws the backdrop at progress 0 and the layer at progress 1", () => {
+    const base = shapeLayer("base", [rect([50, 50], [80, 80]), fill(solidPaint("#0000ff"))]);
+    expect(pixel(compositeReference(plan([withTransition(0), base])), 50, 50)).toEqual([
+      0, 0, 255, 255,
+    ]);
+    expect(pixel(compositeReference(plan([withTransition(1), base])), 50, 50)).toEqual(RED);
+    expect(pixel(compositeReference(plan([withTransition(0.5), base])), 50, 50)).toEqual([
+      128, 0, 128, 255,
+    ]);
+  });
+
+  describe("on a layer that draws nothing", () => {
+    const backdrop = () =>
+      shapeLayer("base", [rect([50, 50], [80, 80]), fill(solidPaint("#0000ff"))]);
+    // A rect with no fill rasterizes to nothing, so the layer plans to nothing.
+    const empty = (transition: Obj) => shapeLayer("t", [rect([50, 50], [20, 10])], { transition });
+    // The same transition on a layer that is planned but fully transparent.
+    const transparent = (transition: Obj) =>
+      shapeLayer("t", [rect([50, 50], [20, 10]), fill()], {
+        transform: transform({ opacity: prop(0) }),
+        transition,
+      });
+    const transitions: Record<string, Obj> = {
+      push: { kind: "push", progress: prop(0.5), angle: prop(0) },
+      zoom: { kind: "zoom", progress: prop(0.5), center: prop([50, 50]), strength: prop(1) },
+    };
+
+    for (const [name, transition] of Object.entries(transitions))
+      it(`${name} moves the backdrop exactly as a transparent layer does`, () => {
+        const a = render([empty(transition), backdrop()]);
+        const b = render([transparent(transition), backdrop()]);
+        expect(a.pixels).toEqual(b.pixels);
+        expect(a.pixels).not.toEqual(render([backdrop()]).pixels);
+      });
+
+    it("leaves the backdrop alone for a coverage kind", () => {
+      const wipe = { kind: "wipe", progress: prop(0.5), angle: prop(0), feather: prop(0) };
+      expect(render([empty(wipe), backdrop()]).pixels).toEqual(render([backdrop()]).pixels);
+    });
+  });
+});

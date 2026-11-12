@@ -221,6 +221,10 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       matte: null,
       motion,
       ...(effects.length > 0 ? { effects } : {}),
+      // Progress 1 is exactly the plain layer, so it is planned as no transition at all.
+      ...(layer.transition !== null && layer.transition.progress < 1
+        ? { transition: layer.transition }
+        : {}),
     };
     // A 3D layer is placed by its projection (raster = layer units unless noted).
     const projection = layer.projection;
@@ -405,6 +409,18 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       if (mask === "empty") result = null;
       else result.mask = mask;
     }
+    // A layer that draws nothing is B = A, which the coverage kinds leave alone. The others still
+    // move or resample A (T(A, A, p) != A), so they keep a transparent stand-in that carries them.
+    const transition = layer.transition;
+    if (
+      result === null &&
+      layer.type !== "adjustment" &&
+      transition !== null &&
+      transition.progress > 0 &&
+      transition.progress < 1 &&
+      TRANSFORMING_TRANSITIONS.has(transition.kind)
+    )
+      result = transparentStandIn(layer.id, transition);
     planned.set(layer.id, result);
     return result;
   };
@@ -438,6 +454,34 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     layers,
     skipped,
     warnings,
+  };
+}
+
+/** Transition kinds whose result differs from A even when the layer draws nothing (B = A). */
+const TRANSFORMING_TRANSITIONS: ReadonlySet<string> = new Set([
+  "push",
+  "zoom",
+  "pixelate",
+  "glitch",
+]);
+
+/** A fully transparent 1x1 composition-space layer that carries only the layer's transition. */
+function transparentStandIn(
+  id: string,
+  transition: NonNullable<PlannedFrameLayer["transition"]>,
+): PlannedFrameLayer {
+  return {
+    id,
+    type: "shape",
+    space: "composition",
+    x: 0,
+    y: 0,
+    opacity: 1,
+    blendMode: "normal",
+    mask: null,
+    matte: null,
+    raster: { width: 1, height: 1, pixels: new Uint8Array(4) },
+    transition,
   };
 }
 

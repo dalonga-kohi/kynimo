@@ -83,6 +83,23 @@ describe("mapLayerKeyframes", () => {
     expect(frames(mapLayerKeyframes(layerOf(doc([solid("c")]), "c"), plus10))).toEqual([]);
   });
 
+  it("moves transition parameter keyframes, progress included", () => {
+    const d = doc([
+      solid("t", {
+        transition: {
+          kind: "wipe",
+          progress: keyed(kf(0, 0), kf(30, 1)),
+          angle: keyed(kf(0, 0), kf(30, 90)),
+          feather: { value: 20 },
+        },
+      }),
+    ]);
+    expect(frames(mapLayerKeyframes(layerOf(d, "t"), plus10))).toEqual([
+      ["transition.progress.keyframes", [10, 40]],
+      ["transition.angle.keyframes", [10, 40]],
+    ]);
+  });
+
   it("refuses keyframed fields no operation can write back", () => {
     const d = doc([
       text("t", { font: { family: "Inter", weight: 400, size: keyed(kf(0, 40), kf(9, 60)) } }),
@@ -96,6 +113,25 @@ describe("diffLayerOps", () => {
   it("produces no ops for identical layers", () => {
     const d = doc([solid("a")]);
     expect(diffLayerOps(layerOf(d, "a"), layerOf(d, "a"))).toEqual([]);
+  });
+
+  it("writes a moved transition back as one updateLayer", () => {
+    const d = doc([
+      solid("t", {
+        transition: { kind: "dissolve", progress: keyed(kf(0, 0), kf(30, 1)) },
+      }),
+    ]);
+    const before = layerOf(d, "t");
+    const after = mapLayerKeyframes(before, plus10);
+    const ops = diffLayerOps(before, after);
+    expect(ops).toEqual([
+      {
+        op: "updateLayer",
+        layer: "t",
+        set: { transition: { kind: "dissolve", progress: keyed(kf(10, 0), kf(40, 1)) } },
+      },
+    ]);
+    expect(layerOf(applied(d, ops), "t")).toEqual(after);
   });
 
   it("writes back every kind of change, in order, and the result matches the mapped layer", () => {
