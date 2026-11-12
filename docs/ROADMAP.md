@@ -71,8 +71,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] First components: kinetic type, logo reveal, lower third, transition set, background → ADR-0047: five built-ins on one shared enter/exit envelope, style-aware, with text-layout estimates in place of font metrics, a cover-transition set and a looping background
 - [x] `add_component` with write-time prop validation, version pins, dry run, and the built-in catalog (`list_components`, `kynimo://components`) → ADR-0049
 - [x] `build_from_brief` with structured headline, logo, image and video shots, style-aware composition, and one atomic write → ADR-0050
-- [ ] Sandbox for custom components (spike → decision ADR): can the QuickJS sandbox chosen for scripts (ADR-0036) evaluate component code per frame, in the browser, fast enough
-- [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012); project definitions in the component and shader catalogs
+- [x] Sandbox spike for custom components → [ADR-0051](decisions/0051-component-sandbox-spike.md): the measured QuickJS WebAssembly paths exceeded the 4 ms p95 browser gate for eight active instances
+- [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012); project definitions in the component and shader catalogs. `define_component` depends on an evaluator that meets the performance and isolation requirements in ADR-0051
 - [ ] Built-in shader transitions
 
 ## M7 — Export pipeline + preview links

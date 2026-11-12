@@ -115,7 +115,8 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | ------------------------------------------------------------------------------------------------------------------ | --------- |
 | ~~Runtime schema library~~ → Zod 4 (ADR-0009)                                                                      | done      |
 | ~~WebGL2 stack for v1~~ → Skia CPU raster + own WebGL2 compositor (ADR-0016)                                       | done      |
-| Sandbox for per-frame component code (QuickJS is chosen for scripts, ADR-0036); shader validation rules (ADR-0012) | M6        |
+| Sandbox for per-frame component code (measured QuickJS designs deferred, ADR-0051)                                | M6        |
+| Shader validation rules (ADR-0012)                                                                                | M6        |
 | How documents refer to tokens (ADR-0037)                                                                           | M5        |
 | Hosting for API/MCP and workers                                                                                    | M3 / M7   |
 | ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
