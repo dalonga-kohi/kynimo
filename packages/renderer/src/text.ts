@@ -10,8 +10,8 @@ import type { CanvasKit, LineMetrics, Paragraph } from "canvaskit-wasm";
 import { effectPadding } from "./compositor/effects.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary, LoadedFont } from "./fonts.js";
-import type { RasterImage, RenderWarning } from "./raster.js";
-import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
+import type { PlannedMotionSample, RasterImage, RenderWarning } from "./raster.js";
+import { cropToComposition, motionCropRect, type Rect, transformRect, union } from "./rect.js";
 import { type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
 
 /** Point text lays out without a width limit, so lines break only at newlines. */
@@ -409,6 +409,7 @@ function rasterizeAnimated(
   reserve: (width: number, height: number) => void,
   work: FrameTextWork | undefined,
   own: Own,
+  motion: readonly PlannedMotionSample[] | null,
 ): { x: number; y: number; raster: RasterImage } | null {
   const glyphs = placeGlyphs(ck, layout, animation, layer.align).filter(
     (g) => g.effect.opacity * g.effect.fill.a > 0 && g.text.trim() !== "",
@@ -431,7 +432,14 @@ function rasterizeAnimated(
     if (box !== null) bounds = bounds === null ? box : union(bounds, box);
   }
   if (bounds === null) return null;
-  const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
+  const padding = effectPadding(layer.effects);
+  const crop = cropToComposition(
+    bounds,
+    width,
+    height,
+    padding,
+    motionCropRect(width, height, padding, motion),
+  );
   if (crop === null) return null;
   const [x0, y0, x1, y1] = crop;
   reserve(x1 - x0, y1 - y0);
@@ -522,6 +530,8 @@ export function rasterizeTextLayer(
   reserve: (width: number, height: number) => void = () => {},
   /** The frame's shared glyph budget; omitted, only the per-layer limit applies. */
   work?: FrameTextWork,
+  /** The layer's blur samples: the raster then also covers what the shutter brings into view. */
+  motion: readonly PlannedMotionSample[] | null = null,
 ): { x: number; y: number; raster: RasterImage } | null {
   if (!(layer.fill.a > 0) && layer.animators.length === 0) return null;
   return scoped((own) => {
@@ -541,13 +551,21 @@ export function rasterizeTextLayer(
           reserve,
           work,
           own,
+          motion,
         );
     }
     if (!(layer.fill.a > 0)) return null;
     const local = layoutBounds(layout);
     const bounds = local === null ? null : transformRect(layer.matrix, local);
     if (bounds === null) return null;
-    const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
+    const padding = effectPadding(layer.effects);
+    const crop = cropToComposition(
+      bounds,
+      width,
+      height,
+      padding,
+      motionCropRect(width, height, padding, motion),
+    );
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);

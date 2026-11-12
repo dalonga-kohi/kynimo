@@ -231,6 +231,18 @@ function run(ctx: Ctx, op: Op, i: number): void {
     }
     case "updateLayer": {
       const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if ("motionBlur" in op.set) {
+        const where = [i, "set", "motionBlur"];
+        if (layer.type === "null")
+          fail(
+            where,
+            `layer '${layer.id}' is a null layer and has no motion blur; set motionBlur on its drawn children (a null's motion still blurs them)`,
+          );
+        if (layer.type === "audio")
+          fail(where, `layer '${layer.id}' is an audio layer and has no motion blur`);
+        if (layer.type === "adjustment" && op.set.motionBlur !== null)
+          fail(where, "adjustment layers have no motion blur; set motionBlur to null");
+      }
       for (const [key, value] of Object.entries(op.set))
         setLayerValue(ctx, i, layer, [key], value as Json);
       return;
@@ -674,6 +686,7 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     matte: null,
     masks: [],
     behaviors: [],
+    motionBlur: null,
     effects: [],
     compositionId: compId,
   };

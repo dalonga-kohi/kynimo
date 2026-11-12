@@ -77,6 +77,7 @@ export function importSvgExpansion(
     matte: null,
     masks: [],
     effects: [],
+    motionBlur: null,
     behaviors: [],
     contents: result.contents,
   };

@@ -24,6 +24,7 @@ const SCENES = [
   "svg-import",
   "shader-backgrounds",
   "components",
+  "motion-blur",
 ] as const;
 
 interface Reference {

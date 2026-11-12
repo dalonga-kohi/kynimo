@@ -20,7 +20,7 @@ import {
   MaskIdSchema,
 } from "./ids.js";
 import type { Animatable, PositionTrack } from "./keyframes.js";
-import { type Layer, LayerSchema } from "./layer.js";
+import { type Layer, LayerSchema, MotionBlurSchema } from "./layer.js";
 import { MAX_LAYERS } from "./limits.js";
 import {
   MarkerSchema,
@@ -61,6 +61,8 @@ export const LayerPatchSchema = z
     startFrame: z.number().int(),
     hidden: z.boolean(),
     solo: z.boolean(),
+    /** Drawn layers only; `null` turns it off, `{}` is the defaults. */
+    motionBlur: MotionBlurSchema.nullable(),
   })
   .partial()
   .refine((p) => Object.keys(p).length > 0, "set at least one field");

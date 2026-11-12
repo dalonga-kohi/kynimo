@@ -95,6 +95,23 @@ function addEffects(doc: Json): Json {
   return doc;
 }
 
+/** 10 → 11: drawn layers gain `motionBlur: null` (ADR-0053), which renders exactly as before. */
+function addMotionBlur(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers)
+      if (
+        isJson(layer) &&
+        layer.type !== "audio" &&
+        layer.type !== "null" &&
+        !("motionBlur" in layer)
+      )
+        layer.motionBlur = null;
+  }
+  return doc;
+}
+
 /**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
@@ -113,6 +130,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 8, migrate: (doc) => doc },
   // 9 → 10: audio assets may carry detected beats; the field is optional, so nothing to rewrite.
   { from: 9, migrate: (doc) => doc },
+  // 10 → 11: transform motion blur; drawn layers gain `motionBlur: null` (ADR-0053).
+  { from: 10, migrate: addMotionBlur },
 ];
 
 export interface MigrationError {

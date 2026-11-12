@@ -1,5 +1,5 @@
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
-import type { FramePlan, PlannedFrameLayer, PlannedLayer } from "../raster.js";
+import type { FramePlan, PlannedFrameLayer, PlannedLayer, PlannedMotionSample } from "../raster.js";
 
 /**
  * Pipeline pieces shared by the reference and WebGL2 compositors, so both read the plan the same
@@ -20,6 +20,24 @@ export function placement(layer: PlannedLayer, [x, y] = [0, 0]): Affine {
   if (layer.space === "composition") return [1, 0, 0, 1, layer.x - x, layer.y - y];
   const [a, b, c, d, e, f] = layer.matrix;
   return [a, b, c, d, e - a * x - c * y, f - b * x - d * y];
+}
+
+/** The placement of a motion-blurred layer at one shutter sample: the sample's `delta` after `placement`. */
+export function samplePlacement(
+  layer: PlannedLayer,
+  sample: PlannedMotionSample,
+  padding: [number, number] = [0, 0],
+): Affine {
+  const [a, b, c, d, e, f] = sample.delta;
+  const [a2, b2, c2, d2, e2, f2] = placement(layer, padding);
+  return [
+    a * a2 + c * b2,
+    b * a2 + d * b2,
+    a * c2 + c * d2,
+    b * c2 + d * d2,
+    a * e2 + c * f2 + e,
+    b * e2 + d * f2 + f,
+  ];
 }
 
 const matteTarget = (layer: PlannedFrameLayer): PlannedLayer | null =>

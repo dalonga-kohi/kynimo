@@ -1,0 +1,372 @@
+{
+  "formatVersion": 11,
+  "name": "Reference: motion blur",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 1280,
+      "height": 720,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 30,
+      "background": "#0b0d14",
+      "markers": [],
+      "layers": [
+        {
+          "id": "title",
+          "name": "title",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [-900, 96],
+                  "interpolation": {
+                    "type": "bezier",
+                    "x1": 0.16,
+                    "y1": 1,
+                    "x2": 0.3,
+                    "y2": 1
+                  }
+                },
+                {
+                  "frame": 16,
+                  "value": [100, 96],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "motionBlur": {
+            "shutterAngle": 360,
+            "shutterPhase": -180,
+            "samples": 32
+          },
+          "type": "text",
+          "content": {
+            "value": "Motion, blurred."
+          },
+          "box": {
+            "mode": "point"
+          },
+          "font": {
+            "family": "Inter",
+            "weight": 700,
+            "size": {
+              "value": 110
+            }
+          },
+          "tracking": {
+            "value": -20
+          },
+          "leading": {
+            "value": 1.2
+          },
+          "align": "left",
+          "textCase": "none",
+          "fill": {
+            "value": "#f5f7fb"
+          },
+          "animators": []
+        },
+        {
+          "id": "spinner",
+          "name": "spinner",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [260, 480]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 30,
+                  "value": 360,
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "motionBlur": {
+            "shutterAngle": 360,
+            "shutterPhase": -180,
+            "samples": 24
+          },
+          "type": "shape",
+          "contents": [
+            {
+              "id": "rect-1",
+              "name": "rect",
+              "type": "rect",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [150, 150]
+              },
+              "cornerRadius": {
+                "value": 10
+              }
+            },
+            {
+              "id": "fill-1",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#ff7a59"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "ball",
+          "name": "ball",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "glider",
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "motionBlur": {
+            "shutterAngle": 360,
+            "shutterPhase": -180,
+            "samples": 24
+          },
+          "type": "shape",
+          "contents": [
+            {
+              "id": "ellipse-1",
+              "name": "ellipse",
+              "type": "ellipse",
+              "position": {
+                "value": [0, 0]
+              },
+              "size": {
+                "value": [120, 120]
+              }
+            },
+            {
+              "id": "fill-1",
+              "name": "fill",
+              "type": "fill",
+              "paint": {
+                "type": "solid",
+                "color": {
+                  "value": "#5ac8fa"
+                }
+              },
+              "opacity": {
+                "value": 1
+              },
+              "rule": "nonzero"
+            }
+          ]
+        },
+        {
+          "id": "sharp",
+          "name": "sharp",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": "glider",
+          "transform": {
+            "anchorPoint": {
+              "value": [60, 60]
+            },
+            "position": {
+              "value": [0, 230]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "type": "solid",
+          "width": 120,
+          "height": 120,
+          "color": "#ffd166"
+        },
+        {
+          "id": "glider",
+          "name": "glider",
+          "inFrame": 0,
+          "outFrame": 30,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": [500, 260],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                },
+                {
+                  "frame": 30,
+                  "value": [1200, 660],
+                  "interpolation": {
+                    "type": "linear"
+                  }
+                }
+              ]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "type": "null"
+        }
+      ]
+    }
+  ]
+}

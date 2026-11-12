@@ -43,6 +43,15 @@ export interface ResolvedComposition {
   audio: ResolvedAudio[];
 }
 
+/**
+ * The layer at one shutter sample (ADR-0053): its layer → composition matrix and its own
+ * (transform) opacity at that sub-frame time.
+ */
+export interface MotionSample {
+  matrix: Affine;
+  opacity: number;
+}
+
 interface LayerBase {
   id: string;
   name: string;
@@ -59,6 +68,12 @@ interface LayerBase {
   /** Active effects in document order, with parameters sampled in layer time. */
   effects: ResolvedEffect[];
   matte: ResolvedMatte | null;
+  /**
+   * Transform motion blur: the layer's placements at the shutter samples, in time order, to be drawn
+   * and averaged. `null` when blur is off, the shutter angle is 0 or the layer is an adjustment layer.
+   * Visibility, range and content are decided at `frame`, not per sample.
+   */
+  motion: readonly MotionSample[] | null;
 }
 
 /**

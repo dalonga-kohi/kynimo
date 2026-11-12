@@ -28,6 +28,17 @@ export interface CoverageImage {
   readonly coverage: Uint8Array;
 }
 
+/**
+ * One shutter sample of a motion-blurred layer (ADR-0053): `delta` takes the layer's centre-frame
+ * placement to its placement at the sample time (composition space → composition space, so it
+ * composes with the placement of vector and layer-space rasters alike), `opacity` is the layer's
+ * own opacity then.
+ */
+export interface PlannedMotionSample {
+  delta: Affine;
+  opacity: number;
+}
+
 interface PlannedBase {
   id: string;
   /** Layer opacity, applied by the compositor (it belongs to the layer, not its pixels). */
@@ -43,6 +54,12 @@ interface PlannedBase {
   matte: PlannedMatte | null;
   /** Parameters already sampled in layer time. Omitted means no effects. */
   effects?: readonly ResolvedEffect[];
+  /**
+   * Transform motion blur: the compositor draws the layer once per sample, each at `delta ∘ placement`
+   * with opacity `sample.opacity / samples.length`, and sums the results. Omitted or `null` draws
+   * it once at `matrix` with `opacity`.
+   */
+  motion?: readonly PlannedMotionSample[] | null;
 }
 
 /**

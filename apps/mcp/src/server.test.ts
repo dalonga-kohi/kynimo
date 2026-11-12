@@ -311,6 +311,94 @@ describe("MCP server", () => {
     expect(JSON.stringify(bad.errors)).toContain('"ops",0,"mask","inverted"');
   });
 
+  it("sets, validates and clears motion blur through updateLayer", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    const apply = (base_version: number, idempotency_key: string, motionBlur: unknown) =>
+      client.callTool({
+        name: "apply_ops",
+        arguments: {
+          project_id,
+          base_version,
+          idempotency_key,
+          ops: [{ op: "updateLayer", layer: "s", set: { motionBlur } }],
+        },
+      }) as Promise<CallToolResult>;
+    expect((await call(client, "get_layer", { project_id, layer: "s" })).layer).toMatchObject({
+      motionBlur: null,
+    });
+    const set = await apply(2, "w2", {});
+    expect(set.isError).toBeFalsy();
+    expect((await call(client, "get_layer", { project_id, layer: "s" })).layer).toMatchObject({
+      motionBlur: { shutterAngle: 180, shutterPhase: -90, samples: 16 },
+    });
+
+    // The listing's input schema carries the bounds, so the protocol layer rejects it first.
+    const bad = (await client.callTool({
+      name: "apply_ops",
+      arguments: {
+        project_id,
+        base_version: 3,
+        idempotency_key: "w3",
+        ops: [{ op: "updateLayer", layer: "s", set: { motionBlur: { samples: 1 } } }],
+      },
+    })) as CallToolResult;
+    expect(bad.isError).toBe(true);
+    expect(JSON.stringify(bad.content)).toContain("ops[0].set.motionBlur.samples");
+    const unchanged = await call(client, "get_scene", { project_id });
+    expect(unchanged.version).toBe(3);
+
+    const off = await apply(3, "w4", null);
+    expect(off.isError).toBeFalsy();
+    expect((await call(client, "get_layer", { project_id, layer: "s" })).layer).toMatchObject({
+      motionBlur: null,
+    });
+  });
+
+  it("rejects motion blur on null layers through update_layer and apply_ops, leaving the version alone", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "n",
+      layer: { type: "null", name: "n" },
+    });
+    const viaApply = await callError(client, "apply_ops", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      ops: [{ op: "updateLayer", layer: "n", set: { motionBlur: {} } }],
+    });
+    expect(viaApply).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(viaApply.errors)).toContain('"ops",0,"set","motionBlur"');
+    expect(JSON.stringify(viaApply.errors)).toContain("is a null layer and has no motion blur");
+    const viaTool = await callError(client, "update_layer", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w3",
+      layer: "n",
+      set: { motionBlur: {} },
+    });
+    expect(viaTool).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(viaTool.errors)).toContain("has no motion blur");
+    expect((await call(client, "get_scene", { project_id })).version).toBe(2);
+  });
+
   it("validates layer selectors in apply_ops on the server, though the listing declares them loosely", async () => {
     const { id: project_id } = await call(client, "create_project", {
       name: "P",

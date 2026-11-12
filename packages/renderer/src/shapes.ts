@@ -2,8 +2,8 @@ import { type Affine, multiply, type ResolvedPaint, type ResolvedShapeLayer } fr
 import type { CanvasKit, Paint, Path } from "canvaskit-wasm";
 import { bindPaints, FrameShapeWork, type PaintItem, type PaintOp } from "./binding.js";
 import { effectPadding } from "./compositor/effects.js";
-import type { RasterImage } from "./raster.js";
-import { cropToComposition, type Rect, transformRect, union } from "./rect.js";
+import type { PlannedMotionSample, RasterImage } from "./raster.js";
+import { cropToComposition, motionCropRect, type Rect, transformRect, union } from "./rect.js";
 import { buildPath, type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
 
 /**
@@ -19,6 +19,8 @@ export function rasterizeShapeLayer(
   reserve: (width: number, height: number) => void = () => {},
   /** The frame's shared path work budget (ADR-0034). */
   work: FrameShapeWork = new FrameShapeWork(),
+  /** The layer's blur samples: the raster then also covers what the shutter brings into view. */
+  motion: readonly PlannedMotionSample[] | null = null,
 ): { x: number; y: number; raster: RasterImage } | null {
   return scoped((own) => {
     const draws: { path: Path; paint: Paint; matrix: Affine }[] = [];
@@ -38,7 +40,14 @@ export function rasterizeShapeLayer(
       bounds = bounds === null ? box : union(bounds, box);
     }
     if (bounds === null) return null;
-    const crop = cropToComposition(bounds, width, height, effectPadding(layer.effects));
+    const padding = effectPadding(layer.effects);
+    const crop = cropToComposition(
+      bounds,
+      width,
+      height,
+      padding,
+      motionCropRect(width, height, padding, motion),
+    );
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);

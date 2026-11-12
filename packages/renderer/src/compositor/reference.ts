@@ -20,6 +20,7 @@ import {
   maxLevel,
   placement,
   precompUses,
+  samplePlacement,
 } from "./pipeline.js";
 
 /** Premultiplied RGBA, 0..1, rows top to bottom. */
@@ -95,17 +96,41 @@ function placed(layer: PlannedLayer, comp: FramePlan, nested: Nested): FloatImag
   for (let i = chain.length - 1; i >= 0; i--) {
     const current = chain[i] as PlannedLayer;
     const padding = effectPadding(current.effects ?? []);
-    const img = place(
-      source(current, nested, padding),
-      placement(current, padding),
-      comp.width,
-      comp.height,
-    );
+    const motion = current.motion ?? null;
+    // Charged up front (width × height per sample) so a huge blur fails before any work is done.
+    if (motion !== null)
+      chargeSamples(
+        nested,
+        current.id,
+        comp.width * comp.height * motion.length,
+        "motion blur samples or number of blurred layers",
+      );
+    const src = source(current, nested, padding);
+    // The source's mip chain, extended on demand and shared by every sample of this layer.
+    const levels = [src];
+    let img: FloatImage;
+    if (motion === null) img = place(levels, placement(current, padding), comp.width, comp.height);
+    else {
+      // One pass per shutter sample, summed (premultiplied, additive) with weight opacity / N.
+      img = blank(comp.width, comp.height);
+      for (const sample of motion) {
+        const one = place(
+          levels,
+          samplePlacement(current, sample, padding),
+          comp.width,
+          comp.height,
+        );
+        const weight = sample.opacity / motion.length;
+        for (let i = 0; i < img.data.length; i++)
+          img.data[i] = (img.data[i] ?? 0) + (one.data[i] ?? 0) * weight;
+      }
+    }
     const matted = i === chain.length - 1 ? (end === "none" ? "none" : "empty") : "source";
     const mode = current.matte?.mode;
     for (let p = 0; p < img.data.length; p += 4) {
+      // A blurred layer's own opacity is already in its samples.
       const factor =
-        current.opacity *
+        (motion === null ? current.opacity : 1) *
         matteCoverage(matted === "none" ? undefined : mode, matted === "empty" ? null : below, p);
       for (let k = 0; k < 4; k++) img.data[p + k] = (img.data[p + k] ?? 0) * factor;
     }
@@ -457,20 +482,21 @@ function bilinear(img: FloatImage, x: number, y: number, k: number): number {
 }
 
 /** Resamples `src` into a `width × height` composition through `matrix` (source → composition). */
-function place(src: FloatImage, matrix: Affine, width: number, height: number): FloatImage {
+function place(levels: FloatImage[], matrix: Affine, width: number, height: number): FloatImage {
+  const src = levels[0] as FloatImage;
   const out = blank(width, height);
   const inv = invert(matrix);
   if (inv === null) return out; // a degenerate transform covers no area
   const lod = levelOfDetail(inv, src.width, src.height);
   const k = Math.floor(lod);
   const t = lod - k;
-  const levels = [src];
-  for (let n = 1; n <= Math.min(k + 1, maxLevel(src.width, src.height)); n++)
+  for (let n = levels.length; n <= Math.min(k + 1, maxLevel(src.width, src.height)); n++)
     levels.push(downsample(levels[n - 1] as FloatImage));
   const lo = levels[k] as FloatImage;
-  const hi = levels[Math.min(k + 1, levels.length - 1)] as FloatImage;
+  const topLevel = Math.min(k + 1, maxLevel(src.width, src.height));
+  const hi = levels[topLevel] as FloatImage;
   const sLo = 2 ** -k;
-  const sHi = 2 ** -Math.min(k + 1, levels.length - 1);
+  const sHi = 2 ** -topLevel;
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++) {
       const px = x + 0.5;

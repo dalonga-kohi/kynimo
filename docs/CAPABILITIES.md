@@ -66,16 +66,16 @@ Video note: frame-accurate decoding through `<video>` in Chromium isn't determin
 
 ## 3. Transform, hierarchy and compositing
 
-| Capability                                                                          | AE equivalent  | Status |
-| ----------------------------------------------------------------------------------- | -------------- | ------ |
-| Anchor point, position (or separate X/Y), scale, rotation, skew, opacity            | Transform      | beta   |
-| Parenting (any layer, including nulls), no cycles                                   | Parent & link  | beta   |
-| Auto-orient along motion path                                                       | Auto-orient    | v1.x   |
-| Blend modes (normal, multiply, screen, overlay, add, soft light, difference, …)     | Blending modes | beta   |
-| Track mattes: alpha, alpha inverted, luma, luma inverted; matte from any layer      | Track matte    | beta   |
-| Masks: path, feather, expansion, opacity, mode (add, subtract, intersect), inverted | Masks          | beta   |
-| Motion blur (shutter angle/phase, fixed sample count)                               | Motion blur    | v1.x   |
-| Preserve transparency / stencils                                                    | Stencil        | later  |
+| Capability                                                                                              | AE equivalent  | Status |
+| ------------------------------------------------------------------------------------------------------- | -------------- | ------ |
+| Anchor point, position (or separate X/Y), scale, rotation, skew, opacity                                | Transform      | beta   |
+| Parenting (any layer, including nulls), no cycles                                                       | Parent & link  | beta   |
+| Auto-orient along motion path                                                                           | Auto-orient    | v1.x   |
+| Blend modes (normal, multiply, screen, overlay, add, soft light, difference, …)                         | Blending modes | beta   |
+| Track mattes: alpha, alpha inverted, luma, luma inverted; matte from any layer                          | Track matte    | beta   |
+| Masks: path, feather, expansion, opacity, mode (add, subtract, intersect), inverted                     | Masks          | beta   |
+| Motion blur (shutter angle/phase, fixed samples): transform blur; animated contents at the center frame | Motion blur    | beta   |
+| Preserve transparency / stencils                                                                        | Stencil        | later  |
 
 ## 4. Shapes
 
@@ -137,6 +137,8 @@ Spring note: a spring segment runs from its keyframe toward the next keyframe's 
 ## 7. Effects
 
 Effects stack per layer and on adjustment layers (ADR-0042). Use `add_effect` to insert an effect, `get_layer` to inspect the stack, and `setEffects` via `apply_ops` to edit, reorder or remove effects. Parameters use `{ value }` or `{ keyframes }` in layer time. Look up the fields in `get_layer_schema`.
+
+Motion blur (ADR-0053, scene format 11): any drawn layer except an adjustment layer takes `motionBlur` through `updateLayer` (`apply_ops` or `update_layer`): `{}` stores the defaults (`shutterAngle` 180, `shutterPhase` -90, `samples` 2 to 64, default 16) and `null` turns it off. It blurs transform motion (position, scale, rotation, parents, behaviors, opacity), not animated contents, and cost grows with `samples`. `get_capabilities` lists its limits.
 
 Generators and looks (ADR-0045, scene format 9): a **generator layer** is a layer of a given width and height that draws a procedural source: `gradient` (linear, radial or conic, up to 16 stops), `noise` (seeded fractal value noise that evolves in time), `pattern` (stripes, checker, dots, grid) or `aurora` (two to four soft color blobs that loop as `evolution` runs). Add one with `apply_ops` `addLayer` (or `add_layer`) and edit it with the `setGenerator` operation; scripts reach both through the SDK. It is placed, masked, matted, blended and given effects like any drawn layer. The **looks** are effects (`add_effect`, usually on an adjustment layer): `vignette`, `grain` (seeded, optionally animated), `chromatic-aberration`, `posterize` and `scanlines`.
 

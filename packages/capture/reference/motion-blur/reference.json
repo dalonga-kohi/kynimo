@@ -1,0 +1,4 @@
+{
+  "description": "Transform motion blur: a title sliding in from off-screen left with an ease-out, a square spinning at 360 degrees per second, and a circle on a moving null (the child is blurred through its parent's motion, the null is not) beside an identical sharp solid with blur off for contrast. 360 degree shutters, 24 to 32 samples.",
+  "frames": [4, 8, 12]
+}

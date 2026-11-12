@@ -1,4 +1,6 @@
-import type { Affine } from "@kynimo/engine";
+import { type Affine, invert } from "@kynimo/engine";
+import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
+import type { PlannedMotionSample } from "./raster.js";
 
 /** `[left, top, right, bottom]`. */
 export type Rect = [number, number, number, number];
@@ -32,17 +34,58 @@ export const union = (a: Rect, b: Rect): Rect => [
 
 /**
  * Whole-pixel `[x0, y0, x1, y1]` covering composition-space `bounds` plus anti-aliasing room,
- * clipped to the `width × height` composition; `null` when nothing is left.
+ * clipped to the `width × height` composition (or to `limit` when given, see `motionCropRect`);
+ * `null` when nothing is left.
  */
 export function cropToComposition(
   bounds: Rect,
   width: number,
   height: number,
   [padX, padY] = [0, 0],
+  limit: Rect = [0 - padX, 0 - padY, width + padX, height + padY],
 ): Rect | null {
-  const x0 = Math.max(-padX, Math.floor(bounds[0] - AA_PAD));
-  const y0 = Math.max(-padY, Math.floor(bounds[1] - AA_PAD));
-  const x1 = Math.min(width + padX, Math.ceil(bounds[2] + AA_PAD));
-  const y1 = Math.min(height + padY, Math.ceil(bounds[3] + AA_PAD));
+  const x0 = Math.max(limit[0], Math.floor(bounds[0] - AA_PAD));
+  const y0 = Math.max(limit[1], Math.floor(bounds[1] - AA_PAD));
+  const x1 = Math.min(limit[2], Math.ceil(bounds[2] + AA_PAD));
+  const y1 = Math.min(limit[3], Math.ceil(bounds[3] + AA_PAD));
   return x1 <= x0 || y1 <= y0 ? null : [x0, y0, x1, y1];
+}
+
+/**
+ * The region a composition-space raster must cover so a motion-blurred layer still fills the frame
+ * at every shutter sample (ADR-0053): the composition rect plus effect `padding`, unioned with that
+ * rect carried back by each invertible sample `delta`. Reaches at most one composition width or
+ * height past the padded rect on each side; faster content is clipped there. Without motion it is
+ * exactly the padded rect, so unblurred layers crop as before. Whole pixels, like the crop it limits.
+ */
+export function motionCropRect(
+  width: number,
+  height: number,
+  [padX, padY]: [number, number],
+  motion: readonly PlannedMotionSample[] | null | undefined,
+): Rect {
+  const base: Rect = [0 - padX, 0 - padY, width + padX, height + padY];
+  if (!motion) return base;
+  let reach = base;
+  for (const sample of motion) {
+    const inverse = invert(sample.delta);
+    if (inverse === null) continue;
+    const box = transformRect(inverse, base);
+    if (box !== null) reach = union(reach, box);
+  }
+  // The margin is also clamped so the crop never exceeds the texture limit.
+  const marginX = Math.max(
+    0,
+    Math.min(width, Math.floor((MAX_COMPOSITION_SIZE - (width + 2 * padX)) / 2)),
+  );
+  const marginY = Math.max(
+    0,
+    Math.min(height, Math.floor((MAX_COMPOSITION_SIZE - (height + 2 * padY)) / 2)),
+  );
+  return [
+    Math.max(Math.floor(reach[0]), base[0] - marginX),
+    Math.max(Math.floor(reach[1]), base[1] - marginY),
+    Math.min(Math.ceil(reach[2]), base[2] + marginX),
+    Math.min(Math.ceil(reach[3]), base[3] + marginY),
+  ];
 }

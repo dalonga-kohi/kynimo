@@ -225,14 +225,14 @@ describe("migrateProject", () => {
   it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 11 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 11 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +255,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 11 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -347,7 +347,7 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v6);
-    expect(r).toMatchObject({ ok: true, from: 6, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 6, to: 11 });
     if (!r.ok) return;
     const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ behaviors: [] });
@@ -389,7 +389,7 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v7);
-    expect(r).toMatchObject({ ok: true, from: 7, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 7, to: 11 });
     if (!r.ok) return;
     const [solid, adjustment, nul] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ effects: [] });
@@ -403,8 +403,16 @@ describe("migrateProject", () => {
       compositions: [composition("main", [{ ...visual("a"), type: "adjustment", effects: [] }])],
     });
     const r = migrateProject(v8);
-    expect(r).toMatchObject({ ok: true, from: 8, to: 10 });
-    if (r.ok) expect({ ...r.doc, formatVersion: 8 }).toEqual(v8);
+    expect(r).toMatchObject({ ok: true, from: 8, to: 11 });
+    if (r.ok)
+      expect({ ...r.doc, formatVersion: 8 }).toEqual({
+        ...v8,
+        compositions: [
+          composition("main", [
+            { ...visual("a"), type: "adjustment", effects: [], motionBlur: null },
+          ]),
+        ],
+      });
   });
 
   it("9 → 10 changes nothing but the version", () => {
@@ -422,8 +430,61 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v9);
-    expect(r).toMatchObject({ ok: true, from: 9, to: 10 });
+    expect(r).toMatchObject({ ok: true, from: 9, to: 11 });
     if (r.ok) expect({ ...r.doc, formatVersion: 9 }).toEqual(v9);
+  });
+
+  it("10 → 11 adds motionBlur: null to drawn layers, precomp compositions included", () => {
+    const solid = { ...visual("s"), type: "solid", width: 16, height: 16, color: "#ff0000" };
+    const v10 = project({
+      formatVersion: 10,
+      compositions: [
+        composition("main", [solid, nullLayer("n")]),
+        composition("inner", [{ ...visual("p"), type: "adjustment", effects: [] }]),
+      ],
+    });
+    const r = runMigrations(v10);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const comps = r.doc.compositions as { layers: Record<string, unknown>[] }[];
+    expect(comps[0]?.layers[0]).toMatchObject({ motionBlur: null });
+    expect(comps[0]?.layers[1]).not.toHaveProperty("motionBlur");
+    expect(comps[1]?.layers[0]).toMatchObject({ motionBlur: null });
+    expect(migrateProject(v10)).toMatchObject({ ok: true, from: 10, to: 11 });
+  });
+
+  it("10 → 11 leaves audio layers and existing settings alone", () => {
+    const audio = {
+      id: "au",
+      name: "au",
+      inFrame: 0,
+      outFrame: 90,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+      type: "audio",
+      assetId: "x",
+      volume: { value: 1 },
+    };
+    const blur = { shutterAngle: 90, shutterPhase: 0, samples: 8 };
+    const solid = {
+      ...visual("s"),
+      type: "solid",
+      width: 16,
+      height: 16,
+      color: "#ff0000",
+      motionBlur: blur,
+    };
+    const r = runMigrations(
+      project({ formatVersion: 10, compositions: [composition("main", [solid, audio])] }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const layers = (r.doc.compositions as { layers: Record<string, unknown>[] }[])[0]?.layers ?? [];
+    expect(layers[0]).toMatchObject({ motionBlur: blur });
+    expect(layers[1]).not.toHaveProperty("motionBlur");
   });
 
   it("migrates a version 1 document to the current version", () => {
