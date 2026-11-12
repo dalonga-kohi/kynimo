@@ -55,7 +55,7 @@ export function cropToComposition(
  * at every shutter sample (ADR-0053): the composition rect plus effect `padding`, unioned with that
  * rect carried back by each invertible sample `delta`. Reaches at most one composition width or
  * height past the padded rect on each side; faster content is clipped there. Without motion it is
- * exactly the padded rect, so unblurred layers crop as before.
+ * exactly the padded rect, so unblurred layers crop as before. Whole pixels, like the crop it limits.
  */
 export function motionCropRect(
   width: number,
@@ -73,9 +73,9 @@ export function motionCropRect(
     if (box !== null) reach = union(reach, box);
   }
   return [
-    Math.max(reach[0], base[0] - width),
-    Math.max(reach[1], base[1] - height),
-    Math.min(reach[2], base[2] + width),
-    Math.min(reach[3], base[3] + height),
+    Math.max(Math.floor(reach[0]), base[0] - width),
+    Math.max(Math.floor(reach[1]), base[1] - height),
+    Math.min(Math.ceil(reach[2]), base[2] + width),
+    Math.min(Math.ceil(reach[3]), base[3] + height),
   ];
 }

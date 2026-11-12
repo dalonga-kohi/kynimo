@@ -283,6 +283,15 @@ describe("motionCropRect", () => {
       ),
     ).toEqual([-30, 0, 110, 50]);
   });
+  it("rounds the reach out to whole pixels", () => {
+    const motion = [
+      {
+        delta: [1, 0, 0, 1, 10.4, -3.25] as [number, number, number, number, number, number],
+        opacity: 1,
+      },
+    ];
+    expect(motionCropRect(100, 50, [0, 0], motion)).toEqual([-11, 0, 100, 54]);
+  });
   it("clamps to one composition size of extra margin per side", () => {
     const fast = [
       {
