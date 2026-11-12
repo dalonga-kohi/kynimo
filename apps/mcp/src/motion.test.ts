@@ -105,6 +105,37 @@ describe("describeMotion", () => {
     ]);
   });
 
+  it("lists transition tracks as transition.<field> in composition frames", () => {
+    const c = comp([
+      solid({
+        startFrame: 10,
+        transition: {
+          kind: "wipe",
+          progress: {
+            keyframes: [
+              { frame: 0, value: 0, interpolation: ease },
+              { frame: 12, value: 1, interpolation: { type: "hold" } },
+            ],
+          },
+          angle: {
+            keyframes: [
+              { frame: 0, value: 0, interpolation: { type: "linear" } },
+              { frame: 12, value: 90, interpolation: { type: "hold" } },
+            ],
+          },
+          feather: { value: 20 },
+        },
+      }),
+    ]);
+    const props = describe_(c).layers[0]?.properties ?? [];
+    expect(props.map((p) => p.property).sort()).toEqual([
+      "transition.angle",
+      "transition.progress",
+    ]);
+    const progress = props.find((p) => p.property === "transition.progress");
+    expect(progress?.segments[0]).toMatchObject({ from_frame: 10, to_frame: 22, from: 0, to: 1 });
+  });
+
   it("reports springs with their settle frame, curved paths and single keyframes", () => {
     const spring = { damping: 0.6, response: 0.4 };
     const c = comp([

@@ -228,6 +228,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3         |
 | Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4         |
 | Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4         |
+| Intent   | `add_transition` (built-in shader transition on a drawn layer, edge in or out, `dry_run`; kinds and limits in `get_capabilities`)                                    | M6         |
 | Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4         |
 | Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4         |
 | Intent   | `add_component`, `list_components`                                                                                                                                   | shipped    |

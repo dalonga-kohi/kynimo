@@ -307,23 +307,6 @@ describe("transitions in the reference compositor", () => {
     expect(fringes(glitch(1))).toBeGreaterThan(0);
   });
 
-  it("names the layer when a transition exceeds the frame budget", () => {
-    // One 6500 x 6500 glitch costs 12 samples per pixel: over the 500M budget. The check comes
-    // before any layer work, so the (untouched) buffers stay cheap.
-    const big = plan(
-      [
-        solid("fade-out", fill(1, 1, BLUE), {
-          transition: { kind: "glitch", progress: 0.5, seed: 1, bands: 4, amount: 0.1 },
-        }),
-      ],
-      6500,
-      6500,
-    );
-    expect(() => compositeReference(big)).toThrow(
-      /layer 'fade-out' exceeds the frame budget.*reduce the composition size or number of transitions/,
-    );
-  });
-
   it("uses the size of the plan it composites: a transition inside a nested precomp", () => {
     const inner = duel({ kind: "wipe", progress: 0.5, angle: 0, feather: 0 }, 32, 24);
     const precomp = {

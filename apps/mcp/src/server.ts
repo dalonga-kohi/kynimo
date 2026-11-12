@@ -1,8 +1,10 @@
 import {
   AddEffectInputSchema,
+  AddTransitionInputSchema,
   AnimateInputSchema,
   ApplyPresetInputSchema,
   addEffect,
+  addTransition,
   animate,
   applyPreset,
   MarkBeatsInputSchema,
@@ -40,6 +42,7 @@ import {
   AddEffectInput,
   AddLayerInput,
   AddMaskInput,
+  AddTransitionInput,
   AnimateToolInput,
   ApplyOpsInput,
   ApplyPresetToolInput,
@@ -121,6 +124,7 @@ Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adju
 Motion blur: updateLayer set {motionBlur: {}} (shutterAngle 180, shutterPhase -90, samples 16 by default; null turns it off). It blurs transform motion (position, scale, rotation, parents, behaviors), not animated contents; cost grows with samples.
 2.5D: updateLayer {threeD: true} turns a drawn or null layer into a flat card in 3D (positionZ, rotationX, rotationY; +z is away from the viewer); add a camera layer (zoom, pointOfInterest) to move the view; 3D layers next to each other in the stack sort by depth, 2D layers stay where they are.
 Backgrounds and textures are generator layers (gradient, noise, pattern, aurora): add one with add_layer and edit it with the setGenerator operation. Looks (vignette, grain, chromatic-aberration, posterize, scanlines) are effects: use add_effect, usually on an adjustment layer.
+For a reveal or cut between shots use add_transition (wipe, dissolve, push, iris, ...; edge in or out on one layer); the transition component is the cover-style alternative.
 When the user is happy with the frames, export (mp4 default; webm keeps transparency) and poll get_export_status with wait_seconds; render_preview_clip makes a quick low-res clip first.
 Use import_svg for vector logos and icons: it makes one shape layer and reports what the SVG had that shapes cannot carry.`;
 
@@ -715,6 +719,15 @@ export function createServer(service: KynimoService): McpServer {
     AddEffectInput,
     AddEffectInputSchema,
     addEffect,
+  );
+
+  intentTool(
+    "add_transition",
+    "Add transition",
+    "Adds a built-in shader transition to a drawn layer: edge in reveals the layer over what is beneath it, edge out lets the layer give way to it. Kinds: dissolve, noise-dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch. One transition per layer; call again with the same kind for the other edge.",
+    AddTransitionInput,
+    AddTransitionInputSchema,
+    addTransition,
   );
 
   intentTool(

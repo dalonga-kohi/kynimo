@@ -1,6 +1,7 @@
 import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
+  DurationInput,
   EasingInput,
   MarkBeatsInputSchema,
   RetimeInputSchema,
@@ -32,6 +33,7 @@ import {
   ShaderDefinitionInputSchema,
   ShaderDefinitionSummarySchema,
   TRANSFORM_PROPERTIES,
+  TRANSITION_KINDS,
   TrackMatteSchema,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
@@ -170,7 +172,7 @@ export const CompactLayerPatchSchema = z
       .looseObject({})
       .nullable()
       .describe(
-        "Drawn layers except adjustment: a built-in shader transition { kind, progress: { value } or { keyframes } (0..1), ...kind fields }, replacing the whole value; null removes it. Kinds: dissolve, noise-dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch.",
+        "Drawn layers except adjustment: a built-in shader transition { kind, progress: { value } or { keyframes } (0..1), ...kind fields }, replacing the whole value; null removes it. add_transition builds one with defaults. Kinds: dissolve, noise-dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch.",
       )
       .optional(),
   })
@@ -524,6 +526,33 @@ export const AddEffectInput = z.object({
     ),
   id: EffectIdSchema.optional(),
   index: z.number().int().nonnegative().optional().describe("Stack position; default appends."),
+});
+
+export const AddTransitionInput = z.object({
+  ...intentMeta,
+  layer: CompactLayerSelectorSchema,
+  kind: z
+    .enum(TRANSITION_KINDS)
+    .describe("Transition kind; fields and limits: get_capabilities (transitions)."),
+  edge: z
+    .enum(["in", "out"])
+    .optional()
+    .describe(
+      "in reveals the layer over what is beneath (first frames); out lets it give way (last frames). Default in. Angles mean the on-screen direction the edge travels (out stores angle + 180, clockwise inverted).",
+    ),
+  duration: DurationInput.optional().describe(
+    "Token (fast, base, slow) or ms. Default base. Shrunk to fit the layer.",
+  ),
+  easing: z
+    .union([EasingInput.options[0], z.looseObject({})])
+    .optional()
+    .describe("Token (default move) or { type: bezier | spring | linear | hold, ... }."),
+  params: z
+    .looseObject({})
+    .optional()
+    .describe(
+      "Any of the kind's fields except kind and progress, e.g. { angle: { value: 90 } }; defaults fit the composition. Not allowed when the layer already has this transition.",
+    ),
 });
 
 /** What the import is, without the write fields. */

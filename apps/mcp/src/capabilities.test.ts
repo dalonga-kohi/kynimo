@@ -11,6 +11,7 @@ import {
   MAX_EFFECTS,
   MotionBlurSchema,
   SCENE_FORMAT_VERSION,
+  TRANSITION_KINDS,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
 import { describe, expect, it } from "vitest";
@@ -158,6 +159,27 @@ describe("capability manifest", () => {
     expect(zoom.safeParse({ value: max + 1 }).success).toBe(false);
   });
 
+  it("lists every transition kind as rendering, with its sample cost and limits", () => {
+    expect(sorted(Object.keys(manifest.features.transitions))).toEqual(sorted(TRANSITION_KINDS));
+    expect(Object.values(manifest.features.transitions).every((t) => t.status === "renders")).toBe(
+      true,
+    );
+    const limits = manifest.limits.transitions;
+    expect(sorted(Object.keys(limits.samplesPerPixel))).toEqual(sorted(TRANSITION_KINDS));
+    expect(limits.samplesPerPixel).toMatchObject({ dissolve: 2, push: 8, glitch: 12 });
+    expect(limits).toMatchObject({
+      feather: { min: 0, max: 4096 },
+      point: { min: -65536, max: 65536 },
+      angle: { min: -3600, max: 3600 },
+      pixelateCell: { min: 2, max: 512 },
+      noiseScale: { min: 1, max: 512 },
+      zoomStrength: { min: 0, max: 8 },
+      blindsCount: { min: 2, max: 128 },
+      glitchBands: { min: 2, max: 256 },
+    });
+    expect(JSON.stringify(manifest.unavailable)).not.toMatch(/transition/i);
+  });
+
   it("lists every generator kind, the looks and their limits, and exposes custom shader authoring", () => {
     expect(sorted(Object.keys(manifest.features.generators))).toEqual(
       sorted(GeneratorSchema.options.map((option) => option.shape.type.value)),
@@ -222,6 +244,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(11_800); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
+    expect(JSON.stringify(manifest).length).toBeLessThan(13_500); // 11_800 before the transitions block (12.9 KB after); 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
   });
 });
