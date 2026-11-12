@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hasFfmpeg } from "./assets.test-util.js";
 import type { EncodeOptions } from "./encode.js";
@@ -10,34 +10,20 @@ import { Ffmpeg, MediaError } from "./media.js";
 const runMedia = hasFfmpeg || process.env.CI !== undefined;
 const FPS = { num: 30, den: 1 };
 
-const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-/** PNG frames from FFmpeg's own generators (test code only). */
-function makeFrames(source: string, count: number, w: number, h: number, alpha = false) {
-  const out = execFileSync(
-    "ffmpeg",
-    [
-      "-v",
-      "error",
-      "-f",
-      "lavfi",
-      "-i",
-      `${source}size=${w}x${h}:rate=30`,
-      "-frames:v",
-      String(count),
-      ...(alpha ? ["-pix_fmt", "rgba"] : []),
-      "-f",
-      "image2pipe",
-      "-c:v",
-      "png",
-      "pipe:1",
-    ],
-    { maxBuffer: 256 * 1024 * 1024 },
-  );
-  const starts: number[] = [];
-  for (let at = out.indexOf(SIGNATURE); at >= 0; at = out.indexOf(SIGNATURE, at + 8))
-    starts.push(at);
-  return starts.map((s, i) => new Uint8Array(out.subarray(s, starts[i + 1] ?? out.length)));
+/** A moving RGBA gradient (test input; premultiplied when `alpha` is 255). */
+function makeFrames(count: number, w: number, h: number, alpha = 255) {
+  return Array.from({ length: count }, (_, i) => {
+    const frame = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const at = (y * w + x) * 4;
+        frame[at] = (x * 255) / w;
+        frame[at + 1] = (y * 255) / h;
+        frame[at + 2] = (i * 8) & 255;
+        frame[at + 3] = alpha;
+      }
+    return frame;
+  });
 }
 
 /** One second of a 440 Hz tone as raw f32le 48 kHz stereo. */
@@ -82,9 +68,9 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "kynimo-encode-test-"));
-    frames = makeFrames("testsrc2=", 30, 64, 36);
-    alphaFrames = makeFrames("color=c=0xff000080:", 30, 64, 36, true);
-    oddFrames = makeFrames("testsrc2=", 30, 63, 35);
+    frames = makeFrames(30, 64, 36);
+    alphaFrames = makeFrames(30, 64, 36, 128);
+    oddFrames = makeFrames(30, 63, 35);
     audio = join(dir, "tone.f32");
     await sineFile(audio, 1);
   });
@@ -140,6 +126,12 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     expect(v?.pix_fmt).toBe("yuv420p");
   });
 
+  it("keeps the frame count of a straight-alpha webm", async () => {
+    const out = join(dir, "count.webm");
+    await encode(options({ format: "webm", out }), alphaFrames);
+    expect(Number(stream(probe(out), "video")?.nb_read_frames)).toBe(30);
+  });
+
   it("encodes gif without audio", async () => {
     const out = join(dir, "a.gif");
     const started = Date.now();
@@ -149,6 +141,7 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     expect(stream(p, "video")?.codec_name).toBe("gif");
     expect(Number(stream(p, "video")?.nb_read_frames)).toBe(30);
     expect(stream(p, "audio")).toBeUndefined();
+    expect((await readdir(dirname(out))).filter((n) => n.startsWith("kynimo-gif-"))).toEqual([]);
   });
 
   it("refuses audio on a gif", () => {
@@ -170,8 +163,8 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
 
   it("reports a bad frame without leaking the temp path", async () => {
     const out = join(dir, "bad.mp4");
-    const encoder = ffmpeg.encode(options({ format: "mp4", out, audio }));
-    await encoder.write(new Uint8Array(500).fill(7)).catch(() => undefined);
+    const encoder = ffmpeg.encode(options({ format: "mp4", out, audio: join(dir, "missing.f32") }));
+    await encoder.write(frames[0] as Uint8Array).catch(() => undefined);
     const error = await encoder.finish().then(
       () => undefined,
       (e: unknown) => e,
@@ -179,6 +172,24 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     expect(error).toBeInstanceOf(MediaError);
     expect((error as Error).message).toMatch(/^the export could not be encoded/);
     expect((error as Error).message).not.toContain(dir);
+  });
+
+  it("rejects a frame of the wrong length", async () => {
+    const encoder = ffmpeg.encode(options({ format: "mp4", out: join(dir, "len.mp4") }));
+    await expect(encoder.write(new Uint8Array(500))).rejects.toThrow(
+      /each frame must be 9216 bytes/,
+    );
+    await expect(encoder.write(oddFrames[0] as Uint8Array)).rejects.toThrow(MediaError);
+    for (const f of frames) await encoder.write(f);
+    await encoder.finish();
+  });
+
+  it("encodes repeated writes of one buffer", async () => {
+    const out = join(dir, "repeat.mp4");
+    const encoder = ffmpeg.encode(options({ format: "mp4", out, frameCount: 20 }));
+    for (let i = 0; i < 20; i++) await encoder.write(frames[3] as Uint8Array);
+    await encoder.finish();
+    expect(Number(stream(probe(out), "video")?.nb_read_frames)).toBe(20);
   });
 
   it("rejects more frames than frameCount", async () => {
@@ -191,12 +202,54 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     await encoder.finish();
   });
 
-  it("times out", async () => {
+  it("fails when the encoder stalls", async () => {
     const encoder = ffmpeg.encode(
-      options({ format: "mp4", out: join(dir, "slow.mp4"), timeoutMs: 1 }),
+      options({ format: "mp4", out: join(dir, "stall.mp4"), stallMs: 100 }),
     );
-    await encoder.write(frames[0] as Uint8Array).catch(() => undefined);
-    await expect(encoder.finish()).rejects.toThrow(/encoding took longer than/);
+    await encoder.write(frames[0] as Uint8Array);
+    await new Promise((r) => setTimeout(r, 400));
+    await expect(encoder.write(frames[1] as Uint8Array)).rejects.toThrow(
+      /the encoder stalled for 0\.1 s/,
+    );
+    await expect(encoder.finish()).rejects.toThrow(/stalled/);
+  });
+
+  it("does not stall while frames keep coming", async () => {
+    const encoder = ffmpeg.encode(
+      options({ format: "mp4", out: join(dir, "steady.mp4"), stallMs: 1500, frameCount: 4 }),
+    );
+    for (let i = 0; i < 4; i++) {
+      await encoder.write(frames[i] as Uint8Array);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    await encoder.finish();
+  });
+
+  it("fails when finishing takes too long", async () => {
+    const encoder = ffmpeg.encode(
+      options({ format: "webm", out: join(dir, "slow.webm"), finishMs: 1 }),
+    );
+    for (const f of frames) await encoder.write(f);
+    await expect(encoder.finish()).rejects.toThrow(
+      /encoding took longer than 0\.001 s after the last frame/,
+    );
+  });
+
+  it("removes the gif temp directory on success, failure and abort", async () => {
+    const sub = await mkdtemp(join(dir, "gif-"));
+    const leftovers = async () => (await readdir(sub)).filter((n) => n !== "ok.gif");
+    await encode(options({ format: "gif", out: join(sub, "ok.gif") }), frames);
+    expect(await leftovers()).toEqual([]);
+
+    const ac = new AbortController();
+    const encoder = ffmpeg.encode(
+      options({ format: "gif", out: join(sub, "x.gif"), signal: ac.signal }),
+    );
+    await encoder.write(frames[0] as Uint8Array);
+    expect((await readdir(sub)).some((n) => n.startsWith("kynimo-gif-"))).toBe(true);
+    ac.abort();
+    await expect(encoder.finish()).rejects.toThrow("cancelled");
+    expect(await leftovers()).toEqual([]);
   });
 
   describe("decodePcm", () => {

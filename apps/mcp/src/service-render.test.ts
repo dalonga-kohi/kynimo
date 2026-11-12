@@ -66,6 +66,9 @@ class FakeRenderer implements FrameRenderer {
     };
   }
 
+  async openExport(): Promise<never> {
+    throw new Error("not used here");
+  }
   async close() {}
 }
 

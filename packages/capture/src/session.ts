@@ -8,9 +8,16 @@ import {
   type SkippedLayer,
   videoFrameKey,
 } from "@kynimo/renderer";
-import { migrateProject } from "@kynimo/scene";
+import { migrateProject, type Project } from "@kynimo/scene";
 import { type Browser, chromium, type Page, type Route } from "playwright";
-import { ORIGIN, type PageApi, type PageRequest, type PageResponse } from "./protocol.js";
+import {
+  type ExportRequest,
+  ORIGIN,
+  type PageApi,
+  type PageRequest,
+  type PageResponse,
+} from "./protocol.js";
+import { fitSize } from "./size.js";
 
 /**
  * Frames one call may request. Every PNG of a call crosses back in one response, so callers
@@ -93,6 +100,48 @@ export interface CapturedSheet {
   frames: { frame: number; skipped: SkippedLayer[]; warnings: RenderWarning[] }[];
 }
 
+export interface ExportOptions {
+  /** The composition to export; the project's main composition by default. */
+  composition?: string;
+  /** As {@link CaptureOptions.maxSize}. */
+  maxSize?: number;
+  /** Image and font bytes by asset id, as for captureFrames; checked against pins. */
+  assets?: ReadonlyMap<string, Uint8Array>;
+  /**
+   * "premultiplied": the compositor's premultiplied RGBA (= over black when alpha is ignored).
+   * "straight": un-premultiplied, for formats that keep alpha.
+   */
+  alpha: "premultiplied" | "straight";
+}
+
+export interface ExportFrame {
+  frame: number;
+  width: number;
+  height: number;
+  /** width*height*4 bytes, rows top to bottom. When `repeated`, the same Uint8Array object as the previous call's. */
+  rgba: Uint8Array;
+  /** True when the evaluated frame equals the previous frame's, so it was not drawn again. */
+  repeated: boolean;
+  skipped: SkippedLayer[];
+  warnings: RenderWarning[];
+}
+
+/** One export in its own page: the document is loaded once and frames come back as raw RGBA. */
+export interface ExportSession {
+  /** Output size (`fitSize` of the composition). */
+  readonly width: number;
+  readonly height: number;
+  /** True once closed, or once the browser is gone. */
+  readonly closed: boolean;
+  /**
+   * Renders composition frame `frame`. `videoFrames` must hold every video frame this frame shows
+   * (same keys as captureFrames); frames not passed since the previous call are released in the
+   * page. Calls run one at a time. Throws {@link CaptureError}.
+   */
+  frame(frame: number, videoFrames?: ReadonlyMap<string, Uint8Array>): Promise<ExportFrame>;
+  close(): Promise<void>;
+}
+
 export interface CaptureSession {
   /** The Chromium version, e.g. `153.0.8010.12`. Record it with what the session renders (ADR-0016). */
   readonly browserVersion: string;
@@ -121,6 +170,11 @@ export interface CaptureSession {
     frames: readonly number[],
     options: SheetOptions,
   ): Promise<CapturedSheet>;
+  /**
+   * Opens an export in a new page of the same browser. It does not wait for `captureFrames`
+   * calls, nor do they wait for it. Closing the session closes its exports.
+   */
+  openExport(document: unknown, options: ExportOptions): Promise<ExportSession>;
   close(): Promise<void>;
 }
 
@@ -170,7 +224,8 @@ export async function launchCapture(options: LaunchOptions = {}): Promise<Captur
   for (const [path, file] of [...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
     build.update(`${path}\0`).update(createHash("sha256").update(file.body).digest("hex"));
   build.update(`\0${browser.version()}\0${gpu}`);
-  return session(browser, gpu, build.digest("hex"), async (request, assets) => {
+  const open = () => newCapturePage(browser, files);
+  return session(browser, gpu, build.digest("hex"), open, async (request, assets) => {
     serve(assets);
     try {
       // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
@@ -202,6 +257,28 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
   files: ReadonlyMap<string, StaticFile>;
 }> {
   const files = await staticFiles(pageScript);
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
+  } catch (error) {
+    throw new CaptureError(`could not launch the pinned Chromium: ${message(error)}`);
+  }
+  try {
+    const { page, gpu, serve } = await newCapturePage(browser, files);
+    return { browser, page, gpu, files, serve };
+  } catch (error) {
+    await browser.close();
+    throw error instanceof CaptureError
+      ? error
+      : new CaptureError(`could not start the capture page: ${message(error)}`);
+  }
+}
+
+/** A fresh isolated page in `browser`, loaded and initialized, answering from `files` and its own assets. */
+async function newCapturePage(
+  browser: Browser,
+  files: ReadonlyMap<string, StaticFile>,
+): Promise<{ page: Page; gpu: string; serve(assets: ReadonlyMap<string, Uint8Array>): void }> {
   let assets: ReadonlyMap<string, Uint8Array> = new Map();
 
   const answer = (route: Route) => {
@@ -222,15 +299,9 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
     return route.fulfill({ status: 404, body: "" });
   };
 
-  let browser: Browser;
+  // Service workers could answer requests without passing through the routes.
+  const context = await browser.newContext({ serviceWorkers: "block" });
   try {
-    browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
-  } catch (error) {
-    throw new CaptureError(`could not launch the pinned Chromium: ${message(error)}`);
-  }
-  try {
-    // Service workers could answer requests without passing through the routes.
-    const context = await browser.newContext({ serviceWorkers: "block" });
     await context.route("**/*", answer);
     await context.routeWebSocket(/.*/, (ws) => ws.close());
     const page = await context.newPage();
@@ -243,19 +314,15 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
         `capture runs only on SwiftShader (ADR-0016), but WebGL2 reports '${gpu}'`,
       );
     return {
-      browser,
       page,
       gpu,
-      files,
       serve(next) {
         assets = next;
       },
     };
   } catch (error) {
-    await browser.close();
-    throw error instanceof CaptureError
-      ? error
-      : new CaptureError(`could not start the capture page: ${message(error)}`);
+    await context.close().catch(() => undefined);
+    throw error;
   }
 }
 
@@ -268,18 +335,53 @@ function decodePath(segment: string): string {
   }
 }
 
+function checkDocument(document: unknown) {
+  const migrated = migrateProject(document);
+  if (!migrated.ok)
+    throw new CaptureError(
+      `the document is invalid: ${migrated.errors
+        .map((e) => `${e.path.join(".") || "(root)"}: ${e.message}`)
+        .join("; ")}`,
+    );
+  return migrated.doc;
+}
+
+function checkMaxSize(maxSize: number | undefined) {
+  if (maxSize !== undefined && (!Number.isInteger(maxSize) || maxSize < 1))
+    throw new CaptureError(`maxSize must be a positive integer (got ${maxSize})`);
+}
+
+function checkAssets(project: Project, assets: ReadonlyMap<string, Uint8Array>) {
+  for (const id of assets.keys()) {
+    const asset = project.assets.find((a) => a.id === id);
+    if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
+      throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
+  }
+}
+
+function checkVideoFrames(project: Project, videoFrames: ReadonlyMap<string, Uint8Array>) {
+  for (const key of videoFrames.keys()) {
+    const [id, n] = key.split("/");
+    const asset = project.assets.find((a) => a.id === id);
+    if (asset?.type !== "video" || key !== videoFrameKey(asset.id, Number(n)))
+      throw new CaptureError(`videoFrames: '${key}' does not name a frame of a video asset`);
+  }
+}
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 function session(
   browser: Browser,
   gpu: string,
   buildId: string,
+  openPage: () => ReturnType<typeof newCapturePage>,
   render: (request: PageRequest, assets: ReadonlyMap<string, Uint8Array>) => Promise<PageResponse>,
 ): CaptureSession {
   let closed = false;
   browser.on("disconnected", () => {
     closed = true;
   });
+  const exports = new Set<ExportSession>();
   let queue: Promise<unknown> = Promise.resolve();
   const serialized = <T>(task: () => Promise<T>): Promise<T> => {
     const run = queue.then(task, task);
@@ -295,37 +397,20 @@ function session(
   ) =>
     serialized(async () => {
       if (closed) throw new CaptureError("the capture session is closed");
-      const migrated = migrateProject(document);
-      if (!migrated.ok)
-        throw new CaptureError(
-          `the document is invalid: ${migrated.errors
-            .map((e) => `${e.path.join(".") || "(root)"}: ${e.message}`)
-            .join("; ")}`,
-        );
-      const project = migrated.doc;
+      const project = checkDocument(document);
       if (frames.length === 0 || frames.length > MAX_FRAMES_PER_CALL)
         throw new CaptureError(
           `frames must list 1 to ${MAX_FRAMES_PER_CALL} frames (got ${frames.length}); split longer ranges into several calls`,
         );
-      if (maxSize !== undefined && (!Number.isInteger(maxSize) || maxSize < 1))
-        throw new CaptureError(`maxSize must be a positive integer (got ${maxSize})`);
+      checkMaxSize(maxSize);
       if (sheet !== null) {
         if (!Number.isInteger(sheet.columns) || sheet.columns < 1)
           throw new CaptureError(`columns must be a positive integer (got ${sheet.columns})`);
         if (!Number.isInteger(sheet.gap) || sheet.gap < 0)
           throw new CaptureError(`gap must be a whole number of pixels (got ${sheet.gap})`);
       }
-      for (const id of assets.keys()) {
-        const asset = project.assets.find((a) => a.id === id);
-        if (asset === undefined || (asset.type !== "image" && asset.type !== "font"))
-          throw new CaptureError(`assets: '${id}' is not an image or font asset of the document`);
-      }
-      for (const key of videoFrames.keys()) {
-        const [id, n] = key.split("/");
-        const asset = project.assets.find((a) => a.id === id);
-        if (asset?.type !== "video" || key !== videoFrameKey(asset.id, Number(n)))
-          throw new CaptureError(`videoFrames: '${key}' does not name a frame of a video asset`);
-      }
+      checkAssets(project, assets);
+      checkVideoFrames(project, videoFrames);
       const response = await render(
         {
           project,
@@ -365,9 +450,164 @@ function session(
       const { sheet } = response;
       return { ...sheet, ...png(sheet.png), columns: Math.min(columns, frames.length) };
     },
+    async openExport(document, { composition, maxSize, assets = new Map(), alpha }) {
+      if (closed) throw new CaptureError("the capture session is closed");
+      const project = checkDocument(document);
+      checkMaxSize(maxSize);
+      checkAssets(project, assets);
+      if (alpha !== "premultiplied" && alpha !== "straight")
+        throw new CaptureError(`alpha must be 'premultiplied' or 'straight' (got ${alpha})`);
+      const compositionId = composition ?? project.mainCompositionId;
+      if (!project.compositions.some((c) => c.id === compositionId))
+        throw new CaptureError(
+          `unknown composition '${compositionId}'; use one of: ${project.compositions.map((c) => c.id).join(", ")}`,
+        );
+      const exported = await openExportPage(
+        openPage,
+        { project, compositionId, assets: [...assets.keys()], maxSize: maxSize ?? null, alpha },
+        assets,
+        project,
+        () => closed,
+      );
+      exports.add(exported);
+      void exported.closing.then(() => exports.delete(exported));
+      return exported;
+    },
     async close() {
       closed = true;
+      await Promise.allSettled([...exports].map((e) => e.close()));
       await browser.close();
+    },
+  };
+}
+
+type ExportHandle = ExportSession & { closing: Promise<void> };
+
+/** Opens the export page and wraps it; the page's calls are serialized among themselves. */
+async function openExportPage(
+  openPage: () => ReturnType<typeof newCapturePage>,
+  request: ExportRequest,
+  assets: ReadonlyMap<string, Uint8Array>,
+  project: Project,
+  browserGone: () => boolean,
+): Promise<ExportHandle> {
+  const comp = project.compositions.find((c) => c.id === request.compositionId);
+  const size = fitSize(comp?.width ?? 1, comp?.height ?? 1, request.maxSize);
+  const call = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (error) {
+      throw new CaptureError(`the capture page failed: ${message(error)}`);
+    }
+  };
+  let opened: Awaited<ReturnType<typeof openPage>>;
+  try {
+    opened = await openPage();
+  } catch (error) {
+    throw error instanceof CaptureError
+      ? error
+      : new CaptureError(`could not start the capture page: ${message(error)}`);
+  }
+  const { page } = opened;
+  // The asset route reads this map: provided assets for good, video frames per call.
+  const served = new Map<string, Uint8Array>(assets);
+  opened.serve(served);
+  let pageClosed = false;
+  let release!: () => void;
+  const closing = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  page.on("close", () => {
+    pageClosed = true;
+    release();
+  });
+  page.on("crash", () => {
+    pageClosed = true;
+  });
+  const isClosed = () => pageClosed || browserGone();
+  const shutdown = async () => {
+    pageClosed = true;
+    await page
+      .evaluate(() =>
+        (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.closeExport(),
+      )
+      .catch(() => undefined);
+    await page
+      .context()
+      .close()
+      .catch(() => undefined);
+    release();
+  };
+
+  const opening = await call(() =>
+    page.evaluate(
+      (json) =>
+        (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.openExport(
+          JSON.parse(json),
+        ),
+      JSON.stringify(request),
+    ),
+  ).catch(async (error: unknown) => {
+    await shutdown();
+    throw error;
+  });
+  if (!opening.ok) {
+    await shutdown();
+    throw new CaptureError(opening.message, opening.name);
+  }
+
+  let queue: Promise<unknown> = Promise.resolve();
+  let previousKeys = new Set<string>();
+  let previous: Uint8Array | undefined;
+  const frame = (n: number, videoFrames: ReadonlyMap<string, Uint8Array> = new Map()) => {
+    const task = async (): Promise<ExportFrame> => {
+      if (isClosed()) throw new CaptureError("the export is closed");
+      checkVideoFrames(project, videoFrames);
+      for (const key of previousKeys) if (!videoFrames.has(key)) served.delete(key);
+      for (const [key, bytes] of videoFrames) served.set(key, bytes);
+      previousKeys = new Set(videoFrames.keys());
+      const response = await call(() =>
+        page.evaluate(
+          ([frameNumber, keys]) =>
+            (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.exportFrame(
+              frameNumber as number,
+              keys as string[],
+            ),
+          [n, [...videoFrames.keys()]] as const,
+        ),
+      );
+      if ("ok" in response) throw new CaptureError(response.message, response.name);
+      const { rgba: base64, ...header } = response;
+      let rgba: Uint8Array;
+      if (header.repeated) {
+        if (previous === undefined)
+          throw new CaptureError("the capture page repeated a frame it never drew");
+        rgba = previous;
+      } else {
+        rgba = new Uint8Array(Buffer.from(base64 ?? "", "base64"));
+        if (rgba.byteLength !== header.width * header.height * 4)
+          throw new CaptureError(
+            `the capture page returned ${rgba.byteLength} bytes for a ${header.width}×${header.height} frame`,
+          );
+        previous = rgba;
+      }
+      return { ...header, rgba };
+    };
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  return {
+    width: size.width,
+    height: size.height,
+    get closed() {
+      return isClosed();
+    },
+    frame,
+    closing,
+    async close() {
+      await shutdown();
     },
   };
 }

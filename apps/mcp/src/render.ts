@@ -2,9 +2,13 @@ import {
   type CapturedFrame,
   type CapturedSheet,
   type CaptureSession,
+  type ExportFrame,
+  type ExportSession,
   launchCapture,
 } from "@kynimo/capture";
 import type { Project } from "@kynimo/scene";
+
+export type { ExportFrame, ExportSession };
 
 /** Declared limits of the render tools (ADR-0018); stated in their input schemas. */
 export const RENDER_LIMITS = {
@@ -56,6 +60,17 @@ export interface FrameRenderer {
     layout: { maxSize: number; columns: number; gap: number },
     media: RenderMedia,
   ): Promise<CapturedSheet>;
+  /**
+   * Opens a fast export: the document is loaded once and frames come back as raw RGBA, one at a
+   * time. "premultiplied" is the compositor's own pixels; "straight" is for formats that keep alpha.
+   */
+  openExport(
+    doc: Project,
+    composition: string,
+    maxSize: number,
+    assets: ReadonlyMap<string, Uint8Array>,
+    alpha: "premultiplied" | "straight",
+  ): Promise<ExportSession>;
   close(): Promise<void>;
 }
 
@@ -132,6 +147,16 @@ export class CaptureRenderer implements FrameRenderer {
       assets,
       videoFrames,
     });
+  }
+
+  async openExport(
+    doc: Project,
+    composition: string,
+    maxSize: number,
+    assets: ReadonlyMap<string, Uint8Array>,
+    alpha: "premultiplied" | "straight",
+  ) {
+    return (await this.#current()).openExport(doc, { composition, maxSize, assets, alpha });
   }
 
   async close(): Promise<void> {

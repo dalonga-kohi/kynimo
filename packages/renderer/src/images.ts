@@ -130,6 +130,11 @@ export class VideoFrameLibrary {
     );
   }
 
+  /** Forgets one frame, so a long render holds only the frames it still shows. */
+  delete(assetId: string, frame: number): void {
+    this.#frames.delete(videoFrameKey(assetId, frame));
+  }
+
   get(assetId: string, frame: number): RasterImage | undefined {
     return this.#frames.get(videoFrameKey(assetId, frame));
   }

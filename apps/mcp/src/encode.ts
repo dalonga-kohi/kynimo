@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,44 +9,46 @@ import { detailOf, MediaError } from "./media-error.js";
 
 export interface EncodeOptions {
   format: ExportFormat;
-  /** Size of the PNG frames that will be written. */
+  /** Size of the raw RGBA frames that will be written. */
   width: number;
   height: number;
   fps: Rational;
   frameCount: number;
   /** Raw interleaved f32le 48 kHz stereo file, exactly the video's length; mp4/webm only. */
   audio: string | null;
-  /** Flatten transparency over black (mp4 and gif always; webm when true). */
+  /**
+   * True: frames are premultiplied RGBA and alpha is ignored, which is exactly "over black".
+   * False: frames are straight RGBA and a webm keeps its alpha. mp4 and gif are always flattened,
+   * so give them premultiplied frames.
+   */
   flatten: boolean;
-  /** Output file path, in a temp directory the caller owns. */
+  /** Output file path, in a temp directory the caller owns (a gif also makes a temp directory next to it). */
   out: string;
   signal: AbortSignal;
-  /** Default 30 minutes. */
-  timeoutMs?: number;
+  /** Longest time without a write or encoder output while frames are being written. Default 120 s. */
+  stallMs?: number;
+  /** Longest time from `finish()` until the last FFmpeg exits. Default max(120 s, 200 ms per frame). */
+  finishMs?: number;
 }
 
 export interface Encoder {
-  write(png: Uint8Array): Promise<void>;
+  /** One raw frame, `width * height * 4` bytes RGBA, rows top to bottom. The same buffer may be written again. */
+  write(frame: Uint8Array): Promise<void>;
   finish(): Promise<void>;
 }
 
-const DEFAULT_ENCODE_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_STALL_MS = 120_000;
 const STDERR_LIMIT = 64 * 1024;
 
-/** The filter graph; only integers and fixed text go in, never user text. */
+/** The filter graph of a single-pass encode (mp4, webm); only fixed text and integers go in. */
 function filterGraph(o: EncodeOptions): string {
-  const rate = `${o.fps.num}/${o.fps.den}`;
-  const flatten = o.flatten || o.format !== "webm";
-  const head = flatten
-    ? `color=c=black:s=${o.width}x${o.height}:r=${rate}[bg];[bg][0:v]overlay=shortest=1:format=auto,format=rgb24`
-    : "[0:v]format=rgba";
   switch (o.format) {
     case "mp4":
-      return `${head},pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:black,format=yuv420p[v]`;
+      return "[0:v]pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:black,format=yuv420p[v]";
     case "webm":
-      return `${head},format=${flatten ? "yuv420p" : "yuva420p"}[v]`;
+      return `[0:v]format=${o.flatten ? "yuv420p" : "yuva420p"}[v]`;
     case "gif":
-      return `${head},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a[v]`;
+      throw new Error("gif has its own graphs");
   }
 }
 
@@ -75,6 +78,10 @@ function codecArgs(o: EncodeOptions): string[] {
         "0",
         "-row-mt",
         "1",
+        "-tile-columns",
+        "2",
+        "-threads",
+        "4",
         "-deadline",
         "good",
         "-cpu-used",
@@ -83,13 +90,26 @@ function codecArgs(o: EncodeOptions): string[] {
         ...(o.audio === null ? [] : ["-c:a", "libopus", "-b:a", "128k"]),
       ];
     case "gif":
-      return ["-loop", "0"];
+      return [];
   }
 }
 
 const positive = (n: number) => Number.isSafeInteger(n) && n > 0;
 
-/** Starts FFmpeg reading PNG frames on stdin; no shell, and no user text in the arguments. */
+interface Proc {
+  child: ChildProcess;
+  /** Resolves once the process has exited (or failed to start). */
+  closed: Promise<void>;
+  exitCode(): number | null | undefined;
+  stderr(): string;
+}
+
+/**
+ * Starts FFmpeg reading raw RGBA frames on stdin; no shell, and no user text in the arguments.
+ * An mp4 or webm is one FFmpeg. A gif is two, so memory stays bounded: the first writes a palette
+ * and a lossless FFV1 copy of the frames to a temp directory next to the output, the second
+ * (started by `finish()`) maps the copy through the palette.
+ */
 export function startEncode(ffmpeg: string, o: EncodeOptions): Encoder {
   if (o.format === "gif" && o.audio !== null) throw new MediaError("GIF exports have no audio");
   if (
@@ -101,74 +121,164 @@ export function startEncode(ffmpeg: string, o: EncodeOptions): Encoder {
   )
     throw new MediaError("the export's size, frame rate and frame count must be positive integers");
   const rate = `${o.fps.num}/${o.fps.den}`;
-  const timeoutMs = o.timeoutMs ?? DEFAULT_ENCODE_TIMEOUT_MS;
-  const args = [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-protocol_whitelist",
-    "file,pipe",
+  const stallMs = o.stallMs ?? DEFAULT_STALL_MS;
+  const finishMs = o.finishMs ?? Math.max(120_000, o.frameCount * 200);
+  const frameBytes = o.width * o.height * 4;
+  const flatten = o.flatten || o.format !== "webm";
+  const gif = o.format === "gif";
+  const tmp = gif ? mkdtempSync(join(dirname(o.out), "kynimo-gif-")) : null;
+  const cleanup = () => {
+    if (tmp !== null) rmSync(tmp, { recursive: true, force: true });
+  };
+
+  const input = [
     "-f",
-    "image2pipe",
-    "-c:v",
-    "png",
+    "rawvideo",
+    "-pix_fmt",
+    flatten ? "rgb0" : "rgba",
+    "-s",
+    `${o.width}x${o.height}`,
     "-framerate",
     rate,
     "-i",
     "pipe:0",
-    ...(o.audio === null ? [] : ["-f", "f32le", "-ar", "48000", "-ac", "2", "-i", o.audio]),
-    "-filter_complex",
-    filterGraph(o),
+  ];
+  const args =
+    tmp !== null
+      ? [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          ...input,
+          "-filter_complex",
+          "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p]",
+          "-map",
+          "[p]",
+          "-update",
+          "1",
+          "-frames:v",
+          "1",
+          join(tmp, "palette.png"),
+          "-map",
+          "[b]",
+          "-frames:v",
+          String(o.frameCount),
+          "-r",
+          rate,
+          "-c:v",
+          "ffv1",
+          "-level",
+          "3",
+          join(tmp, "frames.mkv"),
+        ]
+      : [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-protocol_whitelist",
+          "file,pipe",
+          ...input,
+          ...(o.audio === null ? [] : ["-f", "f32le", "-ar", "48000", "-ac", "2", "-i", o.audio]),
+          "-filter_complex",
+          filterGraph(o),
+          "-map",
+          "[v]",
+          ...(o.audio === null ? [] : ["-map", "1:a"]),
+          "-frames:v",
+          String(o.frameCount),
+          "-r",
+          rate,
+          ...codecArgs(o),
+          "-f",
+          o.format,
+          "-y",
+          o.out,
+        ];
+  const secondPass = (dir: string) => [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-protocol_whitelist",
+    "file",
+    "-i",
+    join(dir, "frames.mkv"),
+    "-i",
+    join(dir, "palette.png"),
+    "-lavfi",
+    "[0:v][1:v]paletteuse=dither=sierra2_4a[v]",
     "-map",
     "[v]",
-    ...(o.audio === null ? [] : ["-map", "1:a"]),
-    "-frames:v",
-    String(o.frameCount),
-    "-r",
-    rate,
-    ...codecArgs(o),
+    "-loop",
+    "0",
     "-f",
-    o.format,
+    "gif",
     "-y",
     o.out,
   ];
-  const child = spawn(ffmpeg, args, { stdio: ["pipe", "ignore", "pipe"], windowsHide: true });
-  let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    if (stderr.length < STDERR_LIMIT) stderr += chunk;
-  });
+
   let failure: MediaError | undefined;
-  let exitCode: number | null | undefined;
+  let current: Proc | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  const disarm = () => clearTimeout(timer);
+  const arm = (ms: number, why: string) => {
+    disarm();
+    timer = setTimeout(() => stop(new MediaError(why)), ms);
+  };
+  const stall = () => arm(stallMs, `the encoder stalled for ${stallMs / 1000} s`);
   const stop = (e: MediaError) => {
     failure ??= e;
-    child.kill("SIGKILL");
+    disarm();
+    current?.child.kill("SIGKILL");
   };
-  const onAbort = () => stop(new MediaError("the export was cancelled"));
-  const timer = setTimeout(
-    () => stop(new MediaError(`encoding took longer than ${timeoutMs / 1000} s`)),
-    timeoutMs,
-  );
-  const closed = new Promise<void>((resolve) => {
-    const done = (code: number | null) => {
-      if (exitCode !== undefined) return;
-      exitCode = code;
-      clearTimeout(timer);
-      o.signal.removeEventListener("abort", onAbort);
-      resolve();
-    };
-    child.on("error", (e) => {
-      failure ??= new MediaError(
-        (e as { code?: unknown }).code === "ENOENT"
-          ? `${ffmpeg} is not installed`
-          : "the export could not be encoded",
-      );
-      done(-1);
+
+  const launch = (argv: string[], stdin: boolean, onActivity: () => void): Proc => {
+    const child = spawn(ffmpeg, argv, {
+      stdio: [stdin ? "pipe" : "ignore", "ignore", "pipe"],
+      windowsHide: true,
     });
-    child.on("close", done);
+    let stderr = "";
+    let code: number | null | undefined;
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      if (stderr.length < STDERR_LIMIT) stderr += chunk;
+      onActivity();
+    });
+    const closed = new Promise<void>((resolve) => {
+      const done = (c: number | null) => {
+        if (code !== undefined) return;
+        code = c;
+        resolve();
+      };
+      child.on("error", (e) => {
+        failure ??= new MediaError(
+          (e as { code?: unknown }).code === "ENOENT"
+            ? `${ffmpeg} is not installed`
+            : "the export could not be encoded",
+        );
+        done(-1);
+      });
+      child.on("close", done);
+    });
+    // A broken pipe shows up as FFmpeg's exit; the write error itself carries nothing more.
+    child.stdin?.on("error", () => undefined);
+    return { child, closed, exitCode: () => code, stderr: () => stderr };
+  };
+
+  const onAbort = () => stop(new MediaError("the export was cancelled"));
+  const first = launch(args, true, () => {
+    if (!finishing) stall();
   });
-  // A broken pipe shows up as FFmpeg's exit; the write error itself carries nothing more.
-  child.stdin.on("error", () => undefined);
+  current = first;
+  let finishing = false;
+  stall();
+  // Whatever ends the first process without a finish() (abort, stall, crash) also ends the temp files.
+  void first.closed.then(() => {
+    if (failure !== undefined || !finishing) {
+      disarm();
+      o.signal.removeEventListener("abort", onAbort);
+      cleanup();
+    }
+  });
   if (o.signal.aborted) onAbort();
   else o.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -179,33 +289,62 @@ export function startEncode(ffmpeg: string, o: EncodeOptions): Encoder {
       if (p !== null) out = out.split(p).join("<export>").split(dirname(p)).join("<export>");
     return out;
   };
-  const exitError = () =>
-    failure ?? new MediaError(`the export could not be encoded${detailOf(scrub(stderr), args)}`);
+  const exitError = (proc: Proc, argv: string[]) =>
+    failure ??
+    new MediaError(`the export could not be encoded${detailOf(scrub(proc.stderr()), argv)}`);
 
   let written = 0;
+  let finished: Promise<void> | undefined;
   return {
-    async write(png) {
+    async write(frame) {
       if (failure) throw failure;
-      if (exitCode !== undefined) throw exitError();
+      if (first.exitCode() !== undefined) throw exitError(first, args);
+      if (frame.byteLength !== frameBytes)
+        throw new MediaError(
+          `each frame must be ${frameBytes} bytes (${o.width}×${o.height} RGBA), got ${frame.byteLength}`,
+        );
       if (written >= o.frameCount)
         throw new MediaError(`the export was given more than its ${o.frameCount} frames`);
       written++;
-      if (child.stdin.write(png)) return;
+      stall();
+      if (first.child.stdin?.write(frame) !== false) return;
       await new Promise<void>((resolve, reject) => {
+        const stdin = first.child.stdin;
         const settle = (fn: () => void) => {
-          child.stdin.off("drain", onDrain);
+          stdin?.off("drain", onDrain);
           fn();
         };
         const onDrain = () => settle(resolve);
-        child.stdin.once("drain", onDrain);
-        void closed.then(() => settle(() => reject(exitError())));
+        stdin?.once("drain", onDrain);
+        void first.closed.then(() => settle(() => reject(exitError(first, args))));
       });
     },
-    async finish() {
-      if (failure === undefined && exitCode === undefined) child.stdin.end();
-      await closed;
-      if (failure) throw failure;
-      if (exitCode !== 0) throw exitError();
+    finish() {
+      finished ??= (async () => {
+        finishing = true;
+        try {
+          arm(finishMs, `encoding took longer than ${finishMs / 1000} s after the last frame`);
+          if (failure === undefined && first.exitCode() === undefined) first.child.stdin?.end();
+          await first.closed;
+          if (failure) throw failure;
+          if (first.exitCode() !== 0) throw exitError(first, args);
+          if (tmp !== null) {
+            const argv = secondPass(tmp);
+            const second = launch(argv, false, () => undefined);
+            current = second;
+            // An abort or timeout that fired between the two passes kills the second one at once.
+            if (failure) second.child.kill("SIGKILL");
+            await second.closed;
+            if (failure) throw failure;
+            if (second.exitCode() !== 0) throw exitError(second, argv);
+          }
+        } finally {
+          disarm();
+          o.signal.removeEventListener("abort", onAbort);
+          cleanup();
+        }
+      })();
+      return finished;
     },
   };
 }

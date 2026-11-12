@@ -21,6 +21,8 @@ import {
 } from "@kynimo/renderer";
 import type { Canvas } from "canvaskit-wasm";
 import {
+  type ExportFrameHeader,
+  type ExportRequest,
   ORIGIN,
   type PageFrame,
   type PageRequest,
@@ -119,23 +121,216 @@ async function renderFrames({
     }
     const out: Pixels[] = [];
     const components = createComponentHost(project);
-    for (const frame of frames) {
-      const plan = rasterizeFrame(
-        ck,
-        evaluateFrame(project, frame, compositionId, { components }),
-        {
+    for (const frame of frames)
+      out.push(
+        drawFrame(ck, compositor, project, compositionId, frame, maxSize, components, {
           images,
           fonts,
           videos,
-        },
+        }),
       );
-      const full = compositor.composite(plan);
-      const size = fitSize(full.width, full.height, maxSize);
-      out.push({ frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) });
-    }
     return out;
   } finally {
     fonts.delete();
+  }
+}
+
+type Components = ReturnType<typeof createComponentHost>;
+
+/** Evaluates, rasterizes, composites and downscales one frame; shared by `render` and exports. */
+function drawFrame(
+  ck: CanvasKit,
+  compositor: Compositor,
+  project: PageRequest["project"],
+  compositionId: string,
+  frame: number,
+  maxSize: number | null,
+  components: Components,
+  libraries: { images: ImageLibrary; fonts: FontLibrary; videos: VideoFrameLibrary },
+  evaluated = evaluateFrame(project, frame, compositionId, { components }),
+): Pixels {
+  const plan = rasterizeFrame(ck, evaluated, libraries);
+  const full = compositor.composite(plan);
+  const size = fitSize(full.width, full.height, maxSize);
+  return { frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) };
+}
+
+const videoAssetOf = (project: PageRequest["project"], key: string) => {
+  const slash = key.lastIndexOf("/");
+  const asset = project.assets.find((a) => a.id === key.slice(0, slash));
+  if (asset?.type !== "video") throw new Error(`capture page: '${key}' is not a video frame`);
+  return { asset, frame: Number(key.slice(slash + 1)) };
+};
+
+interface ExportState {
+  project: PageRequest["project"];
+  compositionId: string;
+  maxSize: number | null;
+  alpha: ExportRequest["alpha"];
+  components: Components;
+  images: ImageLibrary;
+  fonts: FontLibrary;
+  videos: VideoFrameLibrary;
+  loaded: Set<string>;
+  previousKey: string | undefined;
+  previous: { width: number; height: number; skipped: SkippedLayer[]; warnings: RenderWarning[] };
+}
+
+/** One export per page. */
+let exporting: ExportState | undefined;
+
+/** Loads the document's assets once; `exportFrame` then draws frames one at a time. */
+export async function openExport(request: ExportRequest): Promise<{ ok: true } | ErrorResponse> {
+  try {
+    if (state === undefined) throw new Error("capture page: init() has not run");
+    closeExport();
+    const { ck, bundled } = state;
+    const { project } = request;
+    const provided = new Set(request.assets);
+    const images = new ImageLibrary(ck);
+    const fonts = new FontLibrary(ck);
+    const videos = new VideoFrameLibrary(ck);
+    try {
+      for (const [i, font] of BUNDLED_FONTS.entries())
+        await fonts.addBundled(font.family, bundled[i] as Uint8Array);
+      for (const asset of project.assets) {
+        if (!provided.has(asset.id)) continue;
+        const bytes = await fetchBytes(`assets/${encodeURIComponent(asset.id)}`);
+        if (asset.type === "image") await images.add(asset, bytes);
+        else if (asset.type === "font") await fonts.add(asset, bytes);
+      }
+    } catch (error) {
+      fonts.delete();
+      throw error;
+    }
+    exporting = {
+      project,
+      compositionId: request.compositionId,
+      maxSize: request.maxSize,
+      alpha: request.alpha,
+      components: createComponentHost(project),
+      images,
+      fonts,
+      videos,
+      loaded: new Set(),
+      previousKey: undefined,
+      previous: { width: 0, height: 0, skipped: [], warnings: [] },
+    };
+    return { ok: true };
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+/** Frees the export's libraries. */
+export function closeExport(): void {
+  exporting?.fonts.delete();
+  exporting = undefined;
+}
+
+/**
+ * JSON replacer for the repeat check: drops the evaluated frame's own index (a number `frame`; a
+ * precomp's `frame` is an object and stays) and reduces `layerFrame`, which the rasterizer reads
+ * only as "has the layer started" (`>= 0`), to that boolean.
+ */
+function frameIndependent(key: string, value: unknown): unknown {
+  if (key === "frame" && typeof value === "number") return undefined;
+  if (key === "layerFrame" && typeof value === "number") return value >= 0;
+  return value;
+}
+
+/**
+ * One export frame. `videoFrameKeys` lists every video frame the frame shows. When the evaluated
+ * frame equals the previous one the pixels are not drawn again and `repeated` is true.
+ */
+export async function exportFrame(
+  frame: number,
+  videoFrameKeys: string[],
+): Promise<(ExportFrameHeader & { rgba: string | null }) | ErrorResponse> {
+  try {
+    const e = exporting;
+    if (e === undefined || state === undefined) throw new Error("capture page: no export is open");
+    const { ck, compositor } = state;
+    const wanted = new Set(videoFrameKeys);
+    for (const key of e.loaded)
+      if (!wanted.has(key)) {
+        const { asset, frame: n } = videoAssetOf(e.project, key);
+        e.videos.delete(asset.id, n);
+        e.loaded.delete(key);
+      }
+    for (const key of wanted) {
+      if (e.loaded.has(key)) continue;
+      const { asset, frame: n } = videoAssetOf(e.project, key);
+      e.videos.add(asset, n, await fetchBytes(`assets/${encodeURIComponent(key)}`));
+      e.loaded.add(key);
+    }
+    const evaluated = evaluateFrame(e.project, frame, e.compositionId, {
+      components: e.components,
+    });
+    // Sound because the evaluated frame carries everything that decides the pixels: effects,
+    // grain, generators and video source frames are all resolved into it, and rendering reads
+    // nothing else that changes between frames (the libraries only gain the frames it names).
+    // It is plain data (numbers, strings, arrays, objects); a non-finite number serializes as
+    // null, which cannot make two different frames look equal in practice. Only the frame
+    // indices themselves (`frame`, `layerFrame`) differ by definition and are left out.
+    const key = JSON.stringify(evaluated, frameIndependent);
+    if (e.previousKey !== undefined && key === e.previousKey)
+      return { frame, repeated: true, rgba: null, ...e.previous };
+    const drawn = drawFrame(
+      ck,
+      compositor,
+      e.project,
+      e.compositionId,
+      frame,
+      e.maxSize,
+      e.components,
+      e,
+      evaluated,
+    );
+    const pixels =
+      e.alpha === "straight"
+        ? unpremultiply(ck, drawn.width, drawn.height, drawn.pixels)
+        : drawn.pixels;
+    e.previousKey = key;
+    e.previous = {
+      width: drawn.width,
+      height: drawn.height,
+      skipped: drawn.skipped,
+      warnings: drawn.warnings,
+    };
+    return { frame, repeated: false, rgba: toBase64(pixels), ...e.previous };
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+type ErrorResponse = { ok: false; name: string; message: string };
+
+function errorResponse(error: unknown): ErrorResponse {
+  const e = error instanceof Error ? error : new Error(String(error));
+  return { ok: false, name: e.name, message: e.message };
+}
+
+/** Straight-alpha RGBA8: CanvasKit's own un-premultiplying read, the conversion its PNG encode uses. */
+function unpremultiply(
+  ck: CanvasKit,
+  width: number,
+  height: number,
+  pixels: Uint8Array,
+): Uint8Array {
+  const image = wrap(ck, width, height, pixels);
+  try {
+    const out = image.readPixels(0, 0, {
+      width,
+      height,
+      colorType: ck.ColorType.RGBA_8888,
+      alphaType: ck.AlphaType.Unpremul,
+      colorSpace: ck.ColorSpace.SRGB,
+    });
+    if (!(out instanceof Uint8Array)) throw new Error("CanvasKit returned no RGBA8 pixels");
+    return out;
+  } finally {
+    image.delete();
   }
 }
 
@@ -278,6 +473,8 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 }
 
 function toBase64(bytes: Uint8Array): string {
+  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === "function") return native.call(bytes);
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000)
     s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
