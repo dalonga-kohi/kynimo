@@ -1,9 +1,11 @@
 import type { ResolvedEffect, ResolvedGenerator, ResolvedShader, Rgba } from "@kynimo/engine";
 import { MAX_PROJECT_DEFINITIONS } from "@kynimo/scene";
+import { FrameDeformWork } from "../deform.js";
 import type {
   CoverageImage,
   FramePlan,
   PlannedAdjustmentLayer,
+  PlannedDeform,
   PlannedLayer,
   RasterImage,
 } from "../raster.js";
@@ -34,6 +36,8 @@ import {
 } from "./pipeline.js";
 import {
   blendShader,
+  DEFORM,
+  DEFORM_VERTEX,
   DOWNSAMPLE,
   type EffectMode,
   effectShader,
@@ -124,10 +128,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     program(`blend:${mode}${adjustment ? "a" : ""}`, () => blendShader(mode, adjustment));
   /** Programs by variant key, compiled on first use and kept until `dispose`. */
   const programs = new Map<string, Program>();
-  const program = (key: string, fragment: () => string): Program => {
+  const program = (key: string, fragment: () => string, vertex = VERTEX): Program => {
     let p = programs.get(key);
     if (p === undefined) {
-      p = build(gl, fragment());
+      p = build(gl, fragment(), vertex);
       programs.set(key, p);
     }
     return p;
@@ -150,15 +154,96 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
   };
   const fixed = {
     prepare: () => program("prepare", () => PREPARE),
+    deform: () => program("deform", () => DEFORM, DEFORM_VERTEX),
     gaussian: () => program("gaussian", () => GAUSSIAN),
     downsample: () => program("downsample", () => DOWNSAMPLE),
     final: () => program("final", () => FINAL),
   };
+  let deformGeometry: { array: WebGLVertexArrayObject; buffer: WebGLBuffer } | undefined;
+
+  const drawDeform = (
+    warp: PlannedDeform,
+    into: Target,
+    src: Target,
+    mask: Target | null,
+    [x, y]: [number, number],
+  ) => {
+    const caps = [
+      gl.BLEND,
+      gl.DEPTH_TEST,
+      gl.CULL_FACE,
+      gl.SCISSOR_TEST,
+      gl.STENCIL_TEST,
+      gl.RASTERIZER_DISCARD,
+    ].filter((cap) => gl.isEnabled(cap));
+    const previousArray = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
+    const previousBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
+    const previousMask = gl.getParameter(gl.COLOR_WRITEMASK) as [
+      boolean,
+      boolean,
+      boolean,
+      boolean,
+    ];
+    try {
+      for (const cap of caps) gl.disable(cap);
+      gl.colorMask(true, true, true, true);
+      if (deformGeometry === undefined) {
+        const array = gl.createVertexArray();
+        const buffer = gl.createBuffer();
+        if (array === null || buffer === null) {
+          gl.deleteVertexArray(array);
+          gl.deleteBuffer(buffer);
+          throw new CompositorError("could not allocate the deform triangle buffer");
+        }
+        deformGeometry = { array, buffer };
+        gl.bindVertexArray(array);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        for (let attr = 0; attr < 3; attr++) {
+          gl.enableVertexAttribArray(attr);
+          gl.vertexAttribPointer(attr, 4, gl.FLOAT, false, 48, 16 * attr);
+        }
+      } else {
+        gl.bindVertexArray(deformGeometry.array);
+        gl.bindBuffer(gl.ARRAY_BUFFER, deformGeometry.buffer);
+      }
+      // Every vertex passes all three corners as flat attributes for exact fragment barycentrics.
+      const corners = new Float32Array(warp.vertices.length * 3);
+      for (let i = 0; i < warp.vertices.length; i += 12) {
+        const start = i * 3;
+        for (let j = 0; j < 12; j++) {
+          const value = warp.vertices[i + j] as number;
+          corners[start + j] = value;
+          corners[start + 12 + j] = value;
+          corners[start + 24 + j] = value;
+        }
+      }
+      gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STREAM_DRAW);
+      const prog = fixed.deform();
+      // Triangle passes write only part of a recycled target, including when the mesh folds.
+      clear(gl, into);
+      gl.useProgram(prog.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, src.texture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, mask?.texture ?? empty);
+      gl.uniform1i(uniform(gl, prog, "u_src"), 0);
+      gl.uniform1i(uniform(gl, prog, "u_mask"), 1);
+      gl.uniform1i(uniform(gl, prog, "u_hasMask"), mask === null ? 0 : 1);
+      gl.uniform2f(uniform(gl, prog, "u_targetSize"), into.width, into.height);
+      gl.uniform2f(uniform(gl, prog, "u_pad"), x, y);
+      gl.drawArrays(gl.TRIANGLES, 0, warp.vertices.length / 4);
+    } finally {
+      gl.bindVertexArray(previousArray);
+      gl.bindBuffer(gl.ARRAY_BUFFER, previousBuffer);
+      gl.colorMask(...previousMask);
+      for (const cap of caps) gl.enable(cap);
+    }
+  };
 
   /**
-   * Render targets recycled across passes and frames, by size and format. Every pass draws a
-   * full-screen triangle over its whole target and never blends, so a recycled target needs no
-   * clearing. A target idle for two frames is deleted, and idle targets never hold more than
+   * Render targets recycled across passes and frames, by size and format. Passes that cover only
+   * part of the target or blend into it clear first. A target idle for two frames is deleted, and
+   * idle targets never hold more than
    * `POOL_IDLE_BYTES`: past it the least recently released one goes (a frame with many distinct
    * raster sizes would otherwise keep every one of them until the frame ends).
    */
@@ -294,6 +379,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     const nested = new Map<FramePlan, Target>();
     const uses = precompUses(plan);
     let remainingEffectSamples = MAX_FRAME_EFFECT_SAMPLES;
+    const deformWork = new FrameDeformWork();
     const chargeSamples = (id: string, samples: number, reduce: string) => {
       remainingEffectSamples -= samples;
       if (remainingEffectSamples < 0)
@@ -550,8 +636,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return out;
     };
 
-    /** The masked raster, generator or precomp, with room for effects before placement. */
+    /** The masked and optionally deformed source, with room for effects before placement. */
     const prepare = (layer: PlannedLayer, padding: [number, number]): Target => {
+      const warp = layer.space === "layer" ? layer.deform : undefined;
+      if (warp !== undefined) deformWork.charge(layer.id, warp.drawWork);
       let src: Target;
       let owned = false;
       if (layer.type === "precomp") {
@@ -570,24 +658,30 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         owned = true;
       }
       const [x, y] = padding;
-      const width = src.width + 2 * x;
-      const height = src.height + 2 * y;
+      const width = (warp?.width ?? src.width) + 2 * x;
+      const height = (warp?.height ?? src.height) + 2 * y;
+      if (warp !== undefined && (width > maxSize || height > maxSize))
+        throw new CompositorError(
+          `layer '${layer.id}' exceeds this GPU's deform target size limit of ${maxSize}; reduce pin displacement, layer size or effect radius`,
+        );
       const effects = layer.effects ?? [];
       chargeEffects(width, height, effects, layer.id);
       const out = target(width, height);
       const mask = uploadMask(layer.mask);
-      pass(
-        fixed.prepare(),
-        out,
-        [
-          ["u_src", src.texture],
-          ["u_mask", mask?.texture ?? empty],
-        ],
-        (u) => {
-          gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
-          gl.uniform2i(u("u_pad"), x, y);
-        },
-      );
+      if (warp !== undefined) drawDeform(warp, out, src, mask, padding);
+      else
+        pass(
+          fixed.prepare(),
+          out,
+          [
+            ["u_src", src.texture],
+            ["u_mask", mask?.texture ?? empty],
+          ],
+          (u) => {
+            gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
+            gl.uniform2i(u("u_pad"), x, y);
+          },
+        );
       if (mask !== null) free(mask);
       if (owned) free(src);
       const effected = filter(layer.id, out, effects, [x, y]);
@@ -892,6 +986,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       idleBytes = 0;
       gl.deleteTexture(empty);
       gl.deleteVertexArray(vao);
+      if (deformGeometry !== undefined) {
+        gl.deleteVertexArray(deformGeometry.array);
+        gl.deleteBuffer(deformGeometry.buffer);
+      }
     },
   };
 }
@@ -910,27 +1008,39 @@ function wholePixelShift(inv: readonly number[]): [number, number] | null {
   return [e, f];
 }
 
-function build(gl: WebGL2RenderingContext, fragment: string): Program {
+function build(gl: WebGL2RenderingContext, fragment: string, vertex = VERTEX): Program {
   const compile = (type: number, source: string) => {
     const shader = gl.createShader(type);
     if (shader === null) throw new CompositorError("could not create a shader");
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-      throw new CompositorError(`shader compile failed: ${gl.getShaderInfoLog(shader)}`);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const message = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new CompositorError(`shader compile failed: ${message}`);
+    }
     return shader;
   };
   const program = gl.createProgram();
-  const vs = compile(gl.VERTEX_SHADER, VERTEX);
-  const fs = compile(gl.FRAGMENT_SHADER, fragment);
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-    throw new CompositorError(`program link failed: ${gl.getProgramInfoLog(program)}`);
-  return { program, uniforms: new Map() };
+  if (program === null) throw new CompositorError("could not create a shader program");
+  let vs: WebGLShader | null = null;
+  let fs: WebGLShader | null = null;
+  try {
+    vs = compile(gl.VERTEX_SHADER, vertex);
+    fs = compile(gl.FRAGMENT_SHADER, fragment);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+      throw new CompositorError(`program link failed: ${gl.getProgramInfoLog(program)}`);
+    return { program, uniforms: new Map() };
+  } catch (error) {
+    gl.deleteProgram(program);
+    throw error;
+  } finally {
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+  }
 }
 
 function uniform(gl: WebGL2RenderingContext, prog: Program, name: string) {

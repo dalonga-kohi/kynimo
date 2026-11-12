@@ -27,6 +27,7 @@ const SCENES = [
   "motion-blur",
   "camera-3d",
   "shader-transitions",
+  "puppet-deform",
 ] as const;
 
 interface Reference {

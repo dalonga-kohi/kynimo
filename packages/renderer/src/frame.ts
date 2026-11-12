@@ -15,6 +15,7 @@ import type { CanvasKit } from "canvaskit-wasm";
 import { FrameShapeWork, MAX_FRAME_SHAPE_WORK } from "./binding.js";
 import { activeEffect, effectPadding } from "./compositor/effects.js";
 import { NEAR } from "./compositor/pipeline.js";
+import { FrameDeformWork, MAX_FRAME_DEFORM_WORK, planDeform } from "./deform.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary, VideoFrameLibrary } from "./images.js";
@@ -65,6 +66,7 @@ interface Context {
   shapeWork: FrameShapeWork;
   /** Animated glyph clusters, shared the same way (ADR-0038). */
   textWork: FrameTextWork;
+  deformWork: FrameDeformWork;
 }
 
 /**
@@ -75,7 +77,8 @@ interface Context {
  * more than `maxRasterPixels` (default {@link MAX_FRAME_RASTER_PIXELS}) or its shape layers need
  * more than `maxShapeWork` units of path work (default {@link MAX_FRAME_SHAPE_WORK}, ADR-0034), or
  * its animated text needs more than `maxAnimatedGlyphs` glyphs (default
- * {@link MAX_FRAME_ANIMATED_CLUSTERS}, ADR-0038).
+ * {@link MAX_FRAME_ANIMATED_CLUSTERS}, ADR-0038), or its puppet meshes exceed `maxDeformWork`
+ * (default {@link MAX_FRAME_DEFORM_WORK}, ADR-0056).
  */
 export function rasterizeFrame(
   ck: CanvasKit,
@@ -89,7 +92,13 @@ export function rasterizeFrame(
     maxRasterPixels = MAX_FRAME_RASTER_PIXELS,
     maxShapeWork = MAX_FRAME_SHAPE_WORK,
     maxAnimatedGlyphs = MAX_FRAME_ANIMATED_CLUSTERS,
-  }: { maxRasterPixels?: number; maxShapeWork?: number; maxAnimatedGlyphs?: number } = {},
+    maxDeformWork = MAX_FRAME_DEFORM_WORK,
+  }: {
+    maxRasterPixels?: number;
+    maxShapeWork?: number;
+    maxAnimatedGlyphs?: number;
+    maxDeformWork?: number;
+  } = {},
 ): FramePlan {
   return planComposition(
     {
@@ -102,6 +111,7 @@ export function rasterizeFrame(
       remaining: maxRasterPixels,
       shapeWork: new FrameShapeWork(maxShapeWork),
       textWork: new FrameTextWork(maxAnimatedGlyphs),
+      deformWork: new FrameDeformWork(maxDeformWork),
     },
     comp,
   );
@@ -161,7 +171,7 @@ function vectorScale(
   projection: Projective,
   bounds: Rect,
   effects: boolean,
-  [padX, padY]: [number, number],
+  padding: [number, number],
 ): number | null {
   const [l, t, r, b] = bounds;
   let magnification = 0;
@@ -183,9 +193,19 @@ function vectorScale(
     );
   }
   if (!inFront) return null;
-  let k = 0;
-  if (!effects && magnification > 1)
-    k = Math.min(MAX_VECTOR_LEVEL, Math.max(0, Math.ceil(Math.log2(magnification))));
+  const level =
+    !effects && magnification > 1
+      ? Math.min(MAX_VECTOR_LEVEL, Math.ceil(Math.log2(magnification)))
+      : 0;
+  return fitVectorScale(bounds, padding, level);
+}
+
+function fitVectorScale(
+  bounds: Rect,
+  [padX, padY]: [number, number],
+  level: number,
+): number | null {
+  let k = level;
   for (; k > -32; k--) {
     const [x0, y0, x1, y1] = layerRasterRect(bounds, 2 ** k);
     if (x1 - x0 <= MAX_COMPOSITION_SIZE - 2 * padX && y1 - y0 <= MAX_COMPOSITION_SIZE - 2 * padY)
@@ -196,16 +216,16 @@ function vectorScale(
 
 function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const { ck } = ctx;
-  const reserve = (width: number, height: number) => {
+  const reserve = (width: number, height: number, layerId?: string) => {
     ctx.remaining -= width * height;
     if (ctx.remaining < 0)
       throw new RenderError(
-        `the frame of composition '${comp.id}' needs more than ${ctx.limit} raster pixels; use fewer or smaller layers`,
+        `${layerId === undefined ? "" : `layer '${layerId}' needs a deform target: `}the frame of composition '${comp.id}' needs more than ${ctx.limit} raster pixels; use fewer or smaller layers`,
       );
   };
   const skipped: SkippedLayer[] = [];
-  /** Where a 3D shape or text layer's layer space lands in its raster, for its masks. */
-  const rasterToMask = new WeakMap<PlannedLayer, Affine>();
+  /** Where a vector's layer space lands in its raster, for its masks and pins. */
+  const layerToRaster = new WeakMap<PlannedLayer, Affine>();
   const warnings: RenderWarning[] = [];
 
   /** The layer's pixels without masks or matte; `null` when it draws nothing. */
@@ -229,18 +249,26 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
     // A 3D layer is placed by its projection (raster = layer units unless noted).
     const projection = layer.projection;
     const threeD = projection === null ? {} : { projection };
+    const deformed = layer.type !== "adjustment" && (layer.deform?.pins.length ?? 0) > 0;
     /**
-     * A 3D shape or text layer is rasterized in layer space, so the projection can place it without
-     * resampling a composition-space raster: `scale` is chosen from its bounds (see `vectorScale`).
+     * A 3D or deformed shape or text layer is rasterized in layer space. Deformation uses a stable
+     * scale independent of placement, so moving the camera or layer cannot change its mesh.
      */
     const vector = (
       draw: (layerSpace: LayerRasterScale) => { x: number; y: number; raster: RasterImage } | null,
       type: "shape" | "text",
     ): PlannedFrameLayer | null => {
-      if (projection === null) return null;
       let scale = 1;
       const drawn = draw((bounds) => {
-        const chosen = vectorScale(projection, bounds, effects.length > 0, effectPadding(effects));
+        const padding = effectPadding(effects);
+        const chosen =
+          projection !== null && !deformed
+            ? vectorScale(projection, bounds, effects.length > 0, padding)
+            : fitVectorScale(bounds, [padding[0] + 1, padding[1] + 1], 0);
+        if (chosen === null && deformed)
+          throw new RenderError(
+            `layer '${id}' has no layer-space raster that fits the deform size limit; reduce its bounds or effect radius`,
+          );
         if (chosen !== null) scale = chosen;
         return chosen;
       });
@@ -252,16 +280,19 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
         ...base,
         type,
         space: "layer",
-        matrix: IDENTITY,
-        projection: projectiveMultiply(projection, toLayer),
+        matrix:
+          projection === null
+            ? multiply(layer.matrix, [1 / scale, 0, 0, 1 / scale, x / scale, y / scale])
+            : IDENTITY,
+        projection: projection === null ? null : projectiveMultiply(projection, toLayer),
         raster,
       };
-      rasterToMask.set(result, [scale, 0, 0, scale, -x, -y]);
+      layerToRaster.set(result, [scale, 0, 0, scale, -x, -y]);
       return result;
     };
     switch (layer.type) {
       case "shape": {
-        if (projection !== null)
+        if (projection !== null || deformed)
           return vector(
             (layerSpace) =>
               rasterizeShapeLayer(
@@ -289,7 +320,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       }
       case "text": {
         warnings.push(...textWarnings(ck, ctx.fonts, layer), ...textAnimatorWarnings(layer));
-        if (projection !== null)
+        if (projection !== null || deformed)
           return vector(
             (layerSpace) =>
               rasterizeTextLayer(
@@ -404,10 +435,45 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       const { width, height, toRaster } =
         result.type === "adjustment"
           ? { width: comp.width, height: comp.height, toRaster: layer.matrix }
-          : rasterSpace(result, layer.matrix, rasterToMask.get(result));
+          : rasterSpace(result, layer.matrix, layerToRaster.get(result));
       const mask = rasterizeMasks(ck, layer.masks, toRaster, width, height, reserve);
       if (mask === "empty") result = null;
       else result.mask = mask;
+    }
+    if (
+      result !== null &&
+      result.type !== "adjustment" &&
+      result.space === "layer" &&
+      layer.type !== "adjustment" &&
+      layer.deform != null &&
+      layer.deform.pins.length > 0
+    ) {
+      const { width, height, toRaster } = rasterSpace(
+        result,
+        layer.matrix,
+        layerToRaster.get(result),
+      );
+      const padding = effectPadding(result.effects ?? []);
+      const { warp, warning } = planDeform(
+        layer.id,
+        layer.deform,
+        {
+          width,
+          height,
+          mask: result.mask,
+          ...(result.type === "image" || result.type === "shape" || result.type === "text"
+            ? { raster: result.raster }
+            : {}),
+        },
+        [toRaster[0], toRaster[4], toRaster[5]],
+        padding,
+        ctx.deformWork,
+      );
+      if (warning !== null) warnings.push(warning);
+      if (warp !== null) {
+        reserve(warp.width + 2 * padding[0], warp.height + 2 * padding[1], layer.id);
+        result.deform = warp;
+      }
     }
     // A layer that draws nothing is B = A, which the coverage kinds leave alone. The others still
     // move or resample A (T(A, A, p) != A), so they keep a transparent stand-in that carries them.
@@ -499,7 +565,7 @@ function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
 function rasterSpace(
   layer: PlannedLayer,
   matrix: Affine,
-  /** Set for a 3D vector layer: its raster is layer space at a resolution scale. */
+  /** Set for a 3D or deformed vector: its raster is layer space at a resolution scale. */
   layerToRaster?: Affine,
 ): { width: number; height: number; toRaster: Affine } {
   if (layer.space === "composition")

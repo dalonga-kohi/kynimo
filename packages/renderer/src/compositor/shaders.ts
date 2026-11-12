@@ -46,6 +46,81 @@ void main() {
   outColor = c;
 }`;
 
+export const DEFORM_VERTEX = `#version 300 es
+layout(location = 0) in vec4 a_first;
+layout(location = 1) in vec4 a_second;
+layout(location = 2) in vec4 a_third;
+uniform vec2 u_targetSize;
+uniform vec2 u_pad;
+flat out highp vec4 v_first;
+flat out highp vec4 v_second;
+flat out highp vec4 v_third;
+void main() {
+  v_first = a_first;
+  v_second = a_second;
+  v_third = a_third;
+  int corner = gl_VertexID % 3;
+  vec2 dst = corner == 0 ? a_first.xy : (corner == 1 ? a_second.xy : a_third.xy);
+  gl_Position = vec4((dst + u_pad) * (2.0 / u_targetSize) - 1.0, 0.0, 1.0);
+}`;
+
+/** Bilinear sampling after masking each source texel, with transparent samples outside. */
+export const DEFORM = `${HEADER}
+uniform sampler2D u_src;
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+uniform vec2 u_pad;
+flat in highp vec4 v_first;
+flat in highp vec4 v_second;
+flat in highp vec4 v_third;
+
+// Products in the 8192 × 16 subpixel grid can exceed signed int32. Split at 8 bits
+// and propagate signed carries so subtraction happens exactly before float conversion.
+float subpixelCross(ivec2 edge, ivec2 offset) {
+  ivec2 edgeHi = edge >> 8;
+  ivec2 offsetHi = offset >> 8;
+  ivec2 edgeLo = edge & 255;
+  ivec2 offsetLo = offset & 255;
+  int lo = edgeLo.x * offsetLo.y - edgeLo.y * offsetLo.x;
+  int mid = edgeHi.x * offsetLo.y + edgeLo.x * offsetHi.y
+    - edgeHi.y * offsetLo.x - edgeLo.y * offsetHi.x + (lo >> 8);
+  int hi = edgeHi.x * offsetHi.y - edgeHi.y * offsetHi.x + (mid >> 8);
+  int remainder = (mid & 255) * 256 + (lo & 255);
+  return float(hi) * 65536.0 + float(remainder);
+}
+
+vec4 maskedTexel(ivec2 p, ivec2 size) {
+  if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size))) return vec4(0.0);
+  vec4 c = texelFetch(u_src, p, 0);
+  if (u_hasMask) c *= texelFetch(u_mask, p, 0).r;
+  return c;
+}
+void main() {
+  // Hardware decides coverage. Exact subpixel edge values keep the UVs accurate even when the
+  // triangle is almost collinear and smooth varying interpolation loses precision.
+  ivec2 a = ivec2(v_first.xy * 16.0);
+  ivec2 b = ivec2(v_second.xy * 16.0);
+  ivec2 c = ivec2(v_third.xy * 16.0);
+  ivec2 samplePoint = ivec2(gl_FragCoord.xy * 16.0 - u_pad * 16.0);
+  float area = subpixelCross(b - a, c - a);
+  if (area == 0.0) discard;
+  float wa = subpixelCross(c - b, samplePoint - b);
+  float wb = subpixelCross(a - c, samplePoint - c);
+  float wc = subpixelCross(b - a, samplePoint - a);
+  vec2 q = (v_first.zw * wa + v_second.zw * wb + v_third.zw * wc) / area - 0.5;
+  ivec2 size = textureSize(u_src, 0);
+  // Out-of-range samples overwrite previous triangles with transparency, without an int overflow.
+  if (any(lessThanEqual(q, vec2(-1.0))) || any(greaterThanEqual(q, vec2(size)))) {
+    outColor = vec4(0.0);
+    return;
+  }
+  ivec2 p = ivec2(floor(q));
+  vec2 f = fract(q);
+  vec4 top = mix(maskedTexel(p, size), maskedTexel(p + ivec2(1, 0), size), f.x);
+  vec4 bottom = mix(maskedTexel(p + ivec2(0, 1), size), maskedTexel(p + ivec2(1), size), f.x);
+  outColor = mix(top, bottom, f.y);
+}`;
+
 const TRANSPARENT_FETCH = `
 vec4 at(sampler2D s, ivec2 p) {
   ivec2 size = textureSize(s, 0);

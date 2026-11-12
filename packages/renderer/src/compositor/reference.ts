@@ -4,9 +4,11 @@ import {
   type ResolvedShader,
   type ResolvedTransition,
 } from "@kynimo/engine";
+import { FrameDeformWork } from "../deform.js";
 import type {
   FramePlan,
   PlannedAdjustmentLayer,
+  PlannedDeform,
   PlannedLayer,
   PlannedMotionSample,
   RasterImage,
@@ -58,7 +60,7 @@ const blank = (width: number, height: number): FloatImage => ({
 /**
  * The compositor in plain JavaScript (ADR-0021): the specification the WebGL2 compositor is
  * tested against, and a way for Node tools and tests to see whole frames. Same pipeline as the
- * GPU, in float64 instead of RGBA16F. Bottom first, each layer runs raster × mask, effects,
+ * GPU, in float64 instead of RGBA16F. Bottom first, each layer runs raster × mask, deform, effects,
  * placement (bilinear, trilinear between box-filtered mips when minifying), track matte, opacity,
  * then the blend mode. An adjustment filters the accumulated pixels below it. The root background
  * goes under the result, and the output is quantized to premultiplied sRGB RGBA8.
@@ -69,6 +71,7 @@ export function compositeReference(plan: FramePlan): RasterImage {
     uses: precompUses(plan),
     remaining: MAX_FRAME_EFFECT_SAMPLES,
     shaderWork: MAX_FRAME_SHADER_WORK,
+    deformWork: new FrameDeformWork(),
   });
   const out = new Uint8Array(acc.data.length);
   const bg = plan.background;
@@ -89,6 +92,7 @@ type Nested = {
   uses: Map<FramePlan, number>;
   remaining: number;
   shaderWork: number;
+  deformWork: FrameDeformWork;
 };
 
 function compositeFloat(plan: FramePlan, nested: Nested): FloatImage {
@@ -359,8 +363,10 @@ function placed(layer: PlannedLayer, comp: FramePlan, nested: Nested): FloatImag
   return below as FloatImage;
 }
 
-/** The layer's raster (or composited precomp) times its mask, in its raster space. */
+/** The layer's masked, deformed and effected raster, before placement. */
 function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): FloatImage {
+  const warp = layer.space === "layer" ? layer.deform : undefined;
+  if (warp !== undefined) nested.deformWork.charge(layer.id, warp.drawWork);
   let img: FloatImage;
   if (layer.type === "precomp") {
     let frame = nested.cache.get(layer.frame);
@@ -391,11 +397,13 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
       for (let k = i * 4; k < i * 4 + 4; k++) img.data[k] = (img.data[k] ?? 0) * c;
     }
   const effects = layer.effects ?? [];
-  if (effects.length === 0) return img;
-  const width = img.width + 2 * x;
-  const height = img.height + 2 * y;
-  charge(nested, layer.id, effects, width, height);
-  if (x > 0 || y > 0) {
+  if (effects.length === 0 && warp === undefined) return img;
+  const width = (warp?.width ?? img.width) + 2 * x;
+  const height = (warp?.height ?? img.height) + 2 * y;
+  if (effects.length > 0) charge(nested, layer.id, effects, width, height);
+  if (warp !== undefined) {
+    img = warpRaster(img, warp, blank(width, height), x, y);
+  } else if (x > 0 || y > 0) {
     const padded = blank(width, height);
     for (let row = 0; row < img.height; row++) {
       const start = row * img.width * 4;
@@ -404,6 +412,63 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
     img = padded;
   }
   return effects.reduce((acc, effect) => applyEffect(acc, effect, [x, y], nested, layer.id), img);
+}
+
+type TexVertex = readonly [x: number, y: number, u: number, v: number];
+
+function edge(a: TexVertex, b: TexVertex, x: number, y: number): number {
+  return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+}
+
+const topLeft = (a: TexVertex, b: TexVertex) => a[1] > b[1] || (a[1] === b[1] && a[0] < b[0]);
+
+/** WebGL's triangle rule in the compositor's top-to-bottom texel coordinates. */
+function warpRaster(
+  src: FloatImage,
+  { vertices, width, height }: PlannedDeform,
+  out: FloatImage,
+  padX: number,
+  padY: number,
+): FloatImage {
+  const vertex = (i: number): TexVertex => [
+    vertices[i] as number,
+    vertices[i + 1] as number,
+    vertices[i + 2] as number,
+    vertices[i + 3] as number,
+  ];
+  for (let i = 0; i < vertices.length; i += 12) {
+    const a = vertex(i);
+    let b = vertex(i + 4);
+    let c = vertex(i + 8);
+    let area = edge(a, b, c[0], c[1]);
+    if (area === 0) continue;
+    if (area < 0) {
+      [b, c] = [c, b];
+      area = -area;
+    }
+    const left = Math.max(0, Math.ceil(Math.min(a[0], b[0], c[0]) - 0.5));
+    const top = Math.max(0, Math.ceil(Math.min(a[1], b[1], c[1]) - 0.5));
+    const right = Math.min(width - 1, Math.floor(Math.max(a[0], b[0], c[0]) - 0.5));
+    const bottom = Math.min(height - 1, Math.floor(Math.max(a[1], b[1], c[1]) - 0.5));
+    const ab = topLeft(a, b);
+    const bc = topLeft(b, c);
+    const ca = topLeft(c, a);
+    for (let y = top; y <= bottom; y++)
+      for (let x = left; x <= right; x++) {
+        const wa = edge(b, c, x + 0.5, y + 0.5);
+        if (wa < 0 || (wa === 0 && !bc)) continue;
+        const wb = edge(c, a, x + 0.5, y + 0.5);
+        if (wb < 0 || (wb === 0 && !ca)) continue;
+        const wc = edge(a, b, x + 0.5, y + 0.5);
+        if (wc < 0 || (wc === 0 && !ab)) continue;
+        const u = (a[2] * wa + b[2] * wb + c[2] * wc) / area;
+        const v = (a[3] * wa + b[3] * wb + c[3] * wc) / area;
+        const pixel = ((y + padY) * out.width + x + padX) * 4;
+        // Later triangles overwrite earlier ones, even where this sample is transparent.
+        for (let k = 0; k < 4; k++) out.data[pixel + k] = bilinear(src, u, v, k);
+      }
+  }
+  return out;
 }
 
 function charge(

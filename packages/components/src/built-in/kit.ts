@@ -155,6 +155,7 @@ export function solidLayer(
   return {
     ...base(o),
     type: "solid",
+    deform: null,
     width: size(o.width),
     height: size(o.height),
     color: o.color,
@@ -167,6 +168,7 @@ export function generatorLayer(
   return {
     ...base(o),
     type: "generator",
+    deform: null,
     width: size(o.width),
     height: size(o.height),
     generator: o.generator,
@@ -179,11 +181,11 @@ export function adjustmentLayer(o: LayerOptions): Layer {
 }
 
 export function imageLayer(o: LayerOptions & { assetId: string }): Layer {
-  return { ...base(o), type: "image", assetId: AssetIdSchema.parse(o.assetId) };
+  return { ...base(o), type: "image", deform: null, assetId: AssetIdSchema.parse(o.assetId) };
 }
 
 export function shapeLayer(o: LayerOptions & { contents: ShapeItem[] }): Layer {
-  return { ...base(o), type: "shape", contents: o.contents };
+  return { ...base(o), type: "shape", deform: null, contents: o.contents };
 }
 
 export function textLayer(
@@ -202,6 +204,7 @@ export function textLayer(
   return {
     ...base(o),
     type: "text",
+    deform: null,
     content: still(o.content),
     box:
       o.box.mode === "point"

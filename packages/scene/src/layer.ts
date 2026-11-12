@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BehaviorSchema, MAX_BEHAVIORS } from "./behavior.js";
 import { BlendModeSchema, MAX_MASKS, MaskSchema, TrackMatteSchema } from "./compositing.js";
+import { DeformSchema } from "./deform.js";
 import { EffectStackSchema } from "./effect.js";
 import { FontFamilySchema, FontWeightSchema } from "./fonts.js";
 import { GeneratorSchema } from "./generator.js";
@@ -90,7 +91,7 @@ const visual = {
 
 /**
  * Layers that put pixels in the frame: everything visual but null layers. Order of operations
- * follows After Effects (ADR-0020): masks, then effects, then the transform, the track matte,
+ * follows After Effects (ADR-0020): masks, deform, effects, transform, track matte,
  * opacity and finally the blend mode against the layers below.
  */
 const drawn = {
@@ -109,8 +110,14 @@ const drawn = {
   transition: TransitionSchema.nullable().default(null),
 };
 
-export const ShapeLayerSchema = z.strictObject({
+const deformable = {
   ...drawn,
+  /** Puppet pins (ADR-0056). Absent means off, including in older addLayer operations. */
+  deform: DeformSchema.nullable().default(null),
+};
+
+export const ShapeLayerSchema = z.strictObject({
+  ...deformable,
   type: z.literal("shape"),
   contents: z.array(ShapeItemSchema).max(MAX_SHAPE_ITEMS),
 });
@@ -127,7 +134,7 @@ const TextBoxSchema = z.discriminatedUnion("mode", [
 
 /** `font.family` names a bundled family or a font asset of the project (ADR-0019). */
 export const TextLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("text"),
   /**
    * Constant for now, but wrapped as `{ value }`: keyframed source text is `v1.x` and will allow
@@ -153,20 +160,20 @@ export const TextLayerSchema = z.strictObject({
 });
 
 export const ImageLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("image"),
   assetId: AssetIdSchema,
 });
 
 /** Footage: shows the video asset's frame at the layer's time (ADR-0032), nothing outside it. */
 export const VideoLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("video"),
   assetId: AssetIdSchema,
 });
 
 export const SolidLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("solid"),
   width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
@@ -175,7 +182,7 @@ export const SolidLayerSchema = z.strictObject({
 
 /** A procedural source (gradient, noise, pattern, aurora) of `width` x `height` layer units, placed like a solid. */
 export const GeneratorLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("generator"),
   width: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
   height: z.number().int().min(1).max(MAX_COMPOSITION_SIZE),
@@ -201,7 +208,7 @@ export const CameraLayerSchema = z.strictObject({
 export const NullLayerSchema = z.strictObject({ ...visual, type: z.literal("null") });
 
 export const PrecompLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("precomp"),
   compositionId: CompositionIdSchema,
 });
@@ -211,7 +218,7 @@ export const AdjustmentLayerSchema = z.strictObject({ ...drawn, type: z.literal(
 
 /** Instance of a component. `props` are validated against the component's own schema (M6). */
 export const ComponentLayerSchema = z.strictObject({
-  ...drawn,
+  ...deformable,
   type: z.literal("component"),
   componentId: z.string().regex(ID_PATTERN),
   /** Pinned like the style pack: a new component version never changes an existing document. */

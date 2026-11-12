@@ -37,10 +37,17 @@ export function invert([a, b, c, d, e, f]: Affine): Affine | null {
 }
 
 /** Layer raster → composition: whole-pixel offset for vector layers, the layer matrix otherwise. */
-export function placement(layer: PlannedLayer, [x, y] = [0, 0]): Affine {
+export function placement(layer: PlannedLayer, padding: [number, number] = [0, 0]): Affine {
+  const [x, y] = placementPadding(layer, padding);
   if (layer.space === "composition") return [1, 0, 0, 1, layer.x - x, layer.y - y];
   const [a, b, c, d, e, f] = layer.matrix;
   return [a, b, c, d, e - a * x - c * y, f - b * x - d * y];
+}
+
+/** A warped raster starts at its solved origin in the layer's original raster space. */
+function placementPadding(layer: PlannedLayer, padding: [number, number]): [number, number] {
+  const warp = layer.space === "layer" ? layer.deform : undefined;
+  return warp === undefined ? padding : [padding[0] - warp.origin[0], padding[1] - warp.origin[1]];
 }
 
 /** The placement of a motion-blurred layer at one shutter sample: the sample's `delta` after `placement`. */
@@ -80,7 +87,7 @@ export function projectivePlacement(
     const [a, b, c, d, e, f] = placement(layer, padding);
     return [a, c, e, b, d, f, 0, 0, 1];
   }
-  const [x, y] = padding;
+  const [x, y] = placementPadding(layer, padding);
   // m · translate(-x, -y): the third column absorbs the shift.
   return [
     m[0],

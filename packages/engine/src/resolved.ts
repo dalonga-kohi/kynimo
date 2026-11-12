@@ -21,6 +21,16 @@ import type { ResolvedTextAnimator } from "./text-animator.js";
 
 export type Point = readonly [number, number];
 
+export interface ResolvedDeform {
+  density: number;
+  iterations: number;
+  pins: readonly {
+    id: string;
+    rest: Point;
+    position: Point;
+  }[];
+}
+
 /**
  * Sampled local transform values, clamped to their domains (opacity 0..1, skew ±85°).
  * `positionZ`, `rotationX` and `rotationY` are sampled for every layer but only act on 3D layers
@@ -100,6 +110,11 @@ interface LayerBase {
   motion: readonly MotionSample[] | null;
 }
 
+interface DeformableLayerBase extends LayerBase {
+  /** Puppet pins sampled in layer units at the center frame, before placement. */
+  deform: ResolvedDeform | null;
+}
+
 /**
  * A mask sampled at the layer's frame, in layer space. `feather` is a per-axis blur width and
  * `expansion` grows (positive) or shrinks (negative) the path, both in layer units.
@@ -126,12 +141,12 @@ export interface ResolvedMatte {
   source: ResolvedLayer | null;
 }
 
-export interface ResolvedShapeLayer extends LayerBase {
+export interface ResolvedShapeLayer extends DeformableLayerBase {
   type: "shape";
   contents: ResolvedShapeItem[];
 }
 
-export interface ResolvedTextLayer extends LayerBase {
+export interface ResolvedTextLayer extends DeformableLayerBase {
   type: "text";
   content: string;
   box: { mode: "point" } | { mode: "box"; width: number; height: number; autoFit: boolean };
@@ -145,19 +160,19 @@ export interface ResolvedTextLayer extends LayerBase {
   animators: ResolvedTextAnimator[];
 }
 
-export interface ResolvedImageLayer extends LayerBase {
+export interface ResolvedImageLayer extends DeformableLayerBase {
   type: "image";
   assetId: string;
 }
 
 /** Footage at one source frame; `sourceFrame` is null when the layer time is outside the clip. */
-export interface ResolvedVideoLayer extends LayerBase {
+export interface ResolvedVideoLayer extends DeformableLayerBase {
   type: "video";
   assetId: string;
   sourceFrame: number | null;
 }
 
-export interface ResolvedSolidLayer extends LayerBase {
+export interface ResolvedSolidLayer extends DeformableLayerBase {
   type: "solid";
   width: number;
   height: number;
@@ -165,14 +180,14 @@ export interface ResolvedSolidLayer extends LayerBase {
 }
 
 /** A procedural source of `width` x `height` layer units, sampled at the layer's frame. */
-export interface ResolvedGeneratorLayer extends LayerBase {
+export interface ResolvedGeneratorLayer extends DeformableLayerBase {
   type: "generator";
   width: number;
   height: number;
   generator: ResolvedGenerator;
 }
 
-export interface ResolvedPrecompLayer extends LayerBase {
+export interface ResolvedPrecompLayer extends DeformableLayerBase {
   type: "precomp";
   compositionId: string;
   /**
@@ -188,7 +203,7 @@ export interface ResolvedAdjustmentLayer extends LayerBase {
 }
 
 /** A component instance: its pinned reference and raw props, plus the subtree the host evaluated for it. */
-export interface ResolvedComponentLayer extends LayerBase {
+export interface ResolvedComponentLayer extends DeformableLayerBase {
   type: "component";
   componentId: string;
   componentVersion: string;

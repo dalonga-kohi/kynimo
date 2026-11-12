@@ -645,6 +645,7 @@ describe("JSON Schema export", () => {
     expect(JSON.stringify(schema)).toContain("formatVersion");
     const compact = z.toJSONSchema(ProjectSchema, { io: "output", reused: "ref" });
     // The MCP resource uses the deduplicated form; keep it small so new properties cannot bloat it unnoticed.
-    expect(JSON.stringify(compact).length).toBeLessThan(105_000);
+    // With transitions and puppet pins the deduplicated output measures 105_629.
+    expect(JSON.stringify(compact).length).toBeLessThan(106_000);
   });
 });

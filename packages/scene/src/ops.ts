@@ -9,6 +9,7 @@ import {
   OscillateBehaviorSchema,
 } from "./behavior.js";
 import { MaskSchema, TrackMatteSchema } from "./compositing.js";
+import { DeformSchema } from "./deform.js";
 import { EffectStackSchema } from "./effect.js";
 import { GeneratorSchema } from "./generator.js";
 import {
@@ -66,6 +67,8 @@ export const LayerPatchSchema = z
     motionBlur: MotionBlurSchema.nullable(),
     /** Drawn layers only (not adjustment); replaces the whole transition, `null` removes it. */
     transition: TransitionSchema.nullable(),
+    /** Replaces puppet pin deformation on a drawn layer; `null` turns it off. */
+    deform: DeformSchema.nullable(),
     /** Layers with a transform but not adjustment (true), camera or audio layers: puts the layer in 3D space (ADR-0054). */
     threeD: z.boolean(),
     /** Camera layers only (ADR-0054). */

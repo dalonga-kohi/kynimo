@@ -39,3 +39,7 @@ export type BehaviorId = z.infer<typeof BehaviorIdSchema>;
 
 /** Id of an effect. Unique within its layer. */
 export const EffectIdSchema = id("EffectId");
+
+/** Id of a puppet pin. Unique within its layer. */
+export const DeformPinIdSchema = id("DeformPinId");
+export type DeformPinId = z.infer<typeof DeformPinIdSchema>;

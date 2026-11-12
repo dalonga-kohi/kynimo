@@ -1,5 +1,6 @@
 import type {
   Affine,
+  Point,
   ResolvedEffect,
   ResolvedGenerator,
   ResolvedLayer,
@@ -28,6 +29,17 @@ export interface CoverageImage {
   readonly width: number;
   readonly height: number;
   readonly coverage: Uint8Array;
+}
+
+export interface PlannedDeform {
+  /** Top-left of the warped raster, including its one-texel border, in source raster units. */
+  origin: Point;
+  width: number;
+  height: number;
+  /** Destination-local x/y at 1/16-pixel precision and source x/y as float32, per vertex. */
+  vertices: readonly number[];
+  /** Work to draw this warp once, including clearing its effect-padded target. */
+  drawWork: number;
 }
 
 /**
@@ -106,7 +118,7 @@ export interface PlannedVectorLayer extends PlannedBase {
  * space), or, for a 3D layer, with `projection` (`matrix` is then the identity and ignored).
  *
  * Image and solid layers have one raster pixel per layer unit, origin at the top-left corner. A
- * shape or text layer is only planned like this when it is 3D (ADR-0054): rasterized in layer
+ * shape or text layer is planned like this when 3D (ADR-0054) or deformed: rasterized in layer
  * space at a power-of-two resolution scale, `projection` includes the map from its raster pixels.
  */
 export interface PlannedLayerSpaceLayer extends PlannedBase {
@@ -115,6 +127,7 @@ export interface PlannedLayerSpaceLayer extends PlannedBase {
   matrix: Affine;
   /** Raster pixels (before effect padding) → composition pixels; `null` or absent for a 2D layer. */
   projection?: Projective | null;
+  deform?: PlannedDeform;
   raster: RasterImage;
 }
 
@@ -127,6 +140,7 @@ export interface PlannedPrecompLayer extends PlannedBase {
   space: "layer";
   matrix: Affine;
   projection?: Projective | null;
+  deform?: PlannedDeform;
   frame: FramePlan;
 }
 
@@ -139,6 +153,7 @@ export interface PlannedGeneratorLayer extends PlannedBase {
   space: "layer";
   matrix: Affine;
   projection?: Projective | null;
+  deform?: PlannedDeform;
   width: number;
   height: number;
   generator: ResolvedGenerator;
@@ -174,7 +189,7 @@ export interface SkippedLayer {
  */
 export interface RenderWarning {
   id: string;
-  kind: "font-fallback" | "missing-glyphs" | "animator-blur";
+  kind: "font-fallback" | "missing-glyphs" | "animator-blur" | "deform-pin-collision";
   /** The affected characters, ascending; at most 32. */
   codepoints: number[];
   message: string;

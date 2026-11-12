@@ -27,6 +27,7 @@ const WRITABLE = new Set([
   "animators",
   "contents",
   "transition",
+  "deform",
 ]);
 
 export interface KeyframeTrack {
@@ -84,7 +85,8 @@ export function listKeyframeTracks(layer: Layer): KeyframeTrack[] {
 /**
  * Rewrites the `frame` of every keyframe of the layer's animatable fields: transform tracks
  * (including separate X/Y), mask paths, feather, opacity and expansion, text animator selectors
- * and properties, shape contents (recursively), effects, generators, behavior tracks and transition parameters (progress included). Times stay in layer time.
+ * and properties, shape contents (recursively), effects, generators, behavior tracks, transition
+ * parameters and puppet pins. Times stay in layer time.
  * Throws `IntentError` (no path) if a keyframed field exists that no operation can write back
  * (a text layer's font size, an audio layer's volume, ...), instead of skipping it.
  */
@@ -159,6 +161,8 @@ export function diffLayerOps(before: Layer, after: Layer): Op[] {
     !deepEqual(before.transition, after.transition)
   )
     ops.push({ op: "updateLayer", layer, set: { transition: after.transition } });
+  if ("deform" in before && "deform" in after && !deepEqual(before.deform, after.deform))
+    ops.push({ op: "updateLayer", layer, set: { deform: after.deform } });
   if (before.type === "generator" && after.type === "generator") {
     if (!deepEqual(before.generator, after.generator))
       ops.push({ op: "setGenerator", layer, generator: after.generator });

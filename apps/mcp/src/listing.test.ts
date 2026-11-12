@@ -111,7 +111,8 @@ describe("tool listing", () => {
   it("keeps each tool within a size cap, so one tool cannot eat the budget unnoticed", async () => {
     for (const tool of await listTools()) {
       // apply_ops: 15_000 before the 3D transform properties and camera patch fields (ADR-0054).
-      const cap = tool.name === "apply_ops" ? 15_500 : 4_500;
+      // 16_500 with shader transitions and puppet pin deformation (16_115 measured).
+      const cap = tool.name === "apply_ops" ? 16_500 : 4_500;
       expect(JSON.stringify(tool).length, tool.name).toBeLessThan(cap);
     }
   });

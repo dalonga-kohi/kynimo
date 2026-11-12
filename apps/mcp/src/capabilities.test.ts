@@ -1,13 +1,22 @@
 import { BUILT_IN_COMPONENTS } from "@kynimo/components";
 import {
+  MAX_DEFORM_COORDINATE,
+  MAX_DEFORM_TRIANGLES,
+  MAX_FRAME_DEFORM_WORK,
+} from "@kynimo/renderer";
+import {
   AssetSchema,
   BEHAVIOR_TYPES,
   CameraLayerSchema,
+  DEFORM_DENSITY,
+  DEFORM_ITERATIONS,
+  DeformSchema,
   EffectInputSchema,
   GeneratorSchema,
   LayerSchema,
   MAX_BATCH_OPS,
   MAX_BEHAVIORS,
+  MAX_DEFORM_PINS,
   MAX_EFFECTS,
   MotionBlurSchema,
   SCENE_FORMAT_VERSION,
@@ -34,9 +43,11 @@ describe("capability manifest", () => {
   });
 
   it("uses only the three statuses, each with a reason unless it renders", () => {
+    const { deform, ...groups } = manifest.features;
     const entries = [
       ...Object.values(manifest.layer_types),
-      ...Object.values(manifest.features).flatMap((group) => Object.values(group)),
+      ...Object.values(groups).flatMap((group) => Object.values(group)),
+      deform,
       ...Object.values(manifest.assets),
       ...Object.values(manifest.unavailable),
     ];
@@ -44,6 +55,27 @@ describe("capability manifest", () => {
       expect(Object.keys(manifest.statuses)).toContain(entry.status);
       if (entry.status !== "renders") expect("reason" in entry && entry.reason).toBeTruthy();
     }
+  });
+
+  it("advertises puppet pin deformation and its scene and renderer limits", () => {
+    expect(manifest.features.deform).toMatchObject({
+      status: "renders",
+      note: expect.stringContaining("center-frame pin deformation"),
+    });
+    expect(manifest.unavailable).not.toHaveProperty("deform");
+    expect(manifest.limits.deform).toEqual({
+      pinsPerLayer: MAX_DEFORM_PINS,
+      density: DEFORM_DENSITY,
+      iterations: DEFORM_ITERATIONS,
+      trianglesPerLayer: MAX_DEFORM_TRIANGLES,
+      workPerFrame: MAX_FRAME_DEFORM_WORK,
+      maxRasterCoordinate: MAX_DEFORM_COORDINATE,
+    });
+    expect(DeformSchema.parse({ pins: [] })).toEqual({
+      pins: [],
+      density: manifest.limits.deform.density.default,
+      iterations: manifest.limits.deform.iterations.default,
+    });
   });
 
   it("lists what text animators change and how many glyphs they may draw", () => {
@@ -244,6 +276,7 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(13_500); // 11_800 before the transitions block (12.9 KB after); 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
+    // The transition cap still fits the manifest with puppet pins (13_273 measured).
+    expect(JSON.stringify(manifest).length).toBeLessThan(13_500);
   });
 });
