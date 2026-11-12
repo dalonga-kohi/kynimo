@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { createComponentHost, createComponentRegistry, defineComponent } from "@kynimo/components";
+import {
+  BUILT_IN_COMPONENTS,
+  createComponentHost,
+  createComponentRegistry,
+  defineComponent,
+} from "@kynimo/components";
 import { evaluateFrame } from "@kynimo/engine";
 import {
   BUNDLED_FONTS,
@@ -18,10 +23,10 @@ import { launchTestCapture } from "./launch.test-util.js";
 import { CaptureError, type CaptureSession } from "./session.js";
 
 /**
- * Component instances end to end (ADR-0046). The capture page only knows the built-in registry (which
- * has no components yet), so the Node half renders a fixture component through the same engine and
- * renderer code with a custom registry and compares it with the hand-built precomp it should equal; the
- * page half proves the page evaluates with a component host.
+ * Component instances end to end (ADR-0046). The capture page knows the built-in registry (ADR-0047),
+ * so the Node half renders a fixture component through the same engine and renderer code with a
+ * custom registry and compares it with the hand-built precomp it should equal; the page half proves
+ * the page evaluates with a component host and draws every built-in component.
  */
 
 type Obj = Record<string, unknown>;
@@ -224,4 +229,36 @@ describe("the capture page", () => {
     expect(err).toBeInstanceOf(CaptureError);
     expect((err as CaptureError).message).toContain("no component 'nothing'");
   }, 60_000);
+
+  it("draws every built-in component with default props, with no fallbacks", async () => {
+    // One instance over 90 frames, a frame in the middle of its hold.
+    const long = (layers: Obj[]): Project => {
+      const p = document(layers);
+      return ProjectSchema.parse({
+        ...p,
+        compositions: p.compositions.map((c) => ({ ...c, durationFrames: 90 })),
+      });
+    };
+    const [empty] = await capture.captureFrames(long([]), [45]);
+    for (const component of BUILT_IN_COMPONENTS) {
+      const project = long([
+        layer("cmp", "component", {
+          componentId: component.id,
+          componentVersion: component.version,
+          outFrame: 90,
+          props: {},
+        }),
+      ]);
+      const [frame] = await capture.captureFrames(project, [45]);
+      expect({ id: component.id, skipped: frame?.skipped, warnings: frame?.warnings }).toEqual({
+        id: component.id,
+        skipped: [],
+        warnings: [],
+      });
+      expect(
+        Buffer.from(frame?.png ?? []).equals(Buffer.from(empty?.png ?? [])),
+        component.id,
+      ).toBe(false);
+    }
+  }, 120_000);
 });
