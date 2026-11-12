@@ -179,7 +179,12 @@ export function checkMovedTracks(
   after: KeyframeTrack[],
   fps: FrameRate,
   path: InputPath,
-  hint: { collision: string; spring: string | ((needed: number) => string) },
+  hint: {
+    collision: string;
+    spring: string | ((needed: number) => string);
+    /** Appended after the frames a message names (e.g. when they are on a layer slid by the same call). */
+    frameNote?: string;
+  },
 ): void {
   before.forEach((track, t) => {
     const next = after[t]?.keyframes ?? [];
@@ -191,7 +196,7 @@ export function checkMovedTracks(
       if (cur.frame <= prev.frame)
         throw new IntentError(
           path,
-          `${name}: keyframes at frames ${(track.keyframes[j - 1]?.frame ?? 0) + layer.startFrame} and ${(track.keyframes[j]?.frame ?? 0) + layer.startFrame} would ${cur.frame === prev.frame ? "land on the same frame" : "change order"}; ${hint.collision}`,
+          `${name}: keyframes at frames ${(track.keyframes[j - 1]?.frame ?? 0) + layer.startFrame} and ${(track.keyframes[j]?.frame ?? 0) + layer.startFrame}${hint.frameNote ?? ""} would ${cur.frame === prev.frame ? "land on the same frame" : "change order"}; ${hint.collision}`,
         );
     }
     for (let j = 0; j + 1 < next.length; j++) {
@@ -205,7 +210,7 @@ export function checkMovedTracks(
       const needed = Math.ceil((settle / original) * 100) / 100;
       throw new IntentError(
         path,
-        `${name}: the spring at frame ${cur.frame + layer.startFrame} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; ${
+        `${name}: the spring at frame ${cur.frame + layer.startFrame}${hint.frameNote ?? ""} needs ${settle} frames to settle but the next keyframe is ${gap} frames later; ${
           typeof hint.spring === "function" ? hint.spring(needed) : hint.spring
         }`,
       );

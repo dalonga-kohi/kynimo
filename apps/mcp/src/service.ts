@@ -35,7 +35,7 @@ import {
 } from "@kynimo/scene";
 import { type ExpandError, expandScript, type ScriptLimits } from "@kynimo/script";
 import type { z } from "zod";
-import { detectBeats } from "./beats.js";
+import { BEAT_LIMITS, detectBeats } from "./beats.js";
 import { type BlobStore, blobKey, isBlobKey, MAX_ASSET_BYTES } from "./blobs.js";
 import {
   type CachedExport,
@@ -880,7 +880,7 @@ export class KynimoService {
       if (found === undefined) return undefined;
       const limit = Math.max(1, durationMs);
       const timesMs = found.timesMs.filter((t) => t < limit);
-      return timesMs.length === 0 ? undefined : { ...found, timesMs };
+      return timesMs.length < BEAT_LIMITS.minBeats ? undefined : { ...found, timesMs };
     } catch {
       return undefined;
     }

@@ -230,8 +230,8 @@ export function detectBeats(
   const n = env.length;
 
   // Tempo: weighted autocorrelation over the allowed lags.
-  const minLag = Math.ceil((60 * ENVELOPE_RATE) / BEAT_LIMITS.maxBpm);
-  const maxLag = Math.min(Math.floor((60 * ENVELOPE_RATE) / BEAT_LIMITS.minBpm), n - 1);
+  const minLag = Math.floor((60 * ENVELOPE_RATE) / BEAT_LIMITS.maxBpm);
+  const maxLag = Math.min(Math.ceil((60 * ENVELOPE_RATE) / BEAT_LIMITS.minBpm), n - 1);
   if (maxLag < minLag) return undefined;
   // The envelope is rectified, so it has a positive mean that every lag would share; remove it,
   // or noise would score a confidence near 0.3.
@@ -264,7 +264,11 @@ export function detectBeats(
     const denom = a - 2 * best + c;
     if (denom < 0) period += Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denom));
   }
-  const bpm = Math.round(((60 * ENVELOPE_RATE) / period) * 100) / 100;
+  const bpm =
+    Math.round(
+      Math.max(BEAT_LIMITS.minBpm, Math.min(BEAT_LIMITS.maxBpm, (60 * ENVELOPE_RATE) / period)) *
+        100,
+    ) / 100;
   const confidence = Math.round(Math.max(0, Math.min(1, acf(bestLag) / acf(0))) * 1000) / 1000;
   if (!(confidence >= BEAT_LIMITS.minConfidence)) return undefined;
 

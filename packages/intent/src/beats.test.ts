@@ -316,6 +316,48 @@ describe("syncToBeats", () => {
     expect(opacityFrames(out, "b")).toEqual([5, 35]);
   });
 
+  it("judges window on the frames before the call: a keyframe in the window snaps after a slide moves it out", () => {
+    const d = beatDoc([solid("b", { ...opacity(50), inFrame: 25, outFrame: 80, startFrame: 20 })]);
+    const { ops, resolved } = syncToBeats(d, {
+      layers: lid("b"),
+      audio_layer: lid("song"),
+      snap: ["cuts", "keyframes"],
+      window: { from: 0, to: 72 },
+    });
+    expect(resolved).toMatchObject({ cuts_moved: 1, keyframes_moved: 1 });
+    const out = applied(d, ops);
+    const layer = layerOf(out, "b");
+    expect(layer.inFrame).toBe(30);
+    // comp 70 slid to 75, a tie between 60 and 90: the earlier one, composition frame 60.
+    expect(layer.startFrame + (opacityFrames(out, "b")[0] as number)).toBe(60);
+  });
+
+  it("leaves a keyframe outside the window alone even when the slide moves it inside", () => {
+    const d = beatDoc([solid("b", { ...opacity(44), inFrame: 33, outFrame: 80, startFrame: 30 })]);
+    const { ops, resolved } = syncToBeats(d, {
+      layers: lid("b"),
+      audio_layer: lid("song"),
+      snap: ["cuts", "keyframes"],
+      window: { from: 0, to: 72 },
+    });
+    // comp 74 is outside the window; the cut slides by -3 so it would sit at 71.
+    expect(resolved).toMatchObject({ cuts_moved: 1, keyframes_moved: 0, keyframes_skipped: 0 });
+    const out = applied(d, ops);
+    expect(layerOf(out, "b").inFrame).toBe(30);
+    expect(opacityFrames(out, "b")).toEqual([44]);
+  });
+
+  it("says when a refused collision is on frames after the cut slide", () => {
+    const d = beatDoc([
+      solid("b", { ...opacity(28, 32), inFrame: 28, outFrame: 80, startFrame: 0 }),
+    ]);
+    expect(
+      fail(() =>
+        syncToBeats(d, { layers: lid("b"), audio_layer: lid("song"), snap: ["cuts", "keyframes"] }),
+      ).message,
+    ).toContain("keyframes at frames 30 and 34 (after the cut slide) would land on the same frame");
+  });
+
   it("snaps cuts only and leaves keyframes in layer time", () => {
     const d = beatDoc([
       solid("b", { ...opacity(10, 40), inFrame: 25, outFrame: 80, startFrame: 20 }),

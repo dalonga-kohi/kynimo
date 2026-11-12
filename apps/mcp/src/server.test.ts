@@ -136,7 +136,8 @@ describe("MCP server", () => {
     // 92_000 with component placement and discovery (ADR-0049): 91.7 KB after both.
     // 97_000 with the structured storyboard tool (ADR-0050).
     // 101_000 with the beat tools (ADR-0052): 96.1 KB before, 100.9 KB after.
-    expect(JSON.stringify(tools).length).toBeLessThan(101_000);
+    // 102_000 after describing the sync_to_beats fields (review fixes): 101.2 KB.
+    expect(JSON.stringify(tools).length).toBeLessThan(102_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

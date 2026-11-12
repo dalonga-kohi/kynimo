@@ -69,17 +69,17 @@ function expectInvariants(r: DetectedBeats, durationMs: number) {
   });
 }
 
-function expectTracksClicks(opts: TrackOptions) {
+function expectTracksClicks(opts: TrackOptions, bpmTolerance = 1) {
   const { pcm, truth, durationMs } = track(opts);
   const r = detectBeats(pcm);
   expect(r).toBeDefined();
   if (r === undefined) return;
-  expect(Math.abs(r.bpm - opts.bpm)).toBeLessThanOrEqual(1);
+  expect(Math.abs(r.bpm - opts.bpm)).toBeLessThanOrEqual(bpmTolerance);
   expectInvariants(r, durationMs);
   const judged = truth.filter((t) => t >= 1000);
   for (const t of judged) {
     const nearest = Math.min(...r.timesMs.map((b) => Math.abs(b - t)));
-    expect(nearest, `click at ${t} ms`).toBeLessThanOrEqual(25);
+    expect(nearest, `click at ${t} ms`).toBeLessThanOrEqual(12);
   }
   expect(Math.abs(r.timesMs.length - truth.length)).toBeLessThanOrEqual(1);
 }
@@ -95,6 +95,28 @@ describe("detectBeats on click tracks", () => {
 
   it("finds 140 bpm", () => {
     expectTracksClicks({ bpm: 140, seconds: 12, offsetMs: 250 });
+  });
+
+  it.each([50, 60, 100, 150])("finds %i bpm on a 20 s track", (bpm) => {
+    expectTracksClicks({ bpm, seconds: 20, offsetMs: 250 });
+  });
+
+  it("may report a tempo above about 150 bpm at half tempo", () => {
+    const { pcm, durationMs } = track({ bpm: 180, seconds: 20, offsetMs: 250 });
+    const r = detectBeats(pcm);
+    expect(r).toBeDefined();
+    if (r === undefined) return;
+    expectInvariants(r, durationMs);
+    expect(Math.abs(r.bpm - 90)).toBeLessThanOrEqual(1.5);
+  });
+
+  it("reports 220 bpm as a third of it (known limit, ADR-0052)", () => {
+    const { pcm, durationMs } = track({ bpm: 220, seconds: 20, offsetMs: 250 });
+    const r = detectBeats(pcm);
+    expect(r).toBeDefined();
+    if (r === undefined) return;
+    expectInvariants(r, durationMs);
+    expect(Math.abs(r.bpm - 220 / 3)).toBeLessThanOrEqual(1.5);
   });
 
   it("finds the tempo of a kick pattern with off-beat clicks", () => {

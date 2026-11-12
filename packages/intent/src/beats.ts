@@ -103,11 +103,10 @@ export function markBeats(
   }
   if (beats.length === 0)
     throw new IntentError(["layer"], "no beat falls inside the layer's in/out range");
-  const kept = input.replace === true ? 0 : layer.markers.length;
-  if (kept + beats.length > MAX_MARKERS)
+  if (beats.length > MAX_MARKERS)
     throw new IntentError(
       ["layer"],
-      `a layer holds at most ${MAX_MARKERS} markers; this would make ${kept + beats.length}`,
+      `a layer holds at most ${MAX_MARKERS} markers; this would make ${beats.length}`,
     );
 
   const ops: Op[] = [];
@@ -165,7 +164,7 @@ export interface SyncToBeatsResolved {
  * Snaps keyframes and/or cuts of the selected layers to the beat markers of an audio layer. A cut
  * slides the whole layer (in, out and start together) so its content keeps its timing relative to
  * the cut; keyframes then move to the nearest beat (the earlier one on a tie) when it is within
- * `max_distance`. Refuses moves that make keyframes collide or squeeze a spring.
+ * `max_distance`. `window` is judged on the frames before this call (a cut by its original in point, a keyframe before any slide). Refuses moves that make keyframes collide or squeeze a spring.
  */
 export function syncToBeats(
   doc: Project,
@@ -222,8 +221,22 @@ export function syncToBeats(
 
   /** The nearest kept beat and its distance; the earlier beat on a tie. */
   const nearest = (frame: number): { beat: number; distance: number } => {
-    let best = beats[0] as number;
-    for (const b of beats) if (Math.abs(b - frame) < Math.abs(best - frame)) best = b;
+    // First beat at or after the frame (binary search); its predecessor wins a tie.
+    let lo = 0;
+    let hi = beats.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((beats[mid] as number) < frame) lo = mid + 1;
+      else hi = mid;
+    }
+    const after = beats[lo];
+    const before = beats[lo - 1];
+    const best =
+      after === undefined
+        ? (before as number)
+        : before !== undefined && frame - before <= after - frame
+          ? before
+          : after;
     return { beat: best, distance: Math.abs(best - frame) };
   };
   const inWindow = (frame: number): boolean =>
@@ -235,6 +248,8 @@ export function syncToBeats(
   let cutsMoved = 0;
   for (const { layer, path } of targets) {
     scoped(path, () => {
+      // `window` is judged on the positions the caller read (this layer before the call): cuts by
+      // the original inFrame, keyframes by their frame before any cut slide of this call.
       let current = layer;
       if (snapCuts && inWindow(layer.inFrame)) {
         const { beat, distance } = nearest(layer.inFrame);
@@ -252,10 +267,11 @@ export function syncToBeats(
       }
       if (!snapKeyframes) return;
       const slid = current;
+      const slideDelta = slid.startFrame - layer.startFrame;
       const before = listKeyframeTracks(slid);
       const after = mapLayerKeyframes(slid, (f) => {
+        if (!inWindow(layer.startFrame + f)) return f;
         const comp = slid.startFrame + f;
-        if (!inWindow(comp)) return f;
         const { beat, distance } = nearest(comp);
         if (distance === 0) return f;
         if (distance > limit) {
@@ -268,6 +284,7 @@ export function syncToBeats(
       checkMovedTracks(slid, before, listKeyframeTracks(after), fps, path, {
         collision: "use every, max_distance or a window so they snap to different beats",
         spring: "use a larger every or switch that segment to a bezier easing",
+        ...(slideDelta !== 0 ? { frameNote: " (after the cut slide)" } : {}),
       });
       ops.push(...diffLayerOps(slid, after));
     });

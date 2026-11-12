@@ -418,17 +418,13 @@ export const RetimeToolInput = RetimeInputSchema.omit({ layers: true })
 export const MarkBeatsToolInput = MarkBeatsInputSchema.extend({
   ...intentMeta,
   layer: LayerSelectorSchema.describe("The audio layer (id or selector matching one)."),
-  grid: z
-    .strictObject({
-      bpm: z.number().min(20).max(400),
+  grid: MarkBeatsInputSchema.shape.grid
+    .unwrap()
+    .extend({
       first_beat_frame: z.number().int().describe("Composition frame of the first beat."),
-      count: z
-        .number()
-        .int()
-        .positive()
-        .max(1000)
-        .optional()
-        .describe("At most this many beats, counted from first_beat_frame."),
+      count: MarkBeatsInputSchema.shape.grid
+        .unwrap()
+        .shape.count.describe("At most this many beats, counted from first_beat_frame."),
     })
     .optional()
     .describe("A bpm grid instead of the asset's detected beats."),
@@ -436,7 +432,23 @@ export const MarkBeatsToolInput = MarkBeatsInputSchema.extend({
 }).strip();
 
 export const SyncToBeatsToolInput = SyncToBeatsInputSchema.omit({ layers: true })
-  .extend({ ...intentMeta, layers: Targets })
+  .extend({
+    ...intentMeta,
+    layers: Targets,
+    every: SyncToBeatsInputSchema.shape.every.describe(
+      "Use every nth beat (4 = once a bar in 4/4).",
+    ),
+    phase: SyncToBeatsInputSchema.shape.phase.describe(
+      "Which beat of each group of every to use, from 0.",
+    ),
+    max_distance: SyncToBeatsInputSchema.shape.max_distance.describe(
+      "Frames; farther keyframes and cuts stay. Default: half the median beat gap.",
+    ),
+    window: SyncToBeatsInputSchema.shape.window.describe(
+      "Only what sits inside these composition frames moves.",
+    ),
+    snap: SyncToBeatsInputSchema.shape.snap.describe("What to snap; default keyframes."),
+  })
   .strip();
 
 export const ApplyPresetToolInput = z.object({

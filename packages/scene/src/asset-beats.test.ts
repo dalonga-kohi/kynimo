@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AssetSchema, MAX_BEATS } from "./index.js";
+import { AssetSchema, MAX_BEATS, OpSchema } from "./index.js";
 
 const audio = (beats: unknown) => ({
   id: "music",
@@ -46,5 +46,31 @@ describe("audio asset beats", () => {
     expect(AssetSchema.safeParse(audio({ ...beats([1]), bpm: 10 })).success).toBe(false);
     expect(AssetSchema.safeParse(audio({ ...beats([1]), confidence: 2 })).success).toBe(false);
     expect(AssetSchema.safeParse(audio(beats([1.5]))).success).toBe(false);
+  });
+});
+
+describe("addAsset op with audio beats", () => {
+  const { id: _id, ...body } = audio(undefined);
+  const paths = (beats: unknown) => {
+    const r = OpSchema.safeParse({ op: "addAsset", asset: { ...body, beats } });
+    return r.success ? [] : r.error.issues.map((i) => i.path.join(", "));
+  };
+
+  it("accepts detector-shaped beats", () => {
+    expect(paths(beats([250, 750]))).toEqual([]);
+  });
+
+  it("rejects descending times", () => {
+    expect(paths(beats([500, 250]))).toEqual(["asset, beats, timesMs"]);
+  });
+
+  it("rejects a time equal to durationMs", () => {
+    expect(paths(beats([250, 5000]))).toEqual(["asset, beats, timesMs"]);
+  });
+
+  it("rejects an infinite bpm", () => {
+    expect(paths({ ...beats([250]), bpm: Number.POSITIVE_INFINITY })).toEqual([
+      "asset, beats, bpm",
+    ]);
   });
 });
