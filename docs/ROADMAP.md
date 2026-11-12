@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has the component model and the five built-in components (ADR-0046, ADR-0047; `add_component` is next), while M5's rules and tools are still open. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-12):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has the component model and the five built-in components (ADR-0046, ADR-0047; `add_component` is next), while M5's rules and tools are still open. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It can export MP4, WebM and GIF (jobs with progress, cancel and a fidelity report; ADR-0048), but it cannot yet apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -76,8 +76,8 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 
 ## M7 — Export pipeline + preview links
 
-- [ ] Render workers + job queue; jobs with progress, cancel and idempotent submission (ADR-0018)
-- [ ] MP4 / WebM / GIF export with audio layers mixed in and a fidelity report; `render_preview_clip`, `export`, `get_export_status`, `cancel_export`
+- [x] Render workers + job queue; jobs with progress, cancel and idempotent submission (ADR-0018) → ADR-0048: an in-process queue (one job at a time, 4 active per account, 24 h records, keys kept with the job); separate workers and a durable Postgres queue come with deploy
+- [x] MP4 / WebM / GIF export with audio layers mixed in and a fidelity report; `render_preview_clip`, `export`, `get_export_status`, `cancel_export` → ADR-0048: raw-frame export sessions and specialised compositor programs (about 4x faster), FFmpeg encodes, audio mixed in TypeScript, files behind expiring download tokens (local disk; R2 with deploy)
 - [ ] Beat markers on audio layers (detection + manual); `sync_to_beats`
 - [ ] Shareable preview links; `get_preview_link`
 - [ ] First end-to-end check: every brief in the suite ends in an exported MP4
@@ -90,7 +90,7 @@ The human sees the video before any editor exists.
 - [ ] Share page: sign in, project list, the player on the shared renderer with timeline scrubbing, live view of agent edits (same document versions as MCP)
 - [ ] Frame-pinned comments on the share page; `list_comments`, `resolve_comment` so the agent reads and answers them
 - [ ] In-chat player: spike MCP UI support in Claude and ChatGPT (decision ADR), then return the player from the render and export tools where the client supports it
-- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 78 KB (77 KB after `import_svg`, ADR-0043; 78 KB with generators, ADR-0045) to 60 KB; ADR-0045 also raised the apply_ops listing cap 14 to 15 KB, the manifest cap 8 to 9 KB and the project JSON schema cap 74 to 90 KB, all to lower again
+- [ ] Listing back under 60 KB (moved from M4): compact every tool's output schema (20.5 KB of the 69.6 KB `tools/list` after ADR-0040; about 71.2 KB with `run_script`) and the shared write fields, then lower the `server.test.ts` budget from 89 KB (77 KB after `import_svg`, ADR-0043; 78 KB with generators, ADR-0045; 89 KB with the export tools, ADR-0048) to 60 KB; ADR-0045 also raised the apply_ops listing cap 14 to 15 KB, the manifest cap 8 to 9 KB (10 KB with the export block, ADR-0048) and the project JSON schema cap 74 to 90 KB, all to lower again
 
 ## Private beta
 
