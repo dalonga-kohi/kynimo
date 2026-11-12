@@ -1,3 +1,4 @@
+import type { RenderComponentDefinition } from "@kynimo/components";
 import type { RenderWarning, SkippedLayer } from "@kynimo/renderer";
 import type { Project, ShaderDefinition } from "@kynimo/scene";
 
@@ -13,6 +14,7 @@ export const ORIGIN = "https://capture.kynimo.invalid";
 export interface PageRequest {
   project: Project;
   shaders: readonly ShaderDefinition[];
+  components: readonly RenderComponentDefinition[];
   compositionId: string;
   frames: number[];
   /** Ids of the image and font assets whose bytes the host serves at `/assets/<id>`. */
@@ -61,6 +63,7 @@ export type PageResponse =
 export interface ExportRequest {
   project: Project;
   shaders: readonly ShaderDefinition[];
+  components: readonly RenderComponentDefinition[];
   compositionId: string;
   assets: string[];
   maxSize: number | null;

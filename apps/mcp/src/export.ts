@@ -412,6 +412,7 @@ export async function runExport(
         still.assets,
         flatten ? "premultiplied" : "straight",
         still.shaders,
+        still.components,
       ),
     );
     // Started only now: the open and the asset loads can fail, and the stall timer starts with it.

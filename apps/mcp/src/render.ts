@@ -6,6 +6,7 @@ import {
   type ExportSession,
   launchCapture,
 } from "@kynimo/capture";
+import type { RenderComponentDefinition } from "@kynimo/components";
 import type { Project, ShaderDefinition } from "@kynimo/scene";
 
 export type { ExportFrame, ExportSession };
@@ -39,6 +40,7 @@ export const RENDER_LIMITS = {
 /** Asset bytes for one render: image and font assets by id, video frames by `videoFrameKey`. */
 export interface RenderMedia {
   shaders?: readonly ShaderDefinition[];
+  components?: readonly RenderComponentDefinition[];
   assets: ReadonlyMap<string, Uint8Array>;
   videoFrames: ReadonlyMap<string, Uint8Array>;
 }
@@ -72,6 +74,7 @@ export interface FrameRenderer {
     assets: ReadonlyMap<string, Uint8Array>,
     alpha: "premultiplied" | "straight",
     shaders?: readonly ShaderDefinition[],
+    components?: readonly RenderComponentDefinition[],
   ): Promise<ExportSession>;
   close(): Promise<void>;
 }
@@ -126,7 +129,7 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     maxSize: number,
-    { assets, videoFrames, shaders = [] }: RenderMedia,
+    { assets, videoFrames, shaders = [], components = [] }: RenderMedia,
   ) {
     return (await this.#current()).captureFrames(doc, frames, {
       composition,
@@ -134,6 +137,7 @@ export class CaptureRenderer implements FrameRenderer {
       assets,
       videoFrames,
       shaders,
+      components,
     });
   }
 
@@ -142,7 +146,7 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
-    { assets, videoFrames, shaders = [] }: RenderMedia,
+    { assets, videoFrames, shaders = [], components = [] }: RenderMedia,
   ) {
     return (await this.#current()).captureSheet(doc, frames, {
       composition,
@@ -150,6 +154,7 @@ export class CaptureRenderer implements FrameRenderer {
       assets,
       videoFrames,
       shaders,
+      components,
     });
   }
 
@@ -160,6 +165,7 @@ export class CaptureRenderer implements FrameRenderer {
     assets: ReadonlyMap<string, Uint8Array>,
     alpha: "premultiplied" | "straight",
     shaders?: readonly ShaderDefinition[],
+    components?: readonly RenderComponentDefinition[],
   ) {
     return (await this.#current()).openExport(doc, {
       composition,
@@ -167,6 +173,7 @@ export class CaptureRenderer implements FrameRenderer {
       assets,
       alpha,
       shaders: shaders ?? [],
+      components: components ?? [],
     });
   }
 
