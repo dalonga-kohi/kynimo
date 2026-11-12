@@ -27,6 +27,7 @@ import { SCRIPT_LIMITS } from "@kynimo/script";
 import { SVG_LIMITS } from "@kynimo/svg";
 import { z } from "zod";
 import { MAX_ASSET_BASE64 } from "./blobs.js";
+import { EXPORT_LIMITS } from "./export.js";
 import { RENDER_LIMITS } from "./render.js";
 
 /** Every layer type, from the schema itself so new types appear here automatically. */
@@ -920,3 +921,108 @@ export const ListAssetsOutput = z.looseObject({
     }),
   ),
 });
+
+const X = EXPORT_LIMITS;
+
+export const ExportInput = z.object({
+  project_id: ProjectIdSchema,
+  idempotency_key: IdempotencyKeySchema,
+  composition: CompositionField,
+  format: z
+    .enum(["mp4", "webm", "gif"])
+    .default("mp4")
+    .describe(
+      `mp4: H.264 + AAC, no transparency. webm: VP9 + Opus, keeps transparency. gif: no sound, 256 colors. At most ${X.maxSeconds} s (gif ${X.gifMaxSeconds} s).`,
+    ),
+  from_frame: FrameSchema.optional().describe("First frame. Default 0."),
+  to_frame: FrameSchema.optional().describe("Last frame (included). Default: the last frame."),
+  max_size: z
+    .number()
+    .int()
+    .min(X.minSize)
+    .max(X.maxSize)
+    .optional()
+    .describe(
+      `Longest edge in pixels (${X.minSize} to ${X.maxSize}; gif at most ${X.gifMaxSize}). Default: the composition's (at most ${X.maxSize}; gif ${X.gifDefaultSize}). Never upscaled.`,
+    ),
+});
+
+export const RenderPreviewClipInput = z.object({
+  project_id: ProjectIdSchema,
+  composition: CompositionField,
+  from_frame: FrameSchema.optional().describe("First frame. Default 0."),
+  to_frame: FrameSchema.optional().describe(
+    `Last frame (included). Default: the last frame. At most ${X.previewMaxSeconds} s.`,
+  ),
+  max_size: z
+    .number()
+    .int()
+    .min(X.minSize)
+    .max(X.previewMaxSize)
+    .optional()
+    .describe(
+      `Longest edge in pixels (${X.minSize} to ${X.previewMaxSize}). Default ${X.previewDefaultSize}. Never upscaled.`,
+    ),
+});
+
+const JobIdSchema = z
+  .string()
+  .regex(/^j-[0-9a-f]{32}$/)
+  .describe("The job id returned by export or render_preview_clip.");
+
+export const GetExportStatusInput = z.object({
+  job_id: JobIdSchema,
+  wait_seconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(25)
+    .default(0)
+    .describe(
+      "Wait up to this long for the job to finish before answering. 10–20 while it runs saves calls.",
+    ),
+});
+
+export const CancelExportInput = z.object({ job_id: JobIdSchema });
+
+/** Declared loosely, like the layer bodies: the listing is sent to the model on every connect. */
+const ExportResultOutput = z.looseObject({
+  format: z.enum(["mp4", "webm", "gif"]),
+  frames: z.number().int(),
+  width: z.number().int(),
+  height: z.number().int(),
+  bytes: z.number().int(),
+  url: z.string().optional(),
+  path: z.string().optional(),
+  expires_at: z.string(),
+  cached: z.boolean(),
+  fidelity: z.array(
+    z.looseObject({
+      kind: z.enum(["dropped", "flattened", "approximated"]),
+      feature: z.string(),
+      detail: z.string(),
+    }),
+  ),
+  skipped: z.array(z.looseObject({ layer: z.string() })),
+  warnings: z.array(z.looseObject({ layer: z.string() })),
+});
+
+export const JobOutput = z.looseObject({
+  job_id: z.string(),
+  kind: z.enum(["export", "preview"]),
+  project_id: z.string(),
+  state: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  progress: z.looseObject({
+    phase: z.enum(["queued", "rendering", "encoding", "storing", "done"]),
+    frames_done: z.number().int(),
+    frames_total: z.number().int(),
+  }),
+  created_at: z.string(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
+  replayed: z.boolean().optional(),
+  result: ExportResultOutput.optional(),
+  error: z.looseObject({ code: z.string(), message: z.string() }).optional(),
+});
+
+export const CancelExportOutput = JobOutput.extend({ cancelled: z.boolean() });

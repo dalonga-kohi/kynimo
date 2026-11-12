@@ -1,6 +1,6 @@
 # @kynimo/mcp
 
-Kynimo's MCP server: locally over stdio, or remotely over Streamable HTTP with OAuth (`--http`). Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md), [ADR-0029](../../docs/decisions/0029-postgres-project-store.md), [ADR-0031](../../docs/decisions/0031-asset-storage.md), [ADR-0033](../../docs/decisions/0033-remote-transport-oauth.md), [ADR-0040](../../docs/decisions/0040-intent-tools.md), [ADR-0041](../../docs/decisions/0041-run-script.md).
+Kynimo's MCP server: locally over stdio, or remotely over Streamable HTTP with OAuth (`--http`). Contracts and decisions: [ADR-0018](../../docs/decisions/0018-agent-reliability-contracts.md), [ADR-0024](../../docs/decisions/0024-local-mcp-server.md), [ADR-0029](../../docs/decisions/0029-postgres-project-store.md), [ADR-0031](../../docs/decisions/0031-asset-storage.md), [ADR-0033](../../docs/decisions/0033-remote-transport-oauth.md), [ADR-0040](../../docs/decisions/0040-intent-tools.md), [ADR-0041](../../docs/decisions/0041-run-script.md), [ADR-0048](../../docs/decisions/0048-export-pipeline.md).
 
 ```bash
 pnpm --filter @kynimo/mcp build
@@ -24,7 +24,7 @@ To connect an MCP client (e.g. Claude Desktop or Claude Code), point it at the b
 }
 ```
 
-Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `get_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
+Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `get_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`, `export`, `render_preview_clip`, `get_export_status`, `cancel_export`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
 
 `import_svg` takes SVG text (up to 512 KB) and adds one shape layer, with the viewBox centre at `position` (default: the composition centre). It returns a fidelity report listing what was dropped, flattened or approximated. Use `dry_run: true` to preview the `addLayer` operation (ADR-0043).
 
@@ -35,6 +35,19 @@ Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `
 Built-in components (ADR-0047: `kinetic-type`, `lower-third`, `logo-reveal`, `transition`, `background`) render as component layers: a layer of type `component` with `componentId`, `componentVersion` `1.0.0` and `props`. Missing props take their defaults. `add_component` and the component catalog resource are the next M6 item, so for now a component layer is written with `add_layer` or `apply_ops`, and a bad prop shows up when the frame renders.
 
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
+
+## Export (MP4, WebM, GIF; ADR-0048)
+
+Four tools run exports as background jobs. They need FFmpeg (see below) and the pinned Chromium.
+
+- `export` takes `format` (`mp4` default, `webm` with transparency, `gif` without sound), `composition`, `from_frame`, `to_frame`, `max_size` and an `idempotency_key`. Limits: mp4/webm up to 1920 px and 60 s; gif 480 px by default, up to 960 px and 15 s. It returns a job at once.
+- `render_preview_clip` makes a short mp4 (up to 480 px, default 360; up to 10 s); its finished status also carries a contact sheet of 6 frames.
+- `get_export_status` takes `job_id` and `wait_seconds` (0 to 25) and returns state, progress and, when done, the result: size, duration, `url` (HTTP) or `path` (stdio), `expires_at`, a fidelity report (what the format dropped, flattened or approximated) and skipped layers and warnings as frame ranges.
+- `cancel_export` stops a queued or running job.
+
+Jobs run inside the server process, one at a time, with at most 4 queued or running per account (32 server-wide); more is answered with the `busy` error. Job records are kept for 24 hours. A restart loses queued and running jobs and download links.
+
+Finished files are kept for 24 hours (at most 4 GiB in total) in `<dir>/exports` with `--dir`, otherwise in a temporary folder that is removed when the server shuts down (`<dir>/exports` is never removed). Over HTTP, `GET /exports/<token>` (and `HEAD`) downloads a file: the unguessable token in the link is the only credential and the link expires with the file. Over stdio the result gives the file's `path` instead. The same export of the same document is not rendered twice.
 
 Where projects live (ADR-0029):
 

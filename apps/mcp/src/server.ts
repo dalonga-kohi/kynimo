@@ -35,12 +35,16 @@ import {
   AnimateToolInput,
   ApplyOpsInput,
   ApplyPresetToolInput,
+  CancelExportInput,
+  CancelExportOutput,
   CreateProjectInput,
   CreateProjectOutput,
   DescribeMotionInput,
   DescribeMotionOutput,
+  ExportInput,
   FindLayersOutput,
   GetCapabilitiesOutput,
+  GetExportStatusInput,
   GetLayerOutput,
   GetLayerSchemaOutput,
   GetProjectOutput,
@@ -51,6 +55,7 @@ import {
   ImportSvgInput,
   ImportSvgRequest,
   IntentWriteOutput,
+  JobOutput,
   LAYER_TYPES,
   ListAssetsOutput,
   ListPresetsOutput,
@@ -61,6 +66,7 @@ import {
   RenderContactSheetOutput,
   RenderFramesInput,
   RenderFramesOutput,
+  RenderPreviewClipInput,
   RetimeToolInput,
   RunScriptInput,
   RunScriptOutput,
@@ -93,6 +99,7 @@ Text layers take animators (like After Effects): each has a range selector (unit
 Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).
 Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adjustment layer filters the composite below it. Edit or remove effects with the setEffects operation.
 Backgrounds and textures are generator layers (gradient, noise, pattern, aurora): add one with add_layer and edit it with the setGenerator operation. Looks (vignette, grain, chromatic-aberration, posterize, scanlines) are effects: use add_effect, usually on an adjustment layer.
+When the user is happy with the frames, export (mp4 default; webm keeps transparency) and poll get_export_status with wait_seconds; render_preview_clip makes a quick low-res clip first.
 Use import_svg for vector logos and icons: it makes one shape layer and reports what the SVG had that shapes cannot carry.`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
@@ -373,6 +380,63 @@ export function createServer(service: KynimoService): McpServer {
       annotations: READ,
     },
     guardImages(async ({ project_id, ...input }) => service.renderContactSheet(project_id, input)),
+  );
+
+  // Export
+  server.registerTool(
+    "export",
+    {
+      title: "Export",
+      description:
+        "Exports a composition to MP4, WebM or GIF as a background job, with audio layers mixed in. Returns a job; poll get_export_status (wait_seconds) for progress, the download link and a fidelity report of what the format could not carry.",
+      inputSchema: ExportInput,
+      outputSchema: JobOutput,
+      annotations: WRITE,
+    },
+    guard(async ({ project_id, ...input }) => ({
+      ...(await service.exportComposition(project_id, input)),
+    })),
+  );
+
+  server.registerTool(
+    "render_preview_clip",
+    {
+      title: "Render preview clip",
+      description:
+        "Renders a short low-resolution MP4 preview (at most 10 s, 480 px) as a job; when done, get_export_status also returns a contact sheet of it.",
+      inputSchema: RenderPreviewClipInput,
+      outputSchema: JobOutput,
+      annotations: WRITE,
+    },
+    guard(async ({ project_id, ...input }) => ({
+      ...(await service.renderPreviewClip(project_id, input)),
+    })),
+  );
+
+  server.registerTool(
+    "get_export_status",
+    {
+      title: "Get export status",
+      description:
+        "Progress and result of an export or preview job: state, frames done, and when finished the file's link, size and fidelity report.",
+      inputSchema: GetExportStatusInput,
+      outputSchema: JobOutput,
+      annotations: READ,
+    },
+    guardImages(async (a) => service.getExportStatus(a.job_id, a.wait_seconds)),
+  );
+
+  server.registerTool(
+    "cancel_export",
+    {
+      title: "Cancel export",
+      description:
+        "Cancels a queued or running export or preview job. Finished jobs are returned unchanged.",
+      inputSchema: CancelExportInput,
+      outputSchema: CancelExportOutput,
+      annotations: { ...WRITE, idempotentHint: true },
+    },
+    guard(async (a) => ({ ...service.cancelExport(a.job_id) })),
   );
 
   // Precise

@@ -51,7 +51,7 @@ Status:
 | Adjustment layer (effects apply to everything below)                                       | Adjustment layer | beta   |
 | Component instance (typed props, see §8)                                                   | MOGRT            | beta   |
 | Generator layer: built-in gradient, noise, pattern, aurora (ADR-0045; custom GLSL, see §8) | —                | beta   |
-| Audio layer (mixed into exports, carries beat markers)                                     | Audio            | beta   |
+| Audio layer (mixed into mp4 and webm exports, carries beat markers)                        | Audio            | beta   |
 | 3D compositing: 3D layers (Z), cameras, lights, depth                                      | 3D               | v1.x   |
 | 3D model layer (glTF / GLB), shader materials                                              | 3D models        | v1.x   |
 | Lottie import → editable layers (unsupported reported)                                     | —                | v1.x   |
@@ -59,6 +59,8 @@ Status:
 | Stable layer ids, human-readable names                                                     | —                | beta   |
 | Render switches: hidden, solo                                                              | Layer switches   | beta   |
 | Editor-only metadata: lock, shy, label color                                               | Layer switches   | beta   |
+
+Audio note: exports (mp4, webm) mix the audio layers of the exported composition (volume keyframes, in/out, solo and hidden respected, clipping reported); GIF has no sound; audio layers inside precomps are reported as dropped, not mixed yet (ADR-0048).
 
 Video note: frame-accurate decoding through `<video>` in Chromium isn't deterministic. Video assets are normalized to constant frame rate and decoded to frames with FFmpeg at upload, and the renderer draws those frames. Source frames map to composition frames with exact rational time (source fps / composition fps), never floating-point seconds. An embedded audio track is extracted into its own audio asset at upload. Limits and storage: ADR-0032 (frames as JPEG at most 1920 px and 60 fps, clips up to 60 s, audio as 48 kHz FLAC).
 
@@ -172,16 +174,16 @@ Code is a first-class way to build (ADR-0012, ADR-0036). **Scripts** run once at
 
 ## 9. Output
 
-| Capability                                 | Status |
-| ------------------------------------------ | ------ |
-| Preview frames (PNG), contact sheets       | beta   |
-| Short preview clips                        | beta   |
-| Export MP4 (H.264), WebM (VP9, alpha), GIF | beta   |
-| ProRes 4444 / PNG sequence with alpha      | later  |
-| Lottie export (subset)                     | later  |
-| Shareable preview links                    | beta   |
-| Share page: player, frame-pinned comments  | beta   |
-| In-chat player where the client renders UI | beta   |
+| Capability                                 | Status                 |
+| ------------------------------------------ | ---------------------- |
+| Preview frames (PNG), contact sheets       | beta                   |
+| Short preview clips (mp4 ≤ 10 s, 480 px)   | beta                   |
+| Export MP4 (H.264), WebM (VP9, alpha), GIF | beta (built, ADR-0048) |
+| ProRes 4444 / PNG sequence with alpha      | later                  |
+| Lottie export (subset)                     | later                  |
+| Shareable preview links                    | beta                   |
+| Share page: player, frame-pinned comments  | beta                   |
+| In-chat player where the client renders UI | beta                   |
 
 ## Determinism
 
@@ -211,21 +213,22 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 
 ### Tool groups (target)
 
-| Group    | Tools                                                                                                                                                                | Milestone |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                                      | M3        |
-| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome`, `get_layer_schema` | M3        |
-| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3        |
-| Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4        |
-| Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4        |
-| Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4        |
-| Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4        |
-| Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6        |
-| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6        |
-| Intent   | `sync_to_beats`                                                                                                                                                      | M7        |
-| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5        |
-| Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3        |
-| Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export`, `get_preview_link`                                                                            | M7        |
-| Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8        |
+| Group    | Tools                                                                                                                                                                | Milestone  |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Project  | `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`                                                                                      | M3         |
+| Read     | `get_scene` (summary/full), `get_layer`, `find_layers` (selector), `describe_motion` (timeline summary), `get_capabilities`, `get_write_outcome`, `get_layer_schema` | M3         |
+| Precise  | `apply_ops` (batch), `add_layer`, `update_layer`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `undo`, `redo`                                             | M3         |
+| Precise  | `add_behavior` (M4, ADR-0040), `add_effect` (with Effects)                                                                                                           | M4         |
+| Intent   | `animate`, `apply_preset`, `list_presets`, `stagger`, `retime` (ADR-0040; `dry_run` on each)                                                                         | M4         |
+| Intent   | `import_svg` (SVG text → one shape layer plus a fidelity report; `dry_run`; ADR-0043)                                                                                | M4         |
+| Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4         |
+| Intent   | `add_component`, `build_from_brief`                                                                                                                                  | M6         |
+| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | M6         |
+| Intent   | `sync_to_beats`                                                                                                                                                      | M7         |
+| Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |
+| Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3         |
+| Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export` (jobs; ADR-0048)                                                                               | M7 (built) |
+| Output   | `get_preview_link`                                                                                                                                                   | M7         |
+| Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8         |
 
 MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028); each catalog arrives with the milestone that creates its data (the preset catalog is live: `kynimo://presets` and `list_presets`, ADR-0040; the SDK declarations for scripts are `kynimo://sdk`, ADR-0041).

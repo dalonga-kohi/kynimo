@@ -217,6 +217,9 @@ class Recorder implements FrameRenderer {
   async sheet(): Promise<never> {
     throw new Error("not used");
   }
+  async openExport(): Promise<never> {
+    throw new Error("not used here");
+  }
   async close() {}
 }
 
@@ -236,6 +239,12 @@ class Counting implements MediaTools {
   }
   extractAudio(...args: Parameters<MediaTools["extractAudio"]>) {
     return this.inner.extractAudio(...args);
+  }
+  decodePcm(...args: Parameters<MediaTools["decodePcm"]>) {
+    return this.inner.decodePcm(...args);
+  }
+  encode(...args: Parameters<MediaTools["encode"]>) {
+    return this.inner.encode(...args);
   }
 }
 

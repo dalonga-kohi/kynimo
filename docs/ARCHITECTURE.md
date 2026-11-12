@@ -1,6 +1,6 @@
 # Kynimo — Architecture
 
-Status: scene format, engine, renderer, capture and the MCP server (M1–M3) are built as described; guidelines, components, workers and the web app are still direction. Each section firms up as the feature that needs it is built; decisions land as ADRs in [decisions/](decisions/).
+Status: scene format, engine, renderer, capture and the MCP server (M1–M3) are built as described; guidelines, components, separate render workers and the web app are still direction; exports run in-process in the MCP server (ADR-0048). Each section firms up as the feature that needs it is built; decisions land as ADRs in [decisions/](decisions/).
 
 ## System overview
 
@@ -66,7 +66,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 - v1: the scene is evaluated per frame and drawn in the browser: CanvasKit (Skia WASM) rasterizes shapes, images and text on the CPU, and our own **WebGL2** compositor runs blend modes, mattes, mask application, effects and shaders (ADR-0013, ADR-0016, ADR-0020); the **same code** runs in the web preview and in headless Chromium workers for frames and exports (ADR-0004). `@kynimo/capture` runs the whole pipeline in the pinned Chromium and returns PNGs with pixel hashes, optionally downscaled or tiled into a contact sheet (ADR-0022, ADR-0026). GPU drawing is required for shaders and, from v1.x, 3D compositing and glTF models.
 - Deterministic: bundled and uploaded fonts pinned by hash, with missing glyphs falling back only to bundled Noto Sans (ADR-0019), pre-decoded video, seeded randomness, no wall-clock time.
-- Encoding to MP4/WebM/GIF via FFmpeg in workers.
+- Export (ADR-0048): an export session in the capture page draws raw RGBA frames (repeated frames skipped) that are piped to FFmpeg for MP4/WebM/GIF; audio layers are mixed in TypeScript. For now this runs as an in-process job in the MCP server; separate workers come with deploy.
 
 ## Agent layer — `apps/mcp`
 
@@ -101,7 +101,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036, ADR-0041)                                                                 | M4         |
 | `packages/svg`        | `@kynimo/svg` — pure SVG-to-shape-layer converter with a fidelity report, behind `import_svg`                                                   | M4         |
 | `packages/components` | `@kynimo/components` — component model (typed props, style-aware host over the engine hook, ADR-0012), built-in library                         | M6         |
-| `apps/worker`         | render/export workers                                                                                                                           | M7         |
+| `apps/worker`         | render/export workers (exports run in-process in `apps/mcp` until deploy, ADR-0048)                                                             | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
 | `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9    |
 
@@ -120,7 +120,7 @@ See [AGENTS.md](../AGENTS.md#architecture-invariants-reviewers-block-on-these): 
 | Hosting for API/MCP and workers                                                                                    | M3 / M7   |
 | ~~Database for project store~~ → Postgres on `pg`, host-agnostic (ADR-0029)                                        | done      |
 | ~~Auth / OAuth provider~~ → external issuer, Kynimo as resource server; WorkOS AuthKit first (ADR-0033)            | done      |
-| Job queue                                                                                                          | M7        |
+| ~~Job queue~~ → in-process now, Postgres-backed with workers at deploy (ADR-0048)                                  | M7        |
 | MCP UI in chat clients: which clients render it, and how the player is delivered (ADR-0035)                        | M8        |
 | ~~Object storage for assets~~ → S3-compatible, Cloudflare R2 first, content-addressed (ADR-0031); CDN for previews | M7        |
 | ~~Web framework~~ → Next.js on Vercel (ADR-0007)                                                                   | done      |

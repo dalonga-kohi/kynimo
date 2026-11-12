@@ -1,10 +1,14 @@
+import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { AuthConfig } from "./auth.js";
 import { testIssuer } from "./auth.test-util.js";
+import { ExportFiles } from "./export-files.js";
 import { type Caller, createHttpHandler, type HttpOptions, remoteEnv } from "./http.js";
 import { createServer } from "./server.js";
 import { KynimoService, ServiceRuntime } from "./service.js";
@@ -254,5 +258,82 @@ describe("remoteEnv", () => {
     expect(() =>
       remoteEnv({ ...base, KYNIMO_ALLOWED_ORIGINS: "https://app.example.com/x" }),
     ).toThrow(/not an origin/);
+  });
+});
+
+describe("export downloads", () => {
+  let dir: string | undefined;
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  async function saved(format: "mp4" | "gif" = "mp4", body = "not really a video") {
+    dir = await mkdtemp(join(tmpdir(), "kynimo-test-http-exports-"));
+    const exports = await ExportFiles.open(join(dir, "exports"));
+    const source = join(dir, "out.tmp");
+    await writeFile(source, body);
+    const file = await exports.save(source, `j-${"ab".repeat(16)}`, format);
+    return { exports, file };
+  }
+
+  it("serves a file by its token with download headers, and HEAD without a body", async () => {
+    const { exports, file } = await saved();
+    const { base } = await start({ auth: false, exports });
+    const res = await fetch(`${base}/exports/${file.token}`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("not really a video");
+    expect(Object.fromEntries(res.headers)).toMatchObject({
+      "content-type": "video/mp4",
+      "content-length": "18",
+      "content-disposition": `attachment; filename="kynimo-j-${"ab".repeat(16)}.mp4"`,
+      "cache-control": "private, max-age=3600",
+      "x-content-type-options": "nosniff",
+    });
+    const head = await fetch(`${base}/exports/${file.token}`, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe("18");
+    expect(await head.text()).toBe("");
+    // Needs no sign-in: the token is the capability.
+    const withAuth = await start({ exports });
+    expect((await fetch(`${withAuth.base}/exports/${file.token}`)).status).toBe(200);
+  });
+
+  it("answers 404 for unknown or malformed tokens and 405 for other methods", async () => {
+    const { exports, file } = await saved("gif");
+    const { base } = await start({ auth: false, exports });
+    for (const path of [
+      `/exports/${"A".repeat(43)}`,
+      "/exports/short",
+      `/exports/${file.token}/x`,
+      "/exports/",
+    ]) {
+      const res = await fetch(`${base}${path}`);
+      expect([path, res.status]).toEqual([path, 404]);
+      expect(await res.json()).toEqual({ error: "not found" });
+    }
+    const post = await fetch(`${base}/exports/${file.token}`, { method: "POST", body: "x" });
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, HEAD");
+    expect((await fetch(`${base}/exports/${file.token}`)).headers.get("content-type")).toBe(
+      "image/gif",
+    );
+  });
+
+  it("answers 404, not a crash, when the file was removed underneath", async () => {
+    const { exports, file } = await saved();
+    const { base } = await start({ auth: false, exports });
+    await unlink(file.file);
+    const res = await fetch(`${base}/exports/${file.token}`);
+    expect(res.status).toBe(404);
+    // The server still answers.
+    expect((await fetch(`${base}/exports/${file.token}`, { method: "HEAD" })).status).toBe(404);
+  });
+
+  it("is a plain 404 when the server has no export storage", async () => {
+    const { exports, file } = await saved();
+    const { base } = await start({ auth: false });
+    expect((await fetch(`${base}/exports/${file.token}`)).status).toBe(404);
+    expect(exports.lookup(file.token)).toBeDefined();
   });
 });

@@ -59,10 +59,13 @@ describe("MCP server", () => {
       "animate",
       "apply_ops",
       "apply_preset",
+      "cancel_export",
       "create_project",
       "describe_motion",
+      "export",
       "find_layers",
       "get_capabilities",
+      "get_export_status",
       "get_layer",
       "get_layer_schema",
       "get_project",
@@ -77,6 +80,7 @@ describe("MCP server", () => {
       "redo",
       "render_contact_sheet",
       "render_frames",
+      "render_preview_clip",
       "retime",
       "run_script",
       "set_keyframes",
@@ -119,7 +123,8 @@ describe("MCP server", () => {
     // is an M8 item. Each new write tool lists the write fields and an output schema, ~1.8-2.5 KB.
     // 77_000 with import_svg (73.5 KB before it, 75.7 KB after): deviation from ADR-0035, last raise before M8 compaction.
     // 78_000 with the setGenerator op and the generator layer type (ADR-0045).
-    expect(JSON.stringify(tools).length).toBeLessThan(78_000);
+    // 89_000 with the export tools (ADR-0048): 77.4 KB before them, 88.3 KB after.
+    expect(JSON.stringify(tools).length).toBeLessThan(89_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

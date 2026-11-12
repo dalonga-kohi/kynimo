@@ -56,9 +56,38 @@ export type PageResponse =
   | { ok: true; sheet: PageSheet }
   | { ok: false; name: string; message: string };
 
+/** `openExport`: the document and assets of one export; the host serves the bytes at `/assets/<id>`. */
+export interface ExportRequest {
+  project: Project;
+  compositionId: string;
+  assets: string[];
+  maxSize: number | null;
+  alpha: "premultiplied" | "straight";
+}
+
+/** One export frame as the page returns it; `rgba` (base64) is null when `repeated`. */
+export interface ExportFrameHeader {
+  frame: number;
+  width: number;
+  height: number;
+  repeated: boolean;
+  skipped: SkippedLayer[];
+  warnings: RenderWarning[];
+}
+
+type PageError = { ok: false; name: string; message: string };
+
 /** What the page bundle defines as the global `KynimoCapture`. */
 export interface PageApi {
   /** Loads CanvasKit, the bundled fonts and the compositor; returns `UNMASKED_RENDERER_WEBGL`. */
   init(): Promise<string>;
   render(request: PageRequest): Promise<PageResponse>;
+  /** Opens the page's one export (replacing any earlier one). */
+  openExport(request: ExportRequest): Promise<{ ok: true } | PageError>;
+  /** Draws one frame of the open export. `videoFrameKeys` is every video frame it shows. */
+  exportFrame(
+    frame: number,
+    videoFrameKeys: string[],
+  ): Promise<(ExportFrameHeader & { rgba: string | null }) | PageError>;
+  closeExport(): void;
 }

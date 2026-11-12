@@ -57,7 +57,8 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   },
   audio: {
     status: "accepted",
-    reason: "frames have no sound; audio is mixed in at export, which arrives in M7",
+    reason:
+      "frames have no sound; audio layers of the exported composition are mixed into mp4 and webm exports",
   },
 };
 

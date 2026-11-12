@@ -40,6 +40,9 @@ class AssetRecorder implements FrameRenderer {
   async sheet(): Promise<never> {
     throw new Error("not used");
   }
+  async openExport(): Promise<never> {
+    throw new Error("not used here");
+  }
   async close() {}
 }
 

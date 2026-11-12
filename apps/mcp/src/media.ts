@@ -1,5 +1,10 @@
 import { execFile, spawn } from "node:child_process";
 import { dirname } from "node:path";
+import { decodePcm, type EncodeOptions, type Encoder, startEncode } from "./encode.js";
+import { detailOf, MediaError } from "./media-error.js";
+
+export type { EncodeOptions, Encoder };
+export { MediaError };
 
 /** What FFmpeg may read: the uploaded temp file only, through these container formats (ADR-0032). */
 const INPUT_FORMATS = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,wav,mp3,flac,ogg";
@@ -61,10 +66,10 @@ export interface MediaTools {
   ): Promise<number>;
   /** Extracts the first audio stream to 48 kHz stereo FLAC; returns its duration. */
   extractAudio(file: string, out: string, maxSeconds: number): Promise<{ durationMs: number }>;
-}
-
-export class MediaError extends Error {
-  override name = "MediaError";
+  /** Decodes a stored FLAC (48 kHz stereo) to interleaved f32le samples; fails once more than maxSamples frames (per channel) come out. */
+  decodePcm(flac: Uint8Array, maxSamples: number): Promise<Float32Array>;
+  /** Starts an encode; frames are written one raw RGBA at a time (premultiplied when flatten, straight otherwise). */
+  encode(o: EncodeOptions): Encoder;
 }
 
 interface FfmpegOptions {
@@ -361,18 +366,14 @@ export class Ffmpeg implements MediaTools {
     if (probed.durationMs <= 0) throw new MediaError("the audio track is empty");
     return { durationMs: probed.durationMs };
   }
-}
 
-/**
- * FFmpeg's last error lines, with the temp directory's path replaced so it never reaches a
- * client. `args` holds the paths FFmpeg was given.
- */
-function detailOf(stderr: string, args: readonly string[]): string {
-  let text = stderr.trim().split("\n").slice(-3).join("; ");
-  for (const a of args)
-    if (a.includes("kynimo-media-")) text = text.split(dirname(a)).join("<upload>");
-  text = text.slice(0, 500);
-  return text ? `: ${text}` : "";
+  decodePcm(flac: Uint8Array, maxSamples: number): Promise<Float32Array> {
+    return decodePcm(this.ffmpeg, flac, maxSamples, this.timeoutMs);
+  }
+
+  encode(o: EncodeOptions): Encoder {
+    return startEncode(this.ffmpeg, o);
+  }
 }
 
 /**
