@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has started with the component model (ADR-0046, no built-in components yet), while M5's rules and tools are still open. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-11):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has the component model and the five built-in components (ADR-0046, ADR-0047; `add_component` is next), while M5's rules and tools are still open. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It cannot yet export a video, apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -68,7 +68,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 ## M6 — Component library v1
 
 - [x] Component model (props schema, evaluate, style-aware) → ADR-0046: `@kynimo/components` with typed prop descriptors, `evaluate(props, ctx)` returning a validated subtree, an engine host hook, drawn by the renderer like a precomp
-- [ ] First components: kinetic type, logo reveal, lower third, transition set, background
+- [x] First components: kinetic type, logo reveal, lower third, transition set, background → ADR-0047: five built-ins on one shared enter/exit envelope, style-aware, with text-layout estimates in place of font metrics, a cover-transition set and a looping background
 - [ ] `add_component` + `build_from_brief`
 - [ ] Sandbox for custom components (spike → decision ADR): can the QuickJS sandbox chosen for scripts (ADR-0036) evaluate component code per frame, in the browser, fast enough
 - [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012); component and shader catalogs as MCP resources

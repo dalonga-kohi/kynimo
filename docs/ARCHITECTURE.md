@@ -60,7 +60,7 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 - Typed props schema + defaults + a deterministic `evaluate(props, frame, style) → layer subtree` function.
 - Components read the active guideline, so the same component looks right in every style.
-- Built-in library first. **Code authoring** (ADR-0012): agents and users write custom components in TypeScript and shaders in GLSL, submitted over MCP (`define_component`, `define_shader`). Definitions are validated, versioned, content-hashed and stored per project; documents pin them by id + version. Component code runs in a sandbox with no host, filesystem, network, secret, clock or unseeded random access; shaders see only `frame`, resolution and declared uniforms.
+- Built-in library first (kinetic type, lower third, logo reveal, transitions and backgrounds, ADR-0047). **Code authoring** (ADR-0012): agents and users write custom components in TypeScript and shaders in GLSL, submitted over MCP (`define_component`, `define_shader`). Definitions are validated, versioned, content-hashed and stored per project; documents pin them by id + version. Component code runs in a sandbox with no host, filesystem, network, secret, clock or unseeded random access; shaders see only `frame`, resolution and declared uniforms.
 
 ### 4. Renderer — `@kynimo/renderer`
 
