@@ -646,6 +646,38 @@ describe("render tools with the capture renderer", () => {
     const repinned =
       images(await call("render_frames", { project_id, frames: [0] }))[0]?.data ?? "";
     expect(decodePng(repinned).at(32, 32)).toEqual([0, 255, 0, 255]);
+
+    await call("apply_ops", {
+      project_id,
+      base_version: 4,
+      idempotency_key: "project-and-blur",
+      ops: [
+        { op: "updateLayer", layer: "source", set: { threeD: true, motionBlur: { samples: 2 } } },
+        {
+          op: "setTransformTrack",
+          layer: "source",
+          property: "anchorPoint",
+          track: { value: [32, 32] },
+        },
+        { op: "setTransformTrack", layer: "source", property: "rotationY", track: { value: 50 } },
+        {
+          op: "setTransformTrack",
+          layer: "source",
+          property: "position",
+          track: {
+            keyframes: [
+              { frame: 0, value: [26, 32], interpolation: { type: "linear" } },
+              { frame: 8, value: [38, 32], interpolation: { type: "linear" } },
+            ],
+          },
+        },
+      ],
+    });
+    const projected = decodePng(
+      images(await call("render_frames", { project_id, frames: [4] }))[0]?.data ?? "",
+    );
+    expect(projected.at(32, 32)).toEqual([0, 255, 0, 255]);
+    expect(projected.at(1, 1)).toEqual([0, 0, 0, 0]);
   }, 60_000);
 
   it("returns downscaled PNG frames and caches by document", async () => {

@@ -43,7 +43,7 @@ export function* shaderBindings(doc: Project): Generator<{
       const path = ["compositions", c, "layers", l];
       if (layer.type === "generator" && layer.generator.type === "custom-shader")
         yield { instance: layer.generator, kind: "generator", path: [...path, "generator"] };
-      if (layer.type === "audio" || layer.type === "null") continue;
+      if (layer.type === "audio" || layer.type === "null" || layer.type === "camera") continue;
       for (const [e, effect] of layer.effects.entries())
         if (effect.type === "custom-shader")
           yield { instance: effect, kind: "effect", path: [...path, "effects", e] };
