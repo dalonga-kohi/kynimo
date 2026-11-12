@@ -182,6 +182,56 @@ describe("render tools with the capture renderer", () => {
     expect(end).toBe(graded);
   }, 60_000);
 
+  it("blurs a moving solid with updateLayer motionBlur and leaves a still one alone", async () => {
+    const created = await call("create_project", {
+      name: "Blur",
+      idempotency_key: "blur",
+      width: 96,
+      height: 64,
+      duration_frames: 30,
+      background: null,
+    });
+    const project_id = created.structuredContent?.id as string;
+    const meta = (base_version: number, idempotency_key: string) => ({
+      project_id,
+      base_version,
+      idempotency_key,
+    });
+    const render = async () => {
+      const result = await call("render_frames", { project_id, frames: [10] });
+      return images(result)[0]?.data ?? "";
+    };
+    await call("add_layer", {
+      ...meta(1, "box"),
+      id: "box",
+      composition: "main",
+      layer: { type: "solid", name: "Box", width: 16, height: 16, color: "#ff0000" },
+    });
+    await call("set_keyframes", {
+      ...meta(2, "move"),
+      layer: "box",
+      property: "position",
+      track: {
+        keyframes: [
+          { frame: 0, value: [8, 32], interpolation: { type: "linear" } },
+          { frame: 20, value: [88, 32], interpolation: { type: "linear" } },
+        ],
+      },
+    });
+    const sharp = await render();
+    await call("apply_ops", {
+      ...meta(3, "blur"),
+      ops: [{ op: "updateLayer", layer: "box", set: { motionBlur: { shutterAngle: 360 } } }],
+    });
+    const blurred = await render();
+    expect(blurred).not.toBe(sharp);
+    await call("apply_ops", {
+      ...meta(4, "off"),
+      ops: [{ op: "updateLayer", layer: "box", set: { motionBlur: null } }],
+    });
+    expect(await render()).toBe(sharp);
+  }, 60_000);
+
   it("renders a generator layer and a vignette look end to end", async () => {
     const created = await call("create_project", {
       name: "Generators",

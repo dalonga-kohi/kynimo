@@ -106,6 +106,21 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   three_d: unavailable("3D layers, cameras and lights are planned after the beta"),
 };
 
+/** Motion blur (ADR-0053). */
+const MOTION_BLUR_SUPPORT: { transform: Support } = {
+  transform: {
+    status: "renders",
+    note: "set with updateLayer motionBlur on drawn layers; blurs position, scale, rotation, parents and behaviors; animated contents (text, shapes, nested layers) are drawn at the center frame; cost grows with samples",
+  },
+};
+
+/** The scene schema's bounds (a test keeps them in step) and defaults. */
+const MOTION_BLUR_LIMITS = {
+  shutterAngle: { min: 0, max: 720, default: 180 },
+  shutterPhase: { min: -360, max: 360, default: -90 },
+  samples: { min: 2, max: 64, default: 16 },
+} as const;
+
 const STATUSES = {
   renders:
     "handled in rendered frames (a note says when that means drawing nothing, as for null layers)",
@@ -153,12 +168,14 @@ export function capabilityManifest(server: { name: string; version: string }) {
       behaviors: BEHAVIOR_SUPPORT,
       effects: EFFECT_SUPPORT,
       generators: GENERATOR_SUPPORT,
+      motion_blur: MOTION_BLUR_SUPPORT,
     },
     limits: {
       text_animators: TEXT_ANIMATOR_LIMITS,
       behaviors: BEHAVIOR_LIMITS,
       effects: { ...EFFECT_LIMITS, ...LOOK_LIMITS },
       generators: GENERATOR_LIMITS,
+      motion_blur: MOTION_BLUR_LIMITS,
     },
     assets: ASSET_SUPPORT,
     render: {

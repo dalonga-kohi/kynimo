@@ -8,6 +8,7 @@ import {
   MAX_BATCH_OPS,
   MAX_BEHAVIORS,
   MAX_EFFECTS,
+  MotionBlurSchema,
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
@@ -120,6 +121,27 @@ describe("capability manifest", () => {
     expect(manifest.unavailable).not.toHaveProperty("effects");
   });
 
+  it("lists transform motion blur as rendering, with the schema's bounds", () => {
+    expect(manifest.features.motion_blur.transform.status).toBe("renders");
+    expect(manifest.limits.motion_blur).toEqual({
+      shutterAngle: { min: 0, max: 720, default: 180 },
+      shutterPhase: { min: -360, max: 360, default: -90 },
+      samples: { min: 2, max: 64, default: 16 },
+    });
+    const { shutterAngle, shutterPhase, samples } = manifest.limits.motion_blur;
+    expect(MotionBlurSchema.parse({})).toEqual({
+      shutterAngle: shutterAngle.default,
+      shutterPhase: shutterPhase.default,
+      samples: samples.default,
+    });
+    for (const [key, limit] of Object.entries({ shutterAngle, shutterPhase, samples })) {
+      expect(MotionBlurSchema.safeParse({ [key]: limit.min }).success, key).toBe(true);
+      expect(MotionBlurSchema.safeParse({ [key]: limit.max }).success, key).toBe(true);
+      expect(MotionBlurSchema.safeParse({ [key]: limit.min - 1 }).success, key).toBe(false);
+      expect(MotionBlurSchema.safeParse({ [key]: limit.max + 1 }).success, key).toBe(false);
+    }
+  });
+
   it("lists every generator kind, the looks and their limits, and keeps custom shaders unavailable", () => {
     expect(sorted(Object.keys(manifest.features.generators))).toEqual(
       sorted(GeneratorSchema.options.map((option) => option.shape.type.value)),
@@ -183,6 +205,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(10_000); // 9_000 before the export block (ADR-0048)
+    expect(JSON.stringify(manifest).length).toBeLessThan(10_500); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053)
   });
 });
