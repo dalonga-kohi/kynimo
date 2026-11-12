@@ -6,7 +6,7 @@ export interface DetectedBeats {
   timesMs: number[];
 }
 
-/** Bounds of the detector (ADR-0049). A tempo outside min/max bpm, or a weak pulse, yields no beats. */
+/** Bounds of the detector (ADR-0052). A tempo outside min/max bpm, or a weak pulse, yields no beats. */
 export const BEAT_LIMITS = {
   maxSeconds: 61,
   minBpm: 50,

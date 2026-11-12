@@ -30,7 +30,7 @@
  *
  * 9: built-in shader generators and looks (ADR-0045).
  *
- * 10: beats detected at upload on audio assets (ADR-0049). The field is optional, so the step from 9 changes nothing.
+ * 10: beats detected at upload on audio assets (ADR-0052). The field is optional, so the step from 9 changes nothing.
  *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1

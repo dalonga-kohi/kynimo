@@ -868,4 +868,210 @@ describe("intent tools", () => {
       expect(await ids()).toEqual(expect.arrayContaining(["svg"]));
     });
   });
+
+  describe("beat tools", () => {
+    const BEATS = {
+      bpm: 120,
+      confidence: 0.8,
+      timesMs: [500, 1000, 1500, 2000, 2500, 3000, 3500],
+    };
+    /** Beats land on frames 15, 30, ..., 105 at 30 fps. */
+    const LINEAR = { type: "linear" };
+    const BEAT_FRAMES = [15, 30, 45, 60, 75, 90, 105];
+
+    /** Version 6: an audio asset with beats, the audio layer `song`, and solid `k` with opacity keys. */
+    beforeEach(async () => {
+      await call(client, "apply_ops", {
+        ...meta(3, "song-asset"),
+        ops: [
+          {
+            op: "addAsset",
+            id: "song",
+            asset: {
+              type: "audio",
+              name: "song",
+              uri: "assets/song.flac",
+              sha256: "1".repeat(64),
+              durationMs: 4000,
+              beats: BEATS,
+            },
+          },
+        ],
+      });
+      await call(client, "add_layer", {
+        ...meta(4, "song-layer"),
+        composition: "main",
+        id: "song",
+        layer: { type: "audio", name: "song", assetId: "song" },
+      });
+      await call(client, "add_layer", {
+        ...meta(5, "k-layer"),
+        composition: "main",
+        id: "k",
+        layer: {
+          type: "solid",
+          name: "k",
+          width: 100,
+          height: 100,
+          color: "#ffffff",
+          transform: {
+            opacity: {
+              keyframes: [
+                { frame: 13, value: 0, interpolation: LINEAR },
+                { frame: 32, value: 1, interpolation: LINEAR },
+                { frame: 100, value: 0.5, interpolation: LINEAR },
+              ],
+            },
+          },
+        },
+      });
+    });
+
+    const markers = async (id: string) =>
+      (
+        (await call(client, "get_layer", { project_id, layer: id })) as {
+          layer: { markers: { frame: number; name: string; durationFrames: number }[] };
+        }
+      ).layer.markers;
+    const keyFrames = async (id: string) =>
+      ((await opacityTrack(id)) as { keyframes: { frame: number }[] }).keyframes.map(
+        (k) => k.frame,
+      );
+    const mark = (key: string, extra: Structured = {}, v = 6) =>
+      call(client, "mark_beats", { ...meta(v, key), layer: "song", ...extra });
+
+    it("marks the asset's beats, without echoing the ops", async () => {
+      const r = await mark("m1");
+      expect(r).toMatchObject({
+        version: 7,
+        changed: true,
+        resolved: { layer_id: "song", source: "asset", bpm: 120, beat_count: 7, removed: 0 },
+      });
+      expect(r.ops).toBeUndefined();
+      const found = await markers("song");
+      expect(found.map((m) => m.frame)).toEqual(BEAT_FRAMES);
+      expect(found.map((m) => m.name)).toEqual([1, 2, 3, 4, 5, 6, 7].map((n) => `beat ${n}`));
+    });
+
+    it("marks a bpm grid, and replace clears the old markers first", async () => {
+      await mark("m1", { grid: { bpm: 60, first_beat_frame: 10, count: 3 } });
+      expect((await markers("song")).map((m) => m.frame)).toEqual([10, 40, 70]);
+      const refused = await callError(client, "mark_beats", {
+        ...meta(7, "m2"),
+        layer: "song",
+      });
+      expect(refused).toMatchObject({ error: "invalid", errors: [{ path: ["replace"] }] });
+      const again = await mark("m3", { replace: true }, 7);
+      expect(again).toMatchObject({ version: 8, resolved: { source: "asset", removed: 3 } });
+      expect((await markers("song")).map((m) => m.frame)).toEqual(BEAT_FRAMES);
+    });
+
+    it("dry_run leaves the version unchanged and a replay doesn't write again", async () => {
+      const dry = await mark("m1", { dry_run: true });
+      expect(dry).toMatchObject({ dry_run: true, version: 6, changed: true });
+      expect(await version()).toBe(6);
+      expect(await markers("song")).toEqual([]);
+      const first = await mark("m2");
+      const again = await mark("m2");
+      expect(again).toMatchObject({ version: 7, replayed: true });
+      expect(first).toMatchObject({ replayed: false });
+      expect(await version()).toBe(7);
+      expect(await markers("song")).toHaveLength(7);
+    });
+
+    it("refuses a layer that isn't audio, and an asset without beats, pointing at the field", async () => {
+      const notAudio = await callError(client, "mark_beats", {
+        ...meta(6, "m1"),
+        layer: "a",
+      });
+      expect(notAudio).toMatchObject({ error: "invalid", errors: [{ path: ["layer"] }] });
+      expect(await version()).toBe(6);
+      await mark("m2", { grid: { bpm: 120, first_beat_frame: 0, count: 1 } });
+      await call(client, "apply_ops", {
+        ...meta(7, "bare"),
+        ops: [
+          {
+            op: "addAsset",
+            id: "bare",
+            asset: {
+              type: "audio",
+              name: "bare",
+              uri: "assets/bare.flac",
+              sha256: "2".repeat(64),
+              durationMs: 4000,
+            },
+          },
+        ],
+      });
+      await call(client, "add_layer", {
+        ...meta(8, "bare-layer"),
+        composition: "main",
+        id: "bare",
+        layer: { type: "audio", name: "bare", assetId: "bare" },
+      });
+      const none = await callError(client, "mark_beats", { ...meta(9, "m3"), layer: "bare" });
+      expect(none).toMatchObject({ error: "invalid", errors: [{ path: ["grid"] }] });
+      expect(await version()).toBe(9);
+    });
+
+    it("sync_to_beats snaps keyframes to the nearest beat", async () => {
+      await mark("m1");
+      const r = await call(client, "sync_to_beats", {
+        ...meta(7, "s1"),
+        layers: "k",
+        audio_layer: "song",
+      });
+      expect(r).toMatchObject({
+        version: 8,
+        changed: true,
+        layers_changed: ["k"],
+        resolved: { audio_layer_id: "song", beat_count: 7, keyframes_moved: 3, cuts_moved: 0 },
+      });
+      expect(r.ops).toBeDefined();
+      expect(await keyFrames("k")).toEqual([15, 30, 105]);
+    });
+
+    it("sync_to_beats slides a cut onto a beat and honors every", async () => {
+      await mark("m1");
+      await call(client, "update_layer", {
+        ...meta(7, "u1"),
+        layer: "k",
+        set: { inFrame: 28, outFrame: 100, startFrame: 28 },
+      });
+      const r = await call(client, "sync_to_beats", {
+        ...meta(8, "s1"),
+        layers: "k",
+        audio_layer: "song",
+        snap: ["cuts"],
+        every: 2,
+        max_distance: 20,
+      });
+      // Every 2nd beat: 15, 45, 75, 105; 28 is 13 from 15 and 17 from 45, so the layer slides to 15.
+      expect(r).toMatchObject({ resolved: { cuts_moved: 1, keyframes_moved: 0, beat_count: 4 } });
+      const layer = (await call(client, "get_layer", { project_id, layer: "k" })) as {
+        layer: { inFrame: number; outFrame: number; startFrame: number };
+      };
+      expect(layer.layer).toMatchObject({ inFrame: 15, outFrame: 87, startFrame: 15 });
+    });
+
+    it("sync_to_beats needs beat markers, and dry_run and replay behave", async () => {
+      const none = await callError(client, "sync_to_beats", {
+        ...meta(6, "s0"),
+        layers: "k",
+        audio_layer: "song",
+      });
+      expect(none).toMatchObject({ error: "invalid", errors: [{ path: ["audio_layer"] }] });
+      expect(await version()).toBe(6);
+
+      await mark("m1");
+      const args = { ...meta(7, "s1"), layers: "k", audio_layer: "song" };
+      const dry = await call(client, "sync_to_beats", { ...args, dry_run: true });
+      expect(dry).toMatchObject({ dry_run: true, version: 7, changed: true });
+      expect(await keyFrames("k")).toEqual([13, 32, 100]);
+      await call(client, "sync_to_beats", args);
+      const again = await call(client, "sync_to_beats", args);
+      expect(again).toMatchObject({ replayed: true, version: 8 });
+      expect(await version()).toBe(8);
+    });
+  });
 });

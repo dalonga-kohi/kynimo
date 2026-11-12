@@ -79,6 +79,7 @@ describe("MCP server", () => {
       "list_components",
       "list_presets",
       "list_projects",
+      "mark_beats",
       "precompose",
       "redo",
       "render_contact_sheet",
@@ -89,6 +90,7 @@ describe("MCP server", () => {
       "set_keyframes",
       "set_matte",
       "stagger",
+      "sync_to_beats",
       "undo",
       "update_layer",
       "upload_asset",
@@ -100,6 +102,8 @@ describe("MCP server", () => {
       "build_from_brief",
       "stagger",
       "retime",
+      "mark_beats",
+      "sync_to_beats",
       "run_script",
       "add_behavior",
       "add_component",
@@ -131,7 +135,8 @@ describe("MCP server", () => {
     // 89_000 with the export tools (ADR-0048): 77.4 KB before them, 88.3 KB after.
     // 92_000 with component placement and discovery (ADR-0049): 91.7 KB after both.
     // 97_000 with the structured storyboard tool (ADR-0050).
-    expect(JSON.stringify(tools).length).toBeLessThan(97_000);
+    // 101_000 with the beat tools (ADR-0052): 96.1 KB before, 100.9 KB after.
+    expect(JSON.stringify(tools).length).toBeLessThan(101_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

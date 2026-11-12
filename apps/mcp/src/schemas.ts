@@ -2,8 +2,10 @@ import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
   EasingInput,
+  MarkBeatsInputSchema,
   RetimeInputSchema,
   StaggerInputSchema,
+  SyncToBeatsInputSchema,
 } from "@kynimo/intent";
 import {
   AssetIdSchema,
@@ -410,6 +412,30 @@ export const StaggerToolInput = StaggerInputSchema.omit({ layers: true })
   .strip();
 
 export const RetimeToolInput = RetimeInputSchema.omit({ layers: true })
+  .extend({ ...intentMeta, layers: Targets })
+  .strip();
+
+export const MarkBeatsToolInput = MarkBeatsInputSchema.extend({
+  ...intentMeta,
+  layer: LayerSelectorSchema.describe("The audio layer (id or selector matching one)."),
+  grid: z
+    .strictObject({
+      bpm: z.number().min(20).max(400),
+      first_beat_frame: z.number().int().describe("Composition frame of the first beat."),
+      count: z
+        .number()
+        .int()
+        .positive()
+        .max(1000)
+        .optional()
+        .describe("At most this many beats, counted from first_beat_frame."),
+    })
+    .optional()
+    .describe("A bpm grid instead of the asset's detected beats."),
+  replace: z.boolean().optional().describe("Remove the layer's markers first."),
+}).strip();
+
+export const SyncToBeatsToolInput = SyncToBeatsInputSchema.omit({ layers: true })
   .extend({ ...intentMeta, layers: Targets })
   .strip();
 
@@ -1025,6 +1051,8 @@ export const ListAssetsOutput = z.looseObject({
       name: z.string(),
       type: z.string(),
       sha256: z.string(),
+      bpm: z.number().optional(),
+      beat_count: z.number().int().optional(),
       used_by: z.array(z.string()),
     }),
   ),

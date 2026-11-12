@@ -20,7 +20,7 @@ const base = {
   sha256: z.string().regex(/^[0-9a-f]{64}$/, "must be a lowercase hex SHA-256"),
 };
 
-/** Most beats an audio asset stores (ADR-0049). */
+/** Most beats an audio asset stores (ADR-0052). */
 export const MAX_BEATS = 1000;
 
 const AudioBeatsSchema = z.strictObject({
@@ -34,7 +34,7 @@ const audioShape = z.strictObject({
   ...base,
   type: z.literal("audio"),
   durationMs: z.number().int().positive(),
-  /** Beats detected at upload (ADR-0049). Absent: uploaded before format 10, or no steady beat found. */
+  /** Beats detected at upload (ADR-0052). Absent: uploaded before format 10, or no steady beat found. */
   beats: AudioBeatsSchema.optional(),
 });
 

@@ -112,3 +112,43 @@ export function makeTone(seconds: number, format: "wav" | "mp3" = "wav"): Uint8A
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+/** Interleaved stereo f32 at 48 kHz: a 1 kHz click on every beat of a steady tempo, silence between. */
+export function clickPcm(bpm: number, seconds: number, offsetMs = 250): Float32Array {
+  const rate = 48_000;
+  const frames = Math.round(seconds * rate);
+  const pcm = new Float32Array(frames * 2);
+  const period = 60_000 / bpm;
+  for (let ms = offsetMs; ms < seconds * 1000 - 50; ms += period) {
+    const start = Math.round((ms * rate) / 1000);
+    for (let i = 0; i < 960 && start + i < frames; i++) {
+      const t = i / rate;
+      const v = 0.8 * Math.sin(2 * Math.PI * 1000 * t) * Math.exp(-t / 0.005);
+      pcm[(start + i) * 2] = v;
+      pcm[(start + i) * 2 + 1] = v;
+    }
+  }
+  return pcm;
+}
+
+/** A 16-bit stereo 48 kHz PCM WAV of {@link clickPcm}, with a hand-written header. */
+export function clickWav(bpm: number, seconds: number): Uint8Array {
+  const pcm = clickPcm(bpm, seconds);
+  const data = Buffer.alloc(pcm.length * 2);
+  for (let i = 0; i < pcm.length; i++)
+    data.writeInt16LE(Math.round((pcm[i] as number) * 32767), i * 2);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "latin1");
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write("WAVEfmt ", 8, "latin1");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(2, 22);
+  header.writeUInt32LE(48_000, 24);
+  header.writeUInt32LE(48_000 * 4, 28);
+  header.writeUInt16LE(4, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36, "latin1");
+  header.writeUInt32LE(data.length, 40);
+  return new Uint8Array(Buffer.concat([header, data]));
+}
