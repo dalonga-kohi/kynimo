@@ -1,10 +1,11 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { base64, hasFfmpeg, interTtf, makeClip, solidPng } from "./assets.test-util.js";
-import { MemoryBlobStore } from "./blobs.js";
+import { blobKey, MemoryBlobStore } from "./blobs.js";
 import { Ffmpeg } from "./media.js";
 import { CaptureRenderer } from "./render.js";
 import { createServer } from "./server.js";
@@ -165,6 +166,54 @@ describe("uploaded assets in rendered frames", () => {
     const brand = await frame0(uploaded);
     expect(brand).toMatchObject({ skipped: [], warnings: [] });
     expect(brand.pixels).toBe((await frame0(bundled)).pixels);
+  }, 60_000);
+
+  it("renders a video shot at its trim offset through the storyboard tool", async () => {
+    const project_id = await project("storyboard-video");
+    const jpeg = new Uint8Array(
+      readFileSync(new URL("./fixtures/rotated-40x20-orientation-6.jpg", import.meta.url)),
+    );
+    const frameHash = createHash("sha256").update(jpeg).digest("hex");
+    // Only source frame 1 exists. Loading source frame 0 would fail the render.
+    await blobs.put(blobKey(frameHash, "jpg"), jpeg, "image/jpeg");
+    const manifest = new TextEncoder().encode(
+      JSON.stringify({ frames: ["0".repeat(64), frameHash] }),
+    );
+    const sha256 = createHash("sha256").update(manifest).digest("hex");
+    const uri = blobKey(sha256, "json");
+    await blobs.put(uri, manifest, "application/json");
+    await call("apply_ops", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "storyboard-clip",
+      ops: [
+        {
+          op: "addAsset",
+          id: "clip",
+          asset: {
+            type: "video",
+            name: "Clip",
+            width: 20,
+            height: 40,
+            fps: { num: 30, den: 1 },
+            frameCount: 2,
+            sha256,
+            uri,
+          },
+        },
+      ],
+    });
+    const empty = await frame0(project_id);
+    await call("build_from_brief", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "storyboard-video",
+      background: "transparent",
+      shots: [{ type: "video", asset_id: "clip", duration_frames: 1, source_offset_frames: 1 }],
+    });
+    const rendered = await frame0(project_id);
+    expect(rendered).toMatchObject({ skipped: [], warnings: [] });
+    expect(rendered.pixels).not.toBe(empty.pixels);
   }, 60_000);
 
   it.runIf(hasFfmpeg || process.env.CI !== undefined)(

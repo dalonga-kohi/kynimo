@@ -60,6 +60,7 @@ describe("MCP server", () => {
       "animate",
       "apply_ops",
       "apply_preset",
+      "build_from_brief",
       "cancel_export",
       "create_project",
       "describe_motion",
@@ -96,6 +97,7 @@ describe("MCP server", () => {
     const writes = [
       "animate",
       "apply_preset",
+      "build_from_brief",
       "stagger",
       "retime",
       "run_script",
@@ -128,7 +130,8 @@ describe("MCP server", () => {
     // 78_000 with the setGenerator op and the generator layer type (ADR-0045).
     // 89_000 with the export tools (ADR-0048): 77.4 KB before them, 88.3 KB after.
     // 92_000 with component placement and discovery (ADR-0049): 91.7 KB after both.
-    expect(JSON.stringify(tools).length).toBeLessThan(92_000);
+    // 97_000 with the structured storyboard tool (ADR-0050).
+    expect(JSON.stringify(tools).length).toBeLessThan(97_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

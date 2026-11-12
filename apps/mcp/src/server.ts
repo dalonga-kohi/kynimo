@@ -22,6 +22,7 @@ import { sdkDeclarations } from "@kynimo/script";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { buildFromBriefExpansion } from "./build-from-brief.js";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
 import { addComponentExpansion, componentCatalog } from "./components.js";
 import { importSvgExpansion } from "./import-svg.js";
@@ -38,6 +39,8 @@ import {
   AnimateToolInput,
   ApplyOpsInput,
   ApplyPresetToolInput,
+  BuildFromBriefInput,
+  BuildFromBriefRequest,
   CancelExportInput,
   CancelExportOutput,
   CreateProjectInput,
@@ -97,6 +100,7 @@ Call get_capabilities once: it says what this build draws, what it accepts but l
 Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
 Use list_components or kynimo://components to discover built-ins and their props. add_component places a version-pinned instance; use dry_run to validate placement and props first.
+Use build_from_brief to assemble a storyboard of headline, logo, image and video shots in one write. Translate the user's brief into the shot fields first. Use dry_run to check timing and assets, then render a contact sheet.
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
@@ -660,6 +664,15 @@ export function createServer(service: KynimoService): McpServer {
     AddComponentInput,
     AddComponentRequest,
     addComponentExpansion,
+  );
+
+  intentTool(
+    "build_from_brief",
+    "Build from brief",
+    "Assembles an ordered storyboard in an existing composition as one undoable write. Upload media first. Supply shot durations in composition frames; dry_run previews the layers and cut times.",
+    BuildFromBriefInput,
+    BuildFromBriefRequest,
+    buildFromBriefExpansion,
   );
 
   intentTool(
