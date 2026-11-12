@@ -46,6 +46,7 @@ describe("component registry", () => {
     const ids = builtInRegistry.list().map((d) => d.id);
     expect(ids).toContain("kinetic-type");
     expect(ids).toContain("lower-third");
+    expect(ids).toEqual(expect.arrayContaining(["logo-reveal", "transition", "background"]));
   });
 
   it("describes every built-in component and every prop", () => {

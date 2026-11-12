@@ -3,7 +3,10 @@ import {
   type Animatable,
   AssetIdSchema,
   type BezierPath,
+  type BlendMode,
   type Color,
+  type Effect,
+  EffectIdSchema,
   type Generator,
   type Interpolation,
   type Keyframe,
@@ -110,6 +113,8 @@ export interface LayerOptions {
   span: number;
   transform?: Partial<Transform>;
   masks?: Mask[];
+  effects?: Effect[];
+  blendMode?: BlendMode;
   name?: string;
 }
 
@@ -127,10 +132,10 @@ function base(o: LayerOptions) {
     parent: null,
     transform: transform(o.transform),
     behaviors: [],
-    blendMode: "normal" as const,
+    blendMode: o.blendMode ?? ("normal" as const),
     matte: null,
     masks: o.masks ?? [],
-    effects: [],
+    effects: o.effects ?? [],
   };
 }
 
@@ -337,18 +342,127 @@ export function trimItem(
   };
 }
 
+/** A closed ellipse path centered on (`cx`, `cy`) with four vertices, so its radii can be animated. */
+export function ellipsePath(cx: number, cy: number, rx: number, ry: number): BezierPath {
+  const k = 0.5522847498307936;
+  const v = (x: number, y: number, tx: number, ty: number) => ({
+    point: vec(cx + x, cy + y),
+    inTangent: vec(-tx, -ty),
+    outTangent: vec(tx, ty),
+  });
+  return {
+    closed: true,
+    vertices: [
+      v(0, -ry, k * rx, 0),
+      v(rx, 0, 0, k * ry),
+      v(0, ry, -k * rx, 0),
+      v(-rx, 0, 0, -k * ry),
+    ],
+  };
+}
+
 /** A rectangular mask (add mode) whose path may be animated. */
 export function rectMask(id: string, path: Animatable<BezierPath>): Mask {
+  return pathMask(id, path, "add");
+}
+
+/** A mask of any mode whose path may be animated (all keyframes need the same vertex count). */
+export function pathMask(id: string, path: Animatable<BezierPath>, mode: Mask["mode"]): Mask {
   return {
     id: MaskIdSchema.parse(id),
     name: id,
-    mode: "add",
+    mode,
     inverted: false,
     path,
     feather: still<[number, number]>([0, 0]),
     opacity: still(1),
     expansion: still(0),
   };
+}
+
+// --- effects ---------------------------------------------------------------------------------
+
+const effectId = (id: string) => EffectIdSchema.parse(id);
+
+export function blurEffect(id: string, radius: number | Animatable<number>): Effect {
+  return { id: effectId(id), type: "gaussian-blur", radius: track(radius) };
+}
+
+export function glowEffect(
+  id: string,
+  o: { radius: number; color: Color; intensity: number },
+): Effect {
+  return {
+    id: effectId(id),
+    type: "glow",
+    radius: still(round3(o.radius)),
+    color: still(o.color),
+    intensity: still(o.intensity),
+  };
+}
+
+export function aberrationEffect(id: string, amount: number | Animatable<number>): Effect {
+  return { id: effectId(id), type: "chromatic-aberration", amount: track(amount) };
+}
+
+export function vignetteEffect(
+  id: string,
+  o: { amount: number; radius: number; feather: number; color: Color },
+): Effect {
+  return {
+    id: effectId(id),
+    type: "vignette",
+    amount: still(o.amount),
+    radius: still(o.radius),
+    feather: still(o.feather),
+    color: still(o.color),
+  };
+}
+
+export function grainEffect(
+  id: string,
+  o: { amount: number; size: number; seed: number; animated: boolean; monochrome: boolean },
+): Effect {
+  return {
+    id: effectId(id),
+    type: "grain",
+    amount: still(o.amount),
+    size: o.size,
+    seed: o.seed,
+    animated: o.animated,
+    monochrome: o.monochrome,
+  };
+}
+
+export function scanlinesEffect(
+  id: string,
+  o: { amount: number; spacing: number; thickness: number; color: Color },
+): Effect {
+  return {
+    id: effectId(id),
+    type: "scanlines",
+    amount: still(o.amount),
+    spacing: still(o.spacing),
+    thickness: still(o.thickness),
+    offset: still(0),
+    color: still(o.color),
+  };
+}
+
+// --- text layout -----------------------------------------------------------------------------
+
+/**
+ * The baseline of a block of `lines` lines of text of `fontSize` px whose middle is at `middleY`.
+ * There are no font metrics here, so this is an estimate: the first baseline sits 0.35 em below the
+ * middle of a single line, moved up by half the extra lines.
+ */
+export function textBaseline(
+  middleY: number,
+  fontSize: number,
+  lines: number,
+  leading: number,
+): number {
+  return middleY + 0.35 * fontSize - ((lines - 1) * leading * fontSize) / 2;
 }
 
 // --- timing ----------------------------------------------------------------------------------
@@ -445,14 +559,14 @@ export function exitOnly<T>(
 export const SPEEDS = ["fast", "base", "slow"] as const;
 export type Speed = (typeof SPEEDS)[number];
 
-export const speedProp: PropDescriptor = {
+export const speedProp: Extract<PropDescriptor, { type: "enum" }> = {
   type: "enum",
   description: "How long the enter takes: fast, base or slow (the style's duration tokens).",
   values: [...SPEEDS],
   default: "base",
 };
 
-export const exitProp: PropDescriptor = {
+export const exitProp: Extract<PropDescriptor, { type: "boolean" }> = {
   type: "boolean",
   description:
     "Whether the component animates out over its last frames; false holds it to the end.",

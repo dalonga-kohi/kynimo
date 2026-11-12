@@ -15,6 +15,7 @@ import {
   selector,
   speedProp,
   still,
+  textBaseline,
   textLayer,
   vec,
 } from "./kit.js";
@@ -185,7 +186,7 @@ export const kineticType = defineComponent({
     const anchorX =
       align === "center" ? ctx.width / 2 : align === "left" ? margin : ctx.width - margin;
     const anchorY = ctx.height / 2 + dy;
-    const baselineY = anchorY + 0.35 * size - ((lines - 1) * type.leading * size) / 2;
+    const baselineY = textBaseline(anchorY, size, lines, type.leading);
     const at = vec(anchorX + dx, baselineY);
     const down = vec(at[0], at[1] + style.distance("small"));
 

@@ -1,4 +1,4 @@
-export { kineticType, lowerThird } from "./built-in/index.js";
+export { background, kineticType, logoReveal, lowerThird, transition } from "./built-in/index.js";
 export {
   type ComponentDefinition,
   type ComponentEvalContext,

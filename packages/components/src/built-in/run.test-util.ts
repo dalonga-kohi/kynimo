@@ -24,6 +24,8 @@ export interface RunOptions {
   pack?: GuidelinePack | null;
   /** Id of the instance layer: it seeds the component's random numbers. */
   id?: string;
+  /** Raw assets of the project (see `imageAsset`). */
+  assets?: Obj[];
 }
 
 /** Evaluates one instance of a built-in component and returns the composition it drew. */
@@ -37,11 +39,12 @@ export function run(
     height = 1080,
     pack = null,
     id = "inst",
+    assets = [],
   }: RunOptions = {},
 ): ResolvedComposition {
   const doc = project(
     [instance(id, props, { componentId, componentVersion: "1.0.0", outFrame: duration })],
-    { style: pack === null ? null : { packId: pack.id, version: pack.version } },
+    { style: pack === null ? null : { packId: pack.id, version: pack.version }, assets },
     { width, height, durationFrames: Math.max(duration, 1) },
   );
   const out = evaluateFrame(doc, frame, undefined, { components: createComponentHost(doc) });

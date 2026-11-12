@@ -1,4 +1,4 @@
-import { kineticType, lowerThird } from "./built-in/index.js";
+import { background, kineticType, logoReveal, lowerThird, transition } from "./built-in/index.js";
 import type { ComponentDefinition } from "./define.js";
 
 export interface ComponentRegistry {
@@ -31,6 +31,12 @@ export function createComponentRegistry(defs: readonly ComponentDefinition[]): C
 }
 
 /** The component library that ships with Kynimo. */
-export const BUILT_IN_COMPONENTS: readonly ComponentDefinition[] = [kineticType, lowerThird];
+export const BUILT_IN_COMPONENTS: readonly ComponentDefinition[] = [
+  kineticType,
+  lowerThird,
+  logoReveal,
+  transition,
+  background,
+];
 
 export const builtInRegistry: ComponentRegistry = createComponentRegistry(BUILT_IN_COMPONENTS);
