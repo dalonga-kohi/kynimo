@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: title card",
   "mainCompositionId": "main",
   "style": null,
@@ -66,6 +66,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -96,7 +105,8 @@
           "fill": {
             "value": "#ff7a59"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "title",
@@ -167,6 +177,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -197,7 +216,8 @@
           "fill": {
             "value": "#f5f7fb"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "rule",
@@ -251,6 +271,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -302,7 +331,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "subtitle",
@@ -375,6 +405,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -405,7 +444,8 @@
           "fill": {
             "value": "#9aa3ba"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "glow",
@@ -459,6 +499,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "screen",
@@ -507,7 +556,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "backdrop",
@@ -542,6 +592,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -593,7 +652,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }

@@ -20,7 +20,7 @@ import {
   MaskIdSchema,
 } from "./ids.js";
 import type { Animatable, PositionTrack } from "./keyframes.js";
-import { type Layer, LayerSchema, MotionBlurSchema } from "./layer.js";
+import { CameraLayerSchema, type Layer, LayerSchema, MotionBlurSchema } from "./layer.js";
 import { MAX_LAYERS } from "./limits.js";
 import {
   MarkerSchema,
@@ -63,6 +63,12 @@ export const LayerPatchSchema = z
     solo: z.boolean(),
     /** Drawn layers only; `null` turns it off, `{}` is the defaults. */
     motionBlur: MotionBlurSchema.nullable(),
+    /** Layers with a transform but not adjustment (true), camera or audio layers: puts the layer in 3D space (ADR-0054). */
+    threeD: z.boolean(),
+    /** Camera layers only (ADR-0054). */
+    zoom: CameraLayerSchema.shape.zoom,
+    /** Camera layers only; `null` aims along the camera's own rotation. */
+    pointOfInterest: CameraLayerSchema.shape.pointOfInterest,
   })
   .partial()
   .refine((p) => Object.keys(p).length > 0, "set at least one field");

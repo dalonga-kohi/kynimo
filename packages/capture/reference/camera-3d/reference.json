@@ -1,0 +1,4 @@
+{
+  "description": "2.5D layers and a camera: the camera dollies in and orbits sideways around a point of interest at the centre of the stage while a flat gradient background stays put (2D layers ignore the camera). Three 3D cards sit at different depths: a masked solid, a rounded card with a stroke that turns through 70 degrees about Y and flies from behind the solid to in front of it (the depth sort reorders the pair mid-shot), and the text 2.5D tilted about X. A flat 2D title between two 3D runs stays flat on screen. A precomp is a 3D card with its own two shapes, and a solid with motion blur on rushes through depth with a streak. 24 fps, 24 samples.",
+  "frames": [0, 24, 40]
+}

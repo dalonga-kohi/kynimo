@@ -1,4 +1,4 @@
-import type { Animatable, FrameRate, Transform, Vec2 } from "@kynimo/scene";
+import type { Animatable, FrameRate, GroupTransform, Transform, Vec2 } from "@kynimo/scene";
 import { type Affine, transformMatrix } from "./affine.js";
 import { clampUnit } from "./mix.js";
 import type { Point, ResolvedTransform } from "./resolved.js";
@@ -29,15 +29,18 @@ export const sampleUnit = (track: Animatable<number>, frame: number, fps: FrameR
 
 /** Samples a transform at `frame` (layer time) and builds its local matrix. */
 export function resolveTransform(
-  t: Transform,
+  t: Transform | GroupTransform,
   frame: number,
   fps: FrameRate,
 ): { transform: ResolvedTransform; matrix: Affine } {
   const transform: ResolvedTransform = {
     anchorPoint: samplePoint(t.anchorPoint, frame, fps),
     position: samplePosition(t.position, frame, fps) as Point,
+    positionZ: "positionZ" in t ? sampleNumber(t.positionZ, frame, fps) : 0,
     scale: samplePoint(t.scale, frame, fps),
     rotation: sampleNumber(t.rotation, frame, fps),
+    rotationX: "rotationX" in t ? sampleNumber(t.rotationX, frame, fps) : 0,
+    rotationY: "rotationY" in t ? sampleNumber(t.rotationY, frame, fps) : 0,
     skew: clampSkew(sampleNumber(t.skew, frame, fps)),
     opacity: sampleUnit(t.opacity, frame, fps),
   };

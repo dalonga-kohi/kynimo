@@ -34,7 +34,7 @@ export function applyToPoint(m: Affine, [x, y]: readonly [number, number]): [num
 }
 
 /** Sine and cosine of an angle in degrees, exact at multiples of 90° so right-angle turns stay pixel-exact. */
-function sinCos(degrees: number): [number, number] {
+export function sinCos(degrees: number): [number, number] {
   const quarter = degrees / 90;
   if (Number.isInteger(quarter)) {
     const q = ((quarter % 4) + 4) % 4;

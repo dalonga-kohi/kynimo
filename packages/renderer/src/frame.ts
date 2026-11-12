@@ -1,14 +1,20 @@
 import {
   type Affine,
+  affineApproximation,
   invert,
   multiply,
+  type Projective,
+  projectiveDepth,
+  projectiveMultiply,
   type ResolvedComposition,
   type ResolvedLayer,
   type ResolvedSolidLayer,
 } from "@kynimo/engine";
+import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
 import type { CanvasKit } from "canvaskit-wasm";
 import { FrameShapeWork, MAX_FRAME_SHAPE_WORK } from "./binding.js";
-import { activeEffect } from "./compositor/effects.js";
+import { activeEffect, effectPadding } from "./compositor/effects.js";
+import { NEAR } from "./compositor/pipeline.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary } from "./fonts.js";
 import type { ImageLibrary, VideoFrameLibrary } from "./images.js";
@@ -22,6 +28,7 @@ import type {
   RenderWarning,
   SkippedLayer,
 } from "./raster.js";
+import { type LayerRasterScale, layerRasterRect, type Rect } from "./rect.js";
 import { rasterizeShapeLayer } from "./shapes.js";
 import { rasterize, toSkColor } from "./skia.js";
 import {
@@ -100,14 +107,37 @@ export function rasterizeFrame(
   );
 }
 
+const IDENTITY: Affine = [1, 0, 0, 1, 0, 0];
+const IDENTITY_PROJECTIVE: Projective = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
 /**
- * The layer's shutter samples as placements relative to its centre-frame placement, or `null` when
- * it draws once: no blur, a matrix that cannot be inverted, or nothing that changes across the
- * shutter (then the plain path keeps it byte-identical to an unblurred layer).
+ * The layer's shutter samples as placements, or `null` when it draws once: no blur, a matrix that
+ * cannot be inverted, or nothing that changes across the shutter (then the plain path keeps it
+ * byte-identical to an unblurred layer). A 2D layer's samples are placements relative to its
+ * centre-frame placement; a 3D layer's carry the full raster → composition `projection` at the
+ * sample (`rasterToLayer` takes its raster pixels to layer units), since a projective placement
+ * has no delta that composes with a pixel offset.
  */
-function planMotion(layer: ResolvedLayer): PlannedMotionSample[] | null {
+function planMotion(
+  layer: ResolvedLayer,
+  rasterToLayer: Projective = IDENTITY_PROJECTIVE,
+): PlannedMotionSample[] | null {
   const motion = layer.motion;
   if (motion === null) return null;
+  const centre = layer.projection;
+  if (centre !== null) {
+    const still = motion.every(
+      (s) =>
+        s.opacity === layer.transform.opacity &&
+        (s.projection ?? centre).every((v, i) => v === centre[i]),
+    );
+    if (still) return null;
+    return motion.map((s) => ({
+      delta: IDENTITY,
+      opacity: s.opacity,
+      projection: projectiveMultiply(s.projection ?? centre, rasterToLayer),
+    }));
+  }
   const inverse = invert(layer.matrix);
   if (inverse === null || !inverse.every(Number.isFinite)) return null;
   const still = motion.every(
@@ -115,6 +145,53 @@ function planMotion(layer: ResolvedLayer): PlannedMotionSample[] | null {
   );
   if (still) return null;
   return motion.map((s) => ({ delta: multiply(s.matrix, inverse), opacity: s.opacity }));
+}
+
+/** The most a 3D vector layer is magnified: 2^3 raster pixels per layer unit. */
+const MAX_VECTOR_LEVEL = 3;
+
+/**
+ * The resolution scale (a power of two) of a 3D shape or text layer's layer-space raster, or `null`
+ * when the layer is entirely behind the camera. With effects it is one raster pixel per layer unit
+ * like an image, so effect parameters stay in layer units; otherwise it follows the largest
+ * magnification of the projection over `bounds` (1x to 8x). Either way it shrinks, below 1x if
+ * need be, until the raster (plus the effect `padding` the compositor adds) fits the size limit.
+ */
+function vectorScale(
+  projection: Projective,
+  bounds: Rect,
+  effects: boolean,
+  [padX, padY]: [number, number],
+): number | null {
+  const [l, t, r, b] = bounds;
+  let magnification = 0;
+  let inFront = false;
+  for (const corner of [
+    [l, t],
+    [r, t],
+    [l, b],
+    [r, b],
+  ] as const) {
+    if (!(projectiveDepth(projection, corner) > NEAR)) continue;
+    inFront = true;
+    const jacobian = affineApproximation(projection, corner);
+    if (jacobian === null) continue;
+    magnification = Math.max(
+      magnification,
+      Math.hypot(jacobian[0], jacobian[1]),
+      Math.hypot(jacobian[2], jacobian[3]),
+    );
+  }
+  if (!inFront) return null;
+  let k = 0;
+  if (!effects && magnification > 1)
+    k = Math.min(MAX_VECTOR_LEVEL, Math.max(0, Math.ceil(Math.log2(magnification))));
+  for (; k > -32; k--) {
+    const [x0, y0, x1, y1] = layerRasterRect(bounds, 2 ** k);
+    if (x1 - x0 <= MAX_COMPOSITION_SIZE - 2 * padX && y1 - y0 <= MAX_COMPOSITION_SIZE - 2 * padY)
+      return 2 ** k;
+  }
+  return null;
 }
 
 function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
@@ -127,6 +204,8 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       );
   };
   const skipped: SkippedLayer[] = [];
+  /** Where a 3D shape or text layer's layer space lands in its raster, for its masks. */
+  const rasterToMask = new WeakMap<PlannedLayer, Affine>();
   const warnings: RenderWarning[] = [];
 
   /** The layer's pixels without masks or matte; `null` when it draws nothing. */
@@ -143,8 +222,56 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       motion,
       ...(effects.length > 0 ? { effects } : {}),
     };
+    // A 3D layer is placed by its projection (raster = layer units unless noted).
+    const projection = layer.projection;
+    const threeD = projection === null ? {} : { projection };
+    /**
+     * A 3D shape or text layer is rasterized in layer space, so the projection can place it without
+     * resampling a composition-space raster: `scale` is chosen from its bounds (see `vectorScale`).
+     */
+    const vector = (
+      draw: (layerSpace: LayerRasterScale) => { x: number; y: number; raster: RasterImage } | null,
+      type: "shape" | "text",
+    ): PlannedFrameLayer | null => {
+      if (projection === null) return null;
+      let scale = 1;
+      const drawn = draw((bounds) => {
+        const chosen = vectorScale(projection, bounds, effects.length > 0, effectPadding(effects));
+        if (chosen !== null) scale = chosen;
+        return chosen;
+      });
+      if (drawn === null) return null;
+      const { x, y, raster } = drawn;
+      const toLayer: Projective = [1 / scale, 0, x / scale, 0, 1 / scale, y / scale, 0, 0, 1];
+      base.motion = planMotion(layer, toLayer);
+      const result: PlannedFrameLayer = {
+        ...base,
+        type,
+        space: "layer",
+        matrix: IDENTITY,
+        projection: projectiveMultiply(projection, toLayer),
+        raster,
+      };
+      rasterToMask.set(result, [scale, 0, 0, scale, -x, -y]);
+      return result;
+    };
     switch (layer.type) {
       case "shape": {
+        if (projection !== null)
+          return vector(
+            (layerSpace) =>
+              rasterizeShapeLayer(
+                ck,
+                layer,
+                comp.width,
+                comp.height,
+                reserve,
+                ctx.shapeWork,
+                null,
+                layerSpace,
+              ),
+            "shape",
+          );
         const drawn = rasterizeShapeLayer(
           ck,
           layer,
@@ -158,6 +285,22 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       }
       case "text": {
         warnings.push(...textWarnings(ck, ctx.fonts, layer), ...textAnimatorWarnings(layer));
+        if (projection !== null)
+          return vector(
+            (layerSpace) =>
+              rasterizeTextLayer(
+                ck,
+                ctx.fonts,
+                layer,
+                comp.width,
+                comp.height,
+                reserve,
+                ctx.textWork,
+                null,
+                layerSpace,
+              ),
+            "text",
+          );
         const drawn = rasterizeTextLayer(
           ck,
           ctx.fonts,
@@ -177,6 +320,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           type: "solid",
           space: "layer",
           matrix: layer.matrix,
+          ...threeD,
           raster: solidRaster(ck, layer),
         };
       case "image": {
@@ -185,7 +329,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           throw new RenderError(
             `layer '${id}' shows image asset '${layer.assetId}', which was not loaded into the ImageLibrary`,
           );
-        return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
+        return { ...base, type: "image", space: "layer", matrix: layer.matrix, ...threeD, raster };
       }
       case "video": {
         if (layer.sourceFrame === null) return null;
@@ -195,7 +339,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
             `layer '${id}' shows frame ${layer.sourceFrame} of video asset '${layer.assetId}', which was not loaded into the VideoFrameLibrary`,
           );
         // A decoded frame draws exactly like an image of its pixels.
-        return { ...base, type: "image", space: "layer", matrix: layer.matrix, raster };
+        return { ...base, type: "image", space: "layer", matrix: layer.matrix, ...threeD, raster };
       }
       case "precomp":
       case "component": {
@@ -214,7 +358,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           frame = planComposition(ctx, layer.composition);
           ctx.nested.set(layer.composition, frame);
         }
-        return { ...base, type: "precomp", space: "layer", matrix: layer.matrix, frame };
+        return { ...base, type: "precomp", space: "layer", matrix: layer.matrix, ...threeD, frame };
       }
       case "adjustment":
         return effects.length > 0 && base.opacity > 0
@@ -228,6 +372,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
           type: "generator",
           space: "layer",
           matrix: layer.matrix,
+          ...threeD,
           width: layer.width,
           height: layer.height,
           generator: layer.generator,
@@ -255,7 +400,7 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       const { width, height, toRaster } =
         result.type === "adjustment"
           ? { width: comp.width, height: comp.height, toRaster: layer.matrix }
-          : rasterSpace(result, layer.matrix);
+          : rasterSpace(result, layer.matrix, rasterToMask.get(result));
       const mask = rasterizeMasks(ck, layer.masks, toRaster, width, height, reserve);
       if (mask === "empty") result = null;
       else result.mask = mask;
@@ -310,6 +455,8 @@ function undrawableMatteSource(layer: ResolvedLayer): ResolvedLayer | null {
 function rasterSpace(
   layer: PlannedLayer,
   matrix: Affine,
+  /** Set for a 3D vector layer: its raster is layer space at a resolution scale. */
+  layerToRaster?: Affine,
 ): { width: number; height: number; toRaster: Affine } {
   if (layer.space === "composition")
     return {
@@ -319,7 +466,7 @@ function rasterSpace(
     };
   const { width, height } =
     layer.type === "precomp" ? layer.frame : layer.type === "generator" ? layer : layer.raster;
-  return { width, height, toRaster: [1, 0, 0, 1, 0, 0] };
+  return { width, height, toRaster: layerToRaster ?? IDENTITY };
 }
 
 function solidRaster(ck: CanvasKit, layer: ResolvedSolidLayer): RasterImage {

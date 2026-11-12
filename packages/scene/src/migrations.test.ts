@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { composition, nullLayer, project, visual } from "./fixtures.test-util.js";
+import {
+  composition,
+  groupTransform,
+  nullLayer,
+  type Obj,
+  project,
+  visual,
+} from "./fixtures.test-util.js";
 import {
   checkMigrations,
   MIGRATIONS,
@@ -225,14 +232,14 @@ describe("migrateProject", () => {
   it("3 → 7 leaves a version 3 document unchanged apart from its version", () => {
     const v3 = { ...project(), formatVersion: 3 };
     const r = migrateProject(v3);
-    expect(r).toMatchObject({ ok: true, from: 3, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 3, to: 12 });
     if (r.ok) expect({ ...r.doc, formatVersion: 3 }).toEqual(v3);
   });
 
   it("4 → 7 leaves a version 4 document unchanged apart from its version", () => {
     const v4 = { ...project(), formatVersion: 4 };
     const r = migrateProject(v4);
-    expect(r).toMatchObject({ ok: true, from: 4, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 4, to: 12 });
     if (r.ok) expect({ ...r.doc, formatVersion: 4 }).toEqual(v4);
   });
 
@@ -255,7 +262,7 @@ describe("migrateProject", () => {
     const comp = v5.compositions[0];
     if (comp) comp.layers = [text];
     const r = migrateProject(v5);
-    expect(r).toMatchObject({ ok: true, from: 5, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 5, to: 12 });
     if (!r.ok) return;
     const migrated = r.doc.compositions[0]?.layers[0];
     expect(migrated).toMatchObject({ type: "text", animators: [] });
@@ -347,7 +354,7 @@ describe("migrateProject", () => {
       ],
     };
     const r = migrateProject(v6);
-    expect(r).toMatchObject({ ok: true, from: 6, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 6, to: 12 });
     if (!r.ok) return;
     const [solid, nul, audio] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ behaviors: [] });
@@ -389,7 +396,7 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v7);
-    expect(r).toMatchObject({ ok: true, from: 7, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 7, to: 12 });
     if (!r.ok) return;
     const [solid, adjustment, nul] = r.doc.compositions[0]?.layers ?? [];
     expect(solid).toMatchObject({ effects: [] });
@@ -403,7 +410,7 @@ describe("migrateProject", () => {
       compositions: [composition("main", [{ ...visual("a"), type: "adjustment", effects: [] }])],
     });
     const r = migrateProject(v8);
-    expect(r).toMatchObject({ ok: true, from: 8, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 8, to: 12 });
     if (r.ok)
       expect({ ...r.doc, formatVersion: 8 }).toEqual({
         ...v8,
@@ -430,7 +437,7 @@ describe("migrateProject", () => {
       ],
     });
     const r = migrateProject(v9);
-    expect(r).toMatchObject({ ok: true, from: 9, to: 11 });
+    expect(r).toMatchObject({ ok: true, from: 9, to: 12 });
     if (r.ok) expect({ ...r.doc, formatVersion: 9 }).toEqual(v9);
   });
 
@@ -450,7 +457,7 @@ describe("migrateProject", () => {
     expect(comps[0]?.layers[0]).toMatchObject({ motionBlur: null });
     expect(comps[0]?.layers[1]).not.toHaveProperty("motionBlur");
     expect(comps[1]?.layers[0]).toMatchObject({ motionBlur: null });
-    expect(migrateProject(v10)).toMatchObject({ ok: true, from: 10, to: 11 });
+    expect(migrateProject(v10)).toMatchObject({ ok: true, from: 10, to: 12 });
   });
 
   it("10 → 11 leaves audio layers and existing settings alone", () => {
@@ -485,6 +492,97 @@ describe("migrateProject", () => {
     const layers = (r.doc.compositions as { layers: Record<string, unknown>[] }[])[0]?.layers ?? [];
     expect(layers[0]).toMatchObject({ motionBlur: blur });
     expect(layers[1]).not.toHaveProperty("motionBlur");
+  });
+
+  it("11 → 12 adds threeD and zero Z tracks to visual layers, precomp compositions included", () => {
+    const oldTransform = () => {
+      const { positionZ, rotationX, rotationY, ...flat } = visual("x").transform as Obj;
+      void positionZ;
+      void rotationX;
+      void rotationY;
+      return flat;
+    };
+    const old = (id: string, extra: Obj = {}): Obj => {
+      const { threeD, ...rest } = visual(id);
+      void threeD;
+      return { ...rest, transform: oldTransform(), ...extra };
+    };
+    const solid = old("s", { type: "solid", width: 16, height: 16, color: "#ff0000" });
+    const nul = (() => {
+      const { threeD, ...rest } = nullLayer("n");
+      void threeD;
+      return { ...rest, transform: oldTransform() };
+    })();
+    const v11 = project({
+      formatVersion: 11,
+      compositions: [
+        composition("main", [solid, nul]),
+        composition("inner", [old("p", { type: "adjustment", effects: [], motionBlur: null })]),
+      ],
+    });
+    const r = runMigrations(v11);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const comps = r.doc.compositions as { layers: Record<string, unknown>[] }[];
+    for (const layer of [comps[0]?.layers[0], comps[0]?.layers[1], comps[1]?.layers[0]])
+      expect(layer).toMatchObject({
+        threeD: false,
+        transform: { positionZ: { value: 0 }, rotationX: { value: 0 }, rotationY: { value: 0 } },
+      });
+    const migrated = migrateProject(v11);
+    expect(migrated).toMatchObject({ ok: true, from: 11, to: 12 });
+  });
+
+  it("11 → 12 leaves audio layers, existing 3D settings and group transforms alone", () => {
+    const audio = {
+      id: "au",
+      name: "au",
+      inFrame: 0,
+      outFrame: 90,
+      startFrame: 0,
+      hidden: false,
+      solo: false,
+      editor: { locked: false, shy: false, label: null },
+      markers: [],
+      type: "audio",
+      assetId: "x",
+      volume: { value: 1 },
+    };
+    const group = {
+      type: "group",
+      id: "g",
+      name: "G",
+      transform: groupTransform(),
+      items: [],
+    };
+    const shape = {
+      ...visual("sh"),
+      type: "shape",
+      threeD: true,
+      transform: { ...(visual("sh").transform as Obj), positionZ: { value: 5 } },
+      contents: [group],
+    };
+    const r = runMigrations(
+      project({ formatVersion: 11, compositions: [composition("main", [shape, audio])] }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const layers = (r.doc.compositions as { layers: Record<string, unknown>[] }[])[0]?.layers ?? [];
+    expect(layers[0]).toMatchObject({ threeD: true, transform: { positionZ: { value: 5 } } });
+    expect(((layers[0] as Obj).contents as Obj[])[0]).toEqual(group);
+    expect(layers[1]).not.toHaveProperty("threeD");
+    expect(layers[1]).not.toHaveProperty("transform");
+  });
+
+  it("11 → 12 is idempotent", () => {
+    const v11 = project({
+      formatVersion: 11,
+      compositions: [composition("main", [nullLayer("n")])],
+    });
+    const once = runMigrations(v11);
+    if (!once.ok) throw new Error("migration failed");
+    const twice = runMigrations({ ...once.doc, formatVersion: 11 });
+    expect(twice.ok && twice.doc).toEqual(once.doc);
   });
 
   it("migrates a version 1 document to the current version", () => {

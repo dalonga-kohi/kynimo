@@ -36,8 +36,11 @@ describe("scriptSnapshot", () => {
     expect(title?.transform).toEqual({
       anchorPoint: [0, 0],
       position: [960, 540],
+      positionZ: 0,
       scale: [1, 1],
       rotation: 0,
+      rotationX: 0,
+      rotationY: 0,
       skew: 0,
       opacity: null,
     });

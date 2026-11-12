@@ -3,12 +3,24 @@ import type { CanvasKit, Paint, Path } from "canvaskit-wasm";
 import { bindPaints, FrameShapeWork, type PaintItem, type PaintOp } from "./binding.js";
 import { effectPadding } from "./compositor/effects.js";
 import type { PlannedMotionSample, RasterImage } from "./raster.js";
-import { cropToComposition, motionCropRect, type Rect, transformRect, union } from "./rect.js";
+import {
+  cropToComposition,
+  type LayerRasterScale,
+  layerRasterRect,
+  motionCropRect,
+  type Rect,
+  transformRect,
+  union,
+} from "./rect.js";
 import { buildPath, type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
 
 /**
  * Rasterizes a shape layer in composition space (ADR-0016), cropped to its bounds within the
  * `width × height` composition. Returns `null` when nothing visible lands inside it.
+ *
+ * With `layerSpace` (a 3D layer, ADR-0054) the layer's own matrix is ignored and the raster is in
+ * layer space instead, uncropped: `layerSpace` picks its scale `s` from the layer-space bounds, and
+ * the result's `x`, `y` are the raster's origin in raster pixels (layer unit · `s`).
  */
 export function rasterizeShapeLayer(
   ck: CanvasKit,
@@ -21,12 +33,13 @@ export function rasterizeShapeLayer(
   work: FrameShapeWork = new FrameShapeWork(),
   /** The layer's blur samples: the raster then also covers what the shutter brings into view. */
   motion: readonly PlannedMotionSample[] | null = null,
+  layerSpace?: LayerRasterScale,
 ): { x: number; y: number; raster: RasterImage } | null {
   return scoped((own) => {
     const draws: { path: Path; paint: Paint; matrix: Affine }[] = [];
     let bounds: Rect | null = null;
     for (const op of bindPaints(layer.contents, work)) {
-      const matrix = multiply(layer.matrix, op.matrix);
+      const matrix = layerSpace === undefined ? multiply(layer.matrix, op.matrix) : op.matrix;
       const path = own(
         buildPath(ck, op.contours, op.paint.type === "fill" && op.paint.rule === "evenodd"),
       );
@@ -41,13 +54,18 @@ export function rasterizeShapeLayer(
     }
     if (bounds === null) return null;
     const padding = effectPadding(layer.effects);
-    const crop = cropToComposition(
-      bounds,
-      width,
-      height,
-      padding,
-      motionCropRect(width, height, padding, motion),
-    );
+    const scale = layerSpace === undefined ? 1 : layerSpace(bounds);
+    if (scale === null) return null;
+    const crop =
+      layerSpace === undefined
+        ? cropToComposition(
+            bounds,
+            width,
+            height,
+            padding,
+            motionCropRect(width, height, padding, motion),
+          )
+        : layerRasterRect(bounds, scale);
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);
@@ -55,6 +73,7 @@ export function rasterizeShapeLayer(
       for (const draw of draws) {
         canvas.save();
         canvas.translate(-x0, -y0);
+        if (layerSpace !== undefined) canvas.scale(scale, scale);
         canvas.concat(toSkMatrix(draw.matrix));
         canvas.drawPath(draw.path, draw.paint);
         canvas.restore();

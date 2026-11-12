@@ -115,6 +115,7 @@ Text layers take animators (like After Effects): each has a range selector (unit
 Layers take behaviors (wiggle, oscillate, loop, inertia, link) on transform properties through addBehavior/updateBehavior/removeBehavior; values that add to a property have its kind (a number, or [x, y] for anchorPoint, position and scale); a link replaces the property with another layer's (× multiply + offset, optionally delay frames later).
 Use add_effect for an effect or apply_preset('blur-in') for an entrance. An adjustment layer filters the composite below it. Edit or remove effects with the setEffects operation.
 Motion blur: updateLayer set {motionBlur: {}} (shutterAngle 180, shutterPhase -90, samples 16 by default; null turns it off). It blurs transform motion (position, scale, rotation, parents, behaviors), not animated contents; cost grows with samples.
+2.5D: updateLayer {threeD: true} turns a drawn or null layer into a flat card in 3D (positionZ, rotationX, rotationY; +z is away from the viewer); add a camera layer (zoom, pointOfInterest) to move the view; 3D layers next to each other in the stack sort by depth, 2D layers stay where they are.
 Backgrounds and textures are generator layers (gradient, noise, pattern, aurora): add one with add_layer and edit it with the setGenerator operation. Looks (vignette, grain, chromatic-aberration, posterize, scanlines) are effects: use add_effect, usually on an adjustment layer.
 When the user is happy with the frames, export (mp4 default; webm keeps transparency) and poll get_export_status with wait_seconds; render_preview_clip makes a quick low-res clip first.
 Use import_svg for vector logos and icons: it makes one shape layer and reports what the SVG had that shapes cannot carry.`;
@@ -498,7 +499,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Update layer",
       description:
-        "Changes a layer's name, timing (inFrame, outFrame, startFrame), render switches (hidden, solo), or motion blur (`motionBlur`; null turns it off).",
+        "Changes a layer's name, timing (inFrame, outFrame, startFrame), render switches (hidden, solo), motion blur (`motionBlur`; null turns it off), the 3D switch (`threeD`), or a camera's `zoom` and `pointOfInterest`.",
       inputSchema: UpdateLayerInput,
       outputSchema: WriteOutput,
       annotations: WRITE,
@@ -516,7 +517,7 @@ export function createServer(service: KynimoService): McpServer {
     {
       title: "Set keyframes",
       description:
-        "Sets one transform property (anchorPoint, position, scale, rotation, skew, opacity) to a constant or to keyframes, replacing what was there.",
+        "Sets one transform property (anchorPoint, position, scale, rotation, skew, opacity, and for 3D layers positionZ, rotationX, rotationY) to a constant or to keyframes, replacing what was there.",
       inputSchema: SetKeyframesInput,
       outputSchema: WriteOutput,
       annotations: WRITE,

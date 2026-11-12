@@ -146,6 +146,27 @@ function walk(s: z.ZodType): z.ZodType {
   return s;
 }
 
+/**
+ * `updateLayer`'s patch with the camera tracks declared loosely: a keyframed `pointOfInterest`
+ * inlines to ~2 KB. The server validates them in full against `LayerPatchSchema`.
+ */
+export const CompactLayerPatchSchema = z
+  .strictObject({
+    ...LayerPatchSchema.shape,
+    zoom: z
+      .looseObject({})
+      .describe("Camera layers only: { value } or { keyframes } of a number 1..100000.")
+      .optional(),
+    pointOfInterest: z
+      .looseObject({})
+      .nullable()
+      .describe(
+        "Camera layers only: { value: [x, y, z] } or { keyframes }; null aims along the camera's own rotation.",
+      )
+      .optional(),
+  })
+  .refine((p) => Object.keys(p).length > 0, "set at least one field");
+
 type AnyOp = (typeof OpSchema.options)[number];
 /** The op name of an option; setTransformTrack is itself a union of per-property variants. */
 const opName = (o: AnyOp): string =>
@@ -180,6 +201,7 @@ function compactBody(o: AnyOp) {
         .looseObject({})
         .describe("Replaces the body; see get_layer_schema('generator')."),
     });
+  if (name === "updateLayer") return obj.extend({ set: CompactLayerPatchSchema });
   if (name === "addBehavior") return obj.extend({ behavior: BehaviorBodySchema });
   if (name === "updateBehavior")
     return obj.extend({
@@ -216,7 +238,7 @@ function compactBody(o: AnyOp) {
 
 /**
  * The op union as tools declare it: exact except `addLayer.layer`, `setTransformTrack.track`,
- * `addMask.mask`, `updateMask.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`,
+ * `addMask.mask`, `updateMask.set`, the `zoom` and `pointOfInterest` tracks of `updateLayer.set`, `addBehavior.behavior`, `updateBehavior.set`, `addAsset.asset`,
  * `setTextAnimators.animators` items, `setShapeContents.contents` items
  * and every layer selector (`layer`, `parent`, `matte.layer`, `layers[]`, `target.layer`, ...), which
  * the server validates in full against `OpSchema` before anything is applied.
@@ -267,7 +289,7 @@ export const AddLayerInput = z.object({
   ...writeMeta,
   composition: z.string().min(1).max(64).describe("Composition id, e.g. 'main'."),
   layer: LayerBodySchema.describe(
-    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no motion blur (motionBlur null), no matte, no masks, text without animators. Type-specific fields (e.g. shape `contents`, text `content`, `box`, `font`, `tracking`, `leading`, `align`, `textCase`, `fill`) must be given; see get_layer_schema.",
+    "The layer without its id. Shared fields default: inFrame 0, outFrame = composition duration, startFrame 0, not hidden/solo, no markers, parent null, centered identity transform (fill per property), blendMode 'normal', no motion blur (motionBlur null), threeD false (positionZ, rotationX, rotationY 0), no matte, no masks, text without animators. camera: zoom, pointOfInterest and position default to a 50 mm camera looking at the centre. Type-specific fields (e.g. shape `contents`, text `content`, `box`, `font`, `tracking`, `leading`, `align`, `textCase`, `fill`) must be given; see get_layer_schema.",
   ),
   id: z.string().min(1).max(64).optional().describe("Optional layer id; generated when omitted."),
   index: z
@@ -281,7 +303,7 @@ export const AddLayerInput = z.object({
 export const UpdateLayerInput = z.object({
   ...writeMeta,
   layer: LayerSelectorSchema,
-  set: LayerPatchSchema,
+  set: CompactLayerPatchSchema,
 });
 
 export const SetKeyframesInput = z.object({

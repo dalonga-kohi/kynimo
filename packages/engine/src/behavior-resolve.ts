@@ -55,8 +55,14 @@ function sampleBase(
       return samplePosition(t.position, frame, fps);
     case "scale":
       return samplePoint(t.scale, frame, fps);
+    case "positionZ":
+      return [sampleNumber(t.positionZ, frame, fps)];
     case "rotation":
       return [sampleNumber(t.rotation, frame, fps)];
+    case "rotationX":
+      return [sampleNumber(t.rotationX, frame, fps)];
+    case "rotationY":
+      return [sampleNumber(t.rotationY, frame, fps)];
     case "skew":
       return [clampSkew(sampleNumber(t.skew, frame, fps))];
     case "opacity":
@@ -279,8 +285,11 @@ export function createBehaviorResolver(
       const transform: ResolvedTransform = {
         anchorPoint: point(property(layer, "anchorPoint", frame)),
         position: point(property(layer, "position", frame)),
+        positionZ: (property(layer, "positionZ", frame) as Components)[0] as number,
         scale: point(property(layer, "scale", frame)),
         rotation: (property(layer, "rotation", frame) as Components)[0] as number,
+        rotationX: (property(layer, "rotationX", frame) as Components)[0] as number,
+        rotationY: (property(layer, "rotationY", frame) as Components)[0] as number,
         skew: (property(layer, "skew", frame) as Components)[0] as number,
         opacity: (property(layer, "opacity", frame) as Components)[0] as number,
       };

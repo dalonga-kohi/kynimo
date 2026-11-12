@@ -1,5 +1,11 @@
 import { hashWords, type ResolvedEffect } from "@kynimo/engine";
-import type { FramePlan, PlannedAdjustmentLayer, PlannedLayer, RasterImage } from "../raster.js";
+import type {
+  FramePlan,
+  PlannedAdjustmentLayer,
+  PlannedLayer,
+  PlannedMotionSample,
+  RasterImage,
+} from "../raster.js";
 import { blendColor, blendPixel } from "./blend.js";
 import {
   band,
@@ -15,11 +21,16 @@ import {
   type Affine,
   invert,
   LUMA,
+  layerProjection,
   levelOfDetail,
   matteChain,
   maxLevel,
+  type Projective,
   placement,
   precompUses,
+  projectiveInvert,
+  projectivePlacement,
+  projectiveSample,
   samplePlacement,
 } from "./pipeline.js";
 
@@ -108,18 +119,31 @@ function placed(layer: PlannedLayer, comp: FramePlan, nested: Nested): FloatImag
     const src = source(current, nested, padding);
     // The source's mip chain, extended on demand and shared by every sample of this layer.
     const levels = [src];
+    // A 3D layer is placed by its projection (per sample: the sample's), a 2D one by its matrix.
+    const projective = layerProjection(current) !== null;
+    const put = (sample: PlannedMotionSample | null) =>
+      projective
+        ? placeProjective(
+            levels,
+            projectiveInvert(projectivePlacement(current, padding, sample)),
+            comp.width,
+            comp.height,
+          )
+        : place(
+            levels,
+            sample === null
+              ? placement(current, padding)
+              : samplePlacement(current, sample, padding),
+            comp.width,
+            comp.height,
+          );
     let img: FloatImage;
-    if (motion === null) img = place(levels, placement(current, padding), comp.width, comp.height);
+    if (motion === null) img = put(null);
     else {
       // One pass per shutter sample, summed (premultiplied, additive) with weight opacity / N.
       img = blank(comp.width, comp.height);
       for (const sample of motion) {
-        const one = place(
-          levels,
-          samplePlacement(current, sample, padding),
-          comp.width,
-          comp.height,
-        );
+        const one = put(sample);
         const weight = sample.opacity / motion.length;
         for (let i = 0; i < img.data.length; i++)
           img.data[i] = (img.data[i] ?? 0) + (one.data[i] ?? 0) * weight;
@@ -479,6 +503,47 @@ function bilinear(img: FloatImage, x: number, y: number, k: number): number {
   const top = texel(img, x0, y0, k) * (1 - fx) + texel(img, x0 + 1, y0, k) * fx;
   const bottom = texel(img, x0, y0 + 1, k) * (1 - fx) + texel(img, x0 + 1, y0 + 1, k) * fx;
   return top * (1 - fy) + bottom * fy;
+}
+
+/**
+ * Resamples `levels[0]` into a `width × height` composition through the projective placement whose
+ * true inverse is `inv` (`null`: singular, covers nothing). Pixels behind the near plane stay
+ * transparent. Per pixel it picks the level of detail from the projective Jacobian (see
+ * `projectiveSample`) and then blends exactly like `place`; `levels` is extended to the deepest
+ * level any pixel needs.
+ */
+function placeProjective(
+  levels: FloatImage[],
+  inv: Projective | null,
+  width: number,
+  height: number,
+): FloatImage {
+  const src = levels[0] as FloatImage;
+  const out = blank(width, height);
+  if (inv === null) return out;
+  const deepest = maxLevel(src.width, src.height);
+  const level = (n: number): FloatImage => {
+    for (let i = levels.length; i <= n; i++) levels.push(downsample(levels[i - 1] as FloatImage));
+    return levels[n] as FloatImage;
+  };
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const at = projectiveSample(inv, x, y, src.width, src.height);
+      if (at === null) continue;
+      const k = Math.floor(at.lod);
+      const t = at.lod - k;
+      const top = Math.min(k + 1, deepest);
+      const lo = level(k);
+      const hi = t > 0 ? level(top) : lo;
+      const sLo = 2 ** -k;
+      const sHi = 2 ** -top;
+      for (let c = 0; c < 4; c++) {
+        const a = bilinear(lo, at.qx * sLo, at.qy * sLo, c);
+        out.data[(y * width + x) * 4 + c] =
+          t > 0 ? a * (1 - t) + bilinear(hi, at.qx * sHi, at.qy * sHi, c) * t : a;
+      }
+    }
+  return out;
 }
 
 /** Resamples `src` into a `width × height` composition through `matrix` (source → composition). */

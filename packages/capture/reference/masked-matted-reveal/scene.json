@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: masked and matted reveal",
   "mainCompositionId": "main",
   "style": null,
@@ -51,6 +51,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -233,7 +242,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "headline",
@@ -268,6 +278,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -298,7 +317,8 @@
           "fill": {
             "value": "#ffffff"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "underline",
@@ -333,6 +353,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -344,7 +373,8 @@
           "type": "solid",
           "width": 440,
           "height": 6,
-          "color": "#ffc371"
+          "color": "#ffc371",
+          "threeD": false
         },
         {
           "id": "sweep",
@@ -379,6 +409,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -449,7 +488,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "ring",
@@ -484,6 +524,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -596,7 +645,8 @@
           "type": "solid",
           "width": 640,
           "height": 360,
-          "color": "#26304f"
+          "color": "#26304f",
+          "threeD": false
         },
         {
           "id": "vignette-dots",
@@ -631,6 +681,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -1382,7 +1441,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "spot",
@@ -1417,6 +1477,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -1472,7 +1541,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }

@@ -11,7 +11,7 @@ import {
   UnitIntervalSchema,
   Vec2Schema,
 } from "./primitives.js";
-import { animatable, TransformSchema } from "./transform.js";
+import { animatable, GroupTransformSchema } from "./transform.js";
 
 const GradientStopsSchema = z
   .array(z.strictObject({ offset: UnitIntervalSchema, color: ColorSchema }))
@@ -191,7 +191,7 @@ const RepeaterSchema = z.strictObject({
   }),
 });
 
-const GroupBaseSchema = z.strictObject({ ...item("group"), transform: TransformSchema });
+const GroupBaseSchema = z.strictObject({ ...item("group"), transform: GroupTransformSchema });
 
 type LeafShapeItem =
   | z.infer<typeof RectSchema>

@@ -103,7 +103,10 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   keyframed_text: unavailable(
     "text content is constant; keyframed source text is planned after the beta",
   ),
-  three_d: unavailable("3D layers, cameras and lights are planned after the beta"),
+  three_d_lights: unavailable(
+    "lights, materials and shadows are planned after the beta; 3D layers are flat cards",
+  ),
+  three_d_models: unavailable("glTF/GLB model layers are planned after the beta"),
 };
 
 /** Motion blur (ADR-0053). */
@@ -119,6 +122,24 @@ const MOTION_BLUR_LIMITS = {
   shutterAngle: { min: 0, max: 720, default: 180 },
   shutterPhase: { min: -360, max: 360, default: -90 },
   samples: { min: 2, max: 64, default: 16 },
+} as const;
+
+/** 2.5D layers and cameras (ADR-0054). */
+const THREE_D_SUPPORT: { layers: Support; camera: Support } = {
+  layers: {
+    status: "renders",
+    note: "updateLayer threeD: true on drawn or null layers adds positionZ, rotationX, rotationY; contiguous 3D layers are depth-sorted, 2D and adjustment layers end a group; precomps are flat cards",
+  },
+  camera: {
+    status: "renders",
+    note: "camera layer type: zoom, pointOfInterest (null for a one-node camera), its own transform; the topmost visible camera is used, else a default 50 mm camera",
+  },
+};
+
+/** The scene schema's zoom bounds (a test keeps them in step); the renderer's vector raster level cap (2^3). */
+const THREE_D_LIMITS = {
+  zoom: { min: 1, max: 100_000 },
+  vectorRasterScale: { max: 8 },
 } as const;
 
 const STATUSES = {
@@ -169,6 +190,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       effects: EFFECT_SUPPORT,
       generators: GENERATOR_SUPPORT,
       motion_blur: MOTION_BLUR_SUPPORT,
+      three_d: THREE_D_SUPPORT,
     },
     limits: {
       text_animators: TEXT_ANIMATOR_LIMITS,
@@ -176,6 +198,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       effects: { ...EFFECT_LIMITS, ...LOOK_LIMITS },
       generators: GENERATOR_LIMITS,
       motion_blur: MOTION_BLUR_LIMITS,
+      three_d: THREE_D_LIMITS,
     },
     assets: ASSET_SUPPORT,
     render: {

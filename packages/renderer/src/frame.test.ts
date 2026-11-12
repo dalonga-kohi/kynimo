@@ -703,6 +703,7 @@ describe("raster budget", () => {
         props: {},
       }),
       null: layer("null", "null"),
+      camera: layer("camera", "null", { type: "camera", zoom: prop(2000), pointOfInterest: null }),
       audio: layer("audio", "audio", { assetId: "img", volume: prop(1) }),
     };
     expect(Object.keys(one).sort()).toEqual(
@@ -722,7 +723,7 @@ describe("raster budget", () => {
       expect(skipped !== undefined, type).toBe(expectSkipped);
       if (skipped !== undefined && support.status === "accepted")
         expect(skipped.reason).toBe(support.reason);
-      if (type !== "null")
+      if (type !== "null" && type !== "camera")
         expect(
           p.layers.some((l) => l.id === type),
           type,

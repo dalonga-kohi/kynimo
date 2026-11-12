@@ -2,6 +2,7 @@ import { BUILT_IN_COMPONENTS } from "@kynimo/components";
 import {
   AssetSchema,
   BEHAVIOR_TYPES,
+  CameraLayerSchema,
   EffectInputSchema,
   GeneratorSchema,
   LayerSchema,
@@ -142,6 +143,21 @@ describe("capability manifest", () => {
     }
   });
 
+  it("lists 2.5D layers and the camera as rendering, keeps lights and models unavailable, and tracks the zoom bounds", () => {
+    expect(manifest.features.three_d.layers.status).toBe("renders");
+    expect(manifest.features.three_d.camera.status).toBe("renders");
+    expect(manifest.unavailable).not.toHaveProperty("three_d");
+    expect(manifest.unavailable.three_d_lights?.reason).toContain("lights, materials and shadows");
+    expect(manifest.unavailable.three_d_models?.reason).toContain("glTF/GLB");
+    expect(manifest.limits.three_d.vectorRasterScale).toEqual({ max: 8 });
+    const { min, max } = manifest.limits.three_d.zoom;
+    const zoom = CameraLayerSchema.shape.zoom;
+    expect(zoom.safeParse({ value: min }).success).toBe(true);
+    expect(zoom.safeParse({ value: max }).success).toBe(true);
+    expect(zoom.safeParse({ value: min - 0.5 }).success).toBe(false);
+    expect(zoom.safeParse({ value: max + 1 }).success).toBe(false);
+  });
+
   it("lists every generator kind, the looks and their limits, and keeps custom shaders unavailable", () => {
     expect(sorted(Object.keys(manifest.features.generators))).toEqual(
       sorted(GeneratorSchema.options.map((option) => option.shape.type.value)),
@@ -205,6 +221,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(10_500); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053)
+    expect(JSON.stringify(manifest).length).toBeLessThan(11_300); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type; 10_700 before the three_d feature block (ADR-0054)
   });
 });

@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are (2026-11-12):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has the component model, five built-ins, MCP placement and discovery, and a structured storyboard tool (ADR-0046, ADR-0047, ADR-0049, ADR-0050), and transform motion blur was pulled forward from v1.x (ADR-0053), while M5's rules and tools are still open. M7 has export and beat markers (`mark_beats`, `sync_to_beats`; ADR-0052); preview links are next. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It can export MP4, WebM and GIF (jobs with progress, cancel and a fidelity report; ADR-0048), but it cannot yet apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
+**Where we are (2026-11-12):** M0–M2 done; M3 done except deployment; M4 done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done); M5's pack format and four draft packs exist (ADR-0037); M6 has the component model, five built-ins, MCP placement and discovery, and a structured storyboard tool (ADR-0046, ADR-0047, ADR-0049, ADR-0050), and transform motion blur (ADR-0053) and 2.5D layers with cameras (ADR-0054) were pulled forward from v1.x, while M5's rules and tools are still open. M7 has export and beat markers (`mark_beats`, `sync_to_beats`; ADR-0052); preview links are next. An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It can export MP4, WebM and GIF (jobs with progress, cancel and a fidelity report; ADR-0048), but it cannot yet apply a style or get a quality report. The milestone order below was confirmed on 2026-11-09 with its risk recorded (PRODUCT.md, "Risks we carry knowingly"; ADR-0035).
 
 **How milestones are judged from M4 on:** by the brief suite (PRODUCT.md, "How we know it works"), not only by tests. A milestone that adds agent-facing tools is done when the suite's numbers and frames are in its last PR.
 
@@ -73,6 +73,7 @@ Feature by feature. Each item is one branch + PR unless noted. Check items off a
 - [x] `build_from_brief` with structured headline, logo, image and video shots, style-aware composition, and one atomic write → ADR-0050
 - [x] Sandbox spike for custom components → [ADR-0051](decisions/0051-component-sandbox-spike.md): the measured QuickJS WebAssembly paths exceeded the 4 ms p95 browser gate for eight active instances
 - [x] Motion blur, pulled forward from v1.x at the user's request → [ADR-0053](decisions/0053-motion-blur.md): per-layer `motionBlur` (shutter angle, phase, 2 to 64 samples; scene format 11) that samples the layer's transform and opacity across the shutter and accumulates the placements additively; animated contents stay at the center frame; moving shapes and text are cropped to the shutter's reach
+- [x] 2.5D layers and cameras, pulled forward from v1.x at the user's request → [ADR-0054](decisions/0054-camera-3d.md): flat cards in 3D (`threeD`, `positionZ`, `rotationX`, `rotationY`, a `camera` layer with zoom and point of interest; scene format 12) projected by a homography with per-pixel level of detail and near clipping, contiguous 3D runs depth-sorted After Effects style, precomps flat; no lights, materials or models
 - [ ] Code authoring over MCP: `define_component`, `define_shader` (custom GLSL), `list_definitions`; versioned, content-hashed definitions pinned in documents (ADR-0012); project definitions in the component and shader catalogs. `define_component` depends on an evaluator that meets the performance and isolation requirements in ADR-0051
 - [ ] Built-in shader transitions
 
@@ -98,7 +99,7 @@ The human sees the video before any editor exists.
 
 Opens after M8. The editor is built during it, from what users finish by hand.
 
-- [ ] Schema check: confirm additive room for 3D (Z, camera/light/model layers; interaction with order, blend modes, mattes, precomps), ADR-0013
+- [ ] Schema check: confirm additive room for 3D (Z, camera/light/model layers; interaction with order, blend modes, mattes, precomps), ADR-0013 (Z, camera and the stacking model answered by ADR-0054; lights and model layers still open)
 - [ ] Onboarding for MCP clients, usage limits, billing direction, open-core decision
 - [ ] Brief suite meets the beta targets in PRODUCT.md
 - [ ] Landing page with real exported videos and connect steps checked in each client
@@ -115,5 +116,5 @@ Starts simple; grows toward an After Effects-like workflow (ADR-0035).
 
 Not exhaustive; every `v1.x` item in CAPABILITIES.md follows after the private beta.
 
-- 3D compositing: 3D layers, cameras, lights; glTF / GLB model layers; shader materials
+- 3D compositing: lights; glTF / GLB model layers; shader materials (3D layers and cameras shipped early, ADR-0054)
 - Lottie import → editable layers

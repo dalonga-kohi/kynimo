@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   common,
   composition,
+  groupTransform,
   issues,
   nullLayer,
   type Obj,
@@ -65,7 +66,7 @@ describe("ProjectSchema: valid documents", () => {
                 type: "group",
                 id: "g1",
                 name: "Group",
-                transform: transform(),
+                transform: groupTransform(),
                 items: [
                   {
                     type: "rect",
@@ -243,7 +244,7 @@ describe("ProjectSchema: field validation", () => {
       { type: "ellipse", id: "leaf", name: "Leaf", position: prop([0, 0]), size: prop([1, 1]) },
     ];
     for (let i = 0; i < 20; i++)
-      items = [{ type: "group", id: `g${i}`, name: "G", transform: transform(), items }];
+      items = [{ type: "group", id: `g${i}`, name: "G", transform: groupTransform(), items }];
     const shape = { ...visual("s"), type: "shape", contents: items };
     expect(issues(project({ compositions: [composition("main", [shape])] }))).toEqual([]);
   });
@@ -255,7 +256,7 @@ describe("ProjectSchema: hostile input", () => {
       { type: "ellipse", id: "leaf", name: "Leaf", position: prop([0, 0]), size: prop([1, 1]) },
     ];
     for (let i = 0; i < depth; i++)
-      items = [{ type: "group", id: `g${i}`, name: "G", transform: transform(), items }];
+      items = [{ type: "group", id: `g${i}`, name: "G", transform: groupTransform(), items }];
     return items;
   };
   const withContents = (contents: Obj[]) =>
@@ -561,7 +562,7 @@ describe("ProjectSchema: integrity", () => {
       type: "shape",
       contents: [
         leaf,
-        { type: "group", id: "g", name: "G", transform: transform(), items: [leaf] },
+        { type: "group", id: "g", name: "G", transform: groupTransform(), items: [leaf] },
       ],
     };
     expect(issues(project({ compositions: [composition("main", [shape])] }))).toEqual([
@@ -613,7 +614,7 @@ describe("path operators (format 5)", () => {
         type: "group",
         id: "g",
         name: "G",
-        transform: transform(),
+        transform: groupTransform(),
         items: [repeaterItem(prop(12.5))],
       },
     ]);
@@ -644,6 +645,6 @@ describe("JSON Schema export", () => {
     expect(JSON.stringify(schema)).toContain("formatVersion");
     const compact = z.toJSONSchema(ProjectSchema, { io: "output", reused: "ref" });
     // The MCP resource uses the deduplicated form; keep it small so new properties cannot bloat it unnoticed.
-    expect(JSON.stringify(compact).length).toBeLessThan(90_000);
+    expect(JSON.stringify(compact).length).toBeLessThan(100_000);
   });
 });

@@ -53,8 +53,8 @@ function hasTransform(layer: Layer): layer is Exclude<Layer, { type: "audio" }> 
 }
 
 /** Layers that put pixels in the frame and so carry a blend mode, a track matte and masks. */
-function isDrawn(layer: Layer): layer is Exclude<Layer, { type: "audio" | "null" }> {
-  return layer.type !== "audio" && layer.type !== "null";
+function isDrawn(layer: Layer): layer is Exclude<Layer, { type: "audio" | "null" | "camera" }> {
+  return layer.type !== "audio" && layer.type !== "null" && layer.type !== "camera";
 }
 
 /** The bundled family `family` names, ignoring case, if any. */
@@ -512,7 +512,15 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
             at("parent"),
             `parent '${layer.parent}' is an audio layer; audio layers cannot be parents`,
           );
+        else if (parent.type === "camera")
+          issue(
+            at("parent"),
+            "cameras cannot be parents; parent the layer to a null and the camera to the same null instead",
+          );
       }
+
+      if (layer.type === "adjustment" && layer.threeD)
+        issue(at("threeD"), "adjustment layers cannot be 3D; set threeD to false");
 
       if (hasTransform(layer)) checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
 

@@ -52,6 +52,24 @@ export function cropToComposition(
 }
 
 /**
+ * Chooses the resolution of a layer-space raster (a 3D vector layer, ADR-0054) from its layer-space
+ * `bounds`: the scale in raster pixels per layer unit, a power of two; `null` draws nothing.
+ */
+export type LayerRasterScale = (bounds: Rect) => number | null;
+
+/**
+ * Whole-pixel `[x0, y0, x1, y1]` of a layer-space raster at `scale` raster pixels per layer unit,
+ * covering `bounds` plus anti-aliasing room. The origin is a multiple of `1 / scale` layer units,
+ * so the pixel grid does not depend on the bounds.
+ */
+export const layerRasterRect = ([l, t, r, b]: Rect, scale: number): Rect => [
+  Math.floor(l * scale - AA_PAD),
+  Math.floor(t * scale - AA_PAD),
+  Math.ceil(r * scale + AA_PAD),
+  Math.ceil(b * scale + AA_PAD),
+];
+
+/**
  * The region a composition-space raster must cover so a motion-blurred layer still fills the frame
  * at every shutter sample (ADR-0053): the composition rect plus effect `padding`, unioned with that
  * rect carried back by each invertible sample `delta`. Reaches at most one composition width or

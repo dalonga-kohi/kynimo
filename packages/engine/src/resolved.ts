@@ -3,6 +3,7 @@ import type { Affine } from "./affine.js";
 import type { Rgba } from "./color.js";
 import type { ResolvedEffect } from "./effect.js";
 import type { ResolvedGenerator } from "./generator.js";
+import type { Projective } from "./projective.js";
 
 export type { ResolvedEffect } from "./effect.js";
 export type { ResolvedGenerator } from "./generator.js";
@@ -18,12 +19,19 @@ import type { ResolvedTextAnimator } from "./text-animator.js";
 
 export type Point = readonly [number, number];
 
-/** Sampled local transform values, clamped to their domains (opacity 0..1, skew ±85°). */
+/**
+ * Sampled local transform values, clamped to their domains (opacity 0..1, skew ±85°).
+ * `positionZ`, `rotationX` and `rotationY` are sampled for every layer but only act on 3D layers
+ * and cameras (ADR-0054); they are 0 for shape groups.
+ */
 export interface ResolvedTransform {
   anchorPoint: Point;
   position: Point;
+  positionZ: number;
   scale: Point;
   rotation: number;
+  rotationX: number;
+  rotationY: number;
   skew: number;
   opacity: number;
 }
@@ -48,7 +56,10 @@ export interface ResolvedComposition {
  * (transform) opacity at that sub-frame time.
  */
 export interface MotionSample {
+  /** For a 3D layer, an approximation of `projection`: see {@link LayerBase.matrix}. */
   matrix: Affine;
+  /** The sample's {@link LayerBase.projection}: `null` for a 2D layer. Camera motion is sampled at the same time. */
+  projection: Projective | null;
   opacity: number;
 }
 
@@ -59,8 +70,17 @@ interface LayerBase {
   layerFrame: number;
   /** The layer's own transform. Opacity is not inherited from parents (After Effects parenting). */
   transform: ResolvedTransform;
-  /** Layer space → composition space, including every parent's transform. */
+  /**
+   * Layer space → composition space, including every parent's transform. For a 3D layer this is
+   * approximate (the first-order affine approximation of `projection` at the layer's anchor point,
+   * or the 2D world matrix when the anchor is behind the camera): use `projection` when non-null.
+   */
   matrix: Affine;
+  /**
+   * 3D layers only (ADR-0054): layer space (the z = 0 plane) → composition pixels through the
+   * active camera, with `W` the camera-space depth. Never normalized. `null` for a 2D layer.
+   */
+  projection: Projective | null;
   /** How the layer combines with what is below it (ADR-0020). Ignored while it serves as a matte. */
   blendMode: BlendMode;
   /** Active masks in document order (`none` masks are left out). Empty: the layer is unmasked. */

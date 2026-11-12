@@ -6,7 +6,7 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 
 /** Layer types without a transform, and types that do not put pixels in the frame. */
 const NO_TRANSFORM = new Set(["audio"]);
-const NOT_DRAWN = new Set(["audio", "null"]);
+const NOT_DRAWN = new Set(["audio", "null", "camera"]);
 
 /**
  * Fills the fields every layer of a type shares, so `add_layer` only needs the type's own fields
@@ -32,14 +32,29 @@ export function withLayerDefaults(input: unknown, composition: Composition | und
   if (!NO_TRANSFORM.has(type)) {
     out.parent = input.parent === undefined ? null : input.parent;
     const center = composition ? [composition.width / 2, composition.height / 2] : [0, 0];
+    // A camera defaults to After Effects' 50 mm lens, backed off by its zoom so it frames the composition.
+    let zoom = composition ? Math.round(((composition.width * 50) / 36) * 10) / 10 : 1;
     const transform: Obj = {
       anchorPoint: { value: [0, 0] },
       position: { value: center },
+      positionZ: { value: 0 },
       scale: { value: [1, 1] },
       rotation: { value: 0 },
+      rotationX: { value: 0 },
+      rotationY: { value: 0 },
       skew: { value: 0 },
       opacity: { value: 1 },
     };
+    if (type === "camera") {
+      const given = isObj(input.zoom) ? input.zoom.value : undefined;
+      if (typeof given === "number" && given > 0) zoom = given;
+      out.zoom = input.zoom === undefined ? { value: zoom } : input.zoom;
+      out.pointOfInterest =
+        input.pointOfInterest === undefined
+          ? { value: [center[0], center[1], 0] }
+          : input.pointOfInterest;
+      transform.positionZ = { value: -zoom };
+    }
     if (input.transform === undefined) out.transform = transform;
     else if (isObj(input.transform)) out.transform = { ...transform, ...input.transform };
   }

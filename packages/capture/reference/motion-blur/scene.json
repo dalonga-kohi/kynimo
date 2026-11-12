@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: motion blur",
   "mainCompositionId": "main",
   "style": null,
@@ -70,6 +70,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -105,7 +114,8 @@
           "fill": {
             "value": "#f5f7fb"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "spinner",
@@ -155,6 +165,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -196,7 +215,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "ball",
@@ -231,6 +251,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -269,7 +298,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "sharp",
@@ -304,6 +334,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -312,7 +351,8 @@
           "type": "solid",
           "width": 120,
           "height": 120,
-          "color": "#ffd166"
+          "color": "#ffd166",
+          "threeD": false
         },
         {
           "id": "glider",
@@ -362,9 +402,19 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
-          "type": "null"
+          "type": "null",
+          "threeD": false
         }
       ]
     }

@@ -12,6 +12,7 @@ const LAYER_TYPES = [
   "solid",
   "generator",
   "null",
+  "camera",
   "precomp",
   "adjustment",
   "component",

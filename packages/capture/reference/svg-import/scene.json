@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: SVG import",
   "mainCompositionId": "main",
   "style": null,
@@ -121,6 +121,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -692,7 +701,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "icon",
@@ -774,6 +784,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -977,7 +996,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "icon-small",
@@ -1036,6 +1056,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -1239,7 +1268,8 @@
                 }
               ]
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }

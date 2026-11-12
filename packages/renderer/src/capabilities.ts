@@ -50,6 +50,10 @@ export const LAYER_SUPPORT: Readonly<Record<LayerType, Support>> = {
   },
   precomp: RENDERS,
   null: { status: "renders", note: "draws nothing by design; use it as a parent or controller" },
+  camera: {
+    status: "renders",
+    note: "draws nothing by design; it frames the composition's 3D layers, which are not drawn yet",
+  },
   adjustment: { status: "renders", note: "effects apply to the composite of layers below" },
   component: {
     status: "renders",

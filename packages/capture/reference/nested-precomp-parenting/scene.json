@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: nested precomp with parenting",
   "mainCompositionId": "main",
   "style": null,
@@ -68,13 +68,23 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
           "matte": null,
           "masks": [],
           "type": "precomp",
-          "compositionId": "tile"
+          "compositionId": "tile",
+          "threeD": false
         },
         {
           "id": "tile-a",
@@ -109,13 +119,23 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
           "matte": null,
           "masks": [],
           "type": "precomp",
-          "compositionId": "tile"
+          "compositionId": "tile",
+          "threeD": false
         },
         {
           "id": "rig",
@@ -186,9 +206,19 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
-          "type": "null"
+          "type": "null",
+          "threeD": false
         },
         {
           "id": "bg",
@@ -223,6 +253,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -274,7 +313,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     },
@@ -324,6 +364,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -354,7 +403,8 @@
           "fill": {
             "value": "#c9cfe0"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "orbit",
@@ -389,13 +439,23 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
           "matte": null,
           "masks": [],
           "type": "precomp",
-          "compositionId": "orbit"
+          "compositionId": "orbit",
+          "threeD": false
         },
         {
           "id": "panel",
@@ -430,6 +490,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -490,7 +559,8 @@
                 "value": 0
               }
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     },
@@ -540,6 +610,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -592,7 +671,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "planet-b",
@@ -627,6 +707,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -679,7 +768,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "moon-host",
@@ -714,6 +804,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -766,7 +865,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "moon",
@@ -801,6 +901,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -834,7 +943,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "hub",
@@ -884,9 +994,19 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
-          "type": "null"
+          "type": "null",
+          "threeD": false
         },
         {
           "id": "core",
@@ -921,6 +1041,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -969,7 +1098,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "track",
@@ -1004,6 +1134,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -1061,7 +1200,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }
