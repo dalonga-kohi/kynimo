@@ -23,6 +23,7 @@ const SCENES = [
   "text-animators",
   "svg-import",
   "shader-backgrounds",
+  "components",
 ] as const;
 
 interface Reference {

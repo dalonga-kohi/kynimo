@@ -1,0 +1,268 @@
+{
+  "formatVersion": 9,
+  "name": "Reference: components",
+  "mainCompositionId": "main",
+  "style": null,
+  "assets": [],
+  "compositions": [
+    {
+      "id": "main",
+      "name": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": {
+        "num": 30,
+        "den": 1
+      },
+      "durationFrames": 120,
+      "background": "#000000",
+      "markers": [],
+      "layers": [
+        {
+          "id": "transition",
+          "name": "transition",
+          "inFrame": 40,
+          "outFrame": 70,
+          "startFrame": 40,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "behaviors": [],
+          "type": "component",
+          "componentId": "transition",
+          "componentVersion": "1.0.0",
+          "props": {
+            "kind": "panels",
+            "direction": "right"
+          }
+        },
+        {
+          "id": "lower-third",
+          "name": "lower-third",
+          "inFrame": 66,
+          "outFrame": 120,
+          "startFrame": 66,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "behaviors": [],
+          "type": "component",
+          "componentId": "lower-third",
+          "componentVersion": "1.0.0",
+          "props": {
+            "variant": "bar",
+            "exit": false
+          }
+        },
+        {
+          "id": "headline",
+          "name": "headline",
+          "inFrame": 54,
+          "outFrame": 120,
+          "startFrame": 54,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "behaviors": [],
+          "type": "component",
+          "componentId": "kinetic-type",
+          "componentVersion": "1.0.0",
+          "props": {
+            "text": "Built from components",
+            "variant": "rise",
+            "exit": false,
+            "position": [0, -60]
+          }
+        },
+        {
+          "id": "logo",
+          "name": "logo",
+          "inFrame": 0,
+          "outFrame": 60,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "behaviors": [],
+          "type": "component",
+          "componentId": "logo-reveal",
+          "componentVersion": "1.0.0",
+          "props": {
+            "wordmark": "Kynimo",
+            "tagline": "Motion, by agents",
+            "variant": "stamp",
+            "exit": true
+          }
+        },
+        {
+          "id": "background",
+          "name": "background",
+          "inFrame": 0,
+          "outFrame": 120,
+          "startFrame": 0,
+          "hidden": false,
+          "solo": false,
+          "editor": {
+            "locked": false,
+            "shy": false,
+            "label": null
+          },
+          "markers": [],
+          "parent": null,
+          "transform": {
+            "anchorPoint": {
+              "value": [0, 0]
+            },
+            "position": {
+              "value": [0, 0]
+            },
+            "scale": {
+              "value": [1, 1]
+            },
+            "rotation": {
+              "value": 0
+            },
+            "skew": {
+              "value": 0
+            },
+            "opacity": {
+              "value": 1
+            }
+          },
+          "blendMode": "normal",
+          "matte": null,
+          "masks": [],
+          "effects": [],
+          "behaviors": [],
+          "type": "component",
+          "componentId": "background",
+          "componentVersion": "1.0.0",
+          "props": {
+            "kind": "aurora",
+            "loops": 1
+          }
+        }
+      ]
+    }
+  ]
+}

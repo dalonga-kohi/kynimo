@@ -32,6 +32,8 @@ Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_a
 
 Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `aurora`, ADR-0045): add one with `add_layer` (or `apply_ops` `addLayer`) and change it with the `setGenerator` operation; `get_layer_schema` with type `generator` lists the fields. Looks (`vignette`, `grain`, `chromatic-aberration`, `posterize`, `scanlines`) are effects, so they go through `add_effect`, usually on an adjustment layer. There is no separate generator tool. `get_capabilities` lists the generators and the limits of generators and looks.
 
+Built-in components (ADR-0047: `kinetic-type`, `lower-third`, `logo-reveal`, `transition`, `background`) render as component layers: a layer of type `component` with `componentId`, `componentVersion` `1.0.0` and `props`. Missing props take their defaults. `add_component` and the component catalog resource are the next M6 item, so for now a component layer is written with `add_layer` or `apply_ops`, and a bad prop shows up when the frame renders.
+
 The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
 
 Where projects live (ADR-0029):

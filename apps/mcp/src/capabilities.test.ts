@@ -1,3 +1,4 @@
+import { BUILT_IN_COMPONENTS } from "@kynimo/components";
 import {
   AssetSchema,
   BEHAVIOR_TYPES,
@@ -121,8 +122,11 @@ describe("capability manifest", () => {
     expect(manifest.layer_types.generator.status).toBe("renders");
     expect(manifest.layer_types.component.status).toBe("renders");
     expect(manifest.unavailable.components?.reason).toBe(
-      "no built-in components yet; the library and add_component arrive next in M6",
+      "built-in components render (kinetic-type, lower-third, logo-reveal, transition, background); add_component and the component catalog arrive next in M6",
     );
+    // The reason names every built-in component, so a new one can't ship unlisted.
+    for (const { id } of BUILT_IN_COMPONENTS)
+      expect(manifest.unavailable.components?.reason).toContain(id);
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {
