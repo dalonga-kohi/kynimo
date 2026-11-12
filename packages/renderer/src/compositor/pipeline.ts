@@ -1,4 +1,4 @@
-import type { BlendMode, TrackMatte } from "@kynimo/scene";
+import { type BlendMode, MAX_COMPOSITION_SIZE, type TrackMatte } from "@kynimo/scene";
 import type { FramePlan, PlannedFrameLayer, PlannedLayer, PlannedMotionSample } from "../raster.js";
 
 /**
@@ -8,6 +8,27 @@ import type { FramePlan, PlannedFrameLayer, PlannedLayer, PlannedMotionSample } 
 
 /** `[a, b, c, d, e, f]`: (x, y) → (a·x + c·y + e, b·x + d·y + f), as in `@kynimo/engine`. */
 export type Affine = readonly [number, number, number, number, number, number];
+
+/**
+ * A plane-to-plane projective map, row-major, applied to column vectors: `X = m0·x + m1·y + m2`,
+ * `Y = m3·x + m4·y + m5`, `W = m6·x + m7·y + m8`, the point being `(X/W, Y/W)`. The same layout as
+ * `Projective` in `@kynimo/engine` (this module does not import it at runtime). `W` is the camera
+ * depth in composition pixels; matrices are never normalized.
+ */
+export type Projective = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/** Composition pixels in front of the camera at which 3D layers are clipped (`W <= NEAR` is not drawn). */
+export const NEAR = 1;
 
 export function invert([a, b, c, d, e, f]: Affine): Affine | null {
   const det = a * d - b * c;
@@ -40,6 +61,62 @@ export function samplePlacement(
   ];
 }
 
+/** The map from the layer's raster pixels to composition pixels when it is a 3D layer, else `null`. */
+export const layerProjection = (layer: PlannedLayer): Projective | null =>
+  layer.space === "layer" ? (layer.projection ?? null) : null;
+
+/**
+ * Raster (before effect `padding`) → composition for a 3D layer: its projection, or `sample`'s when
+ * it is a motion sample (that one is the full placement, not a delta), after the padding shift.
+ * A layer without a projection falls back to its affine placement.
+ */
+export function projectivePlacement(
+  layer: PlannedLayer,
+  padding: [number, number] = [0, 0],
+  sample?: PlannedMotionSample | null,
+): Projective {
+  const m = sample?.projection ?? layerProjection(layer);
+  if (m === null) {
+    const [a, b, c, d, e, f] = placement(layer, padding);
+    return [a, c, e, b, d, f, 0, 0, 1];
+  }
+  const [x, y] = padding;
+  // m · translate(-x, -y): the third column absorbs the shift.
+  return [
+    m[0],
+    m[1],
+    m[2] - m[0] * x - m[1] * y,
+    m[3],
+    m[4],
+    m[5] - m[3] * x - m[4] * y,
+    m[6],
+    m[7],
+    m[8] - m[6] * x - m[7] * y,
+  ];
+}
+
+/** The true inverse (adjugate over determinant, not normalized); `null` when singular or not finite. */
+export function projectiveInvert(m: Projective): Projective | null {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h;
+  const B = f * g - d * i;
+  const C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  if (det === 0 || !Number.isFinite(det)) return null;
+  const out = [
+    A / det,
+    (c * h - b * i) / det,
+    (b * f - c * e) / det,
+    B / det,
+    (a * i - c * g) / det,
+    (c * d - a * f) / det,
+    C / det,
+    (b * g - a * h) / det,
+    (a * e - b * d) / det,
+  ];
+  return out.every(Number.isFinite) ? (out as unknown as Projective) : null;
+}
+
 const matteTarget = (layer: PlannedFrameLayer): PlannedLayer | null =>
   layer.type === "adjustment" ? (layer.matte?.source ?? null) : layer;
 
@@ -56,6 +133,47 @@ export function levelOfDetail(inverse: Affine, width: number, height: number): n
   const rho = Math.max(Math.hypot(inverse[0], inverse[1]), Math.hypot(inverse[2], inverse[3]));
   const lod = Math.log2(rho);
   return lod > 0 ? Math.min(lod, maxLevel(width, height)) : 0;
+}
+
+/** The deepest mip level a projective placement may sample: one texture per level, 14 in all. */
+export const MAX_PROJECTIVE_LEVEL = Math.log2(MAX_COMPOSITION_SIZE);
+
+/** Where a composition pixel lands in the source, and how minified it is there. */
+export interface ProjectiveSample {
+  /** Source position in texels of level 0. */
+  qx: number;
+  qy: number;
+  /** Level of detail, clamped to `[0, min(maxLevel(width, height), MAX_PROJECTIVE_LEVEL)]`. */
+  lod: number;
+}
+
+/**
+ * The source position and level of detail of composition pixel `(x, y)` under the placement whose
+ * true inverse is `inv`, or `null` when the pixel is not in front of the near plane (`W = 1 / h.z`
+ * must exceed {@link NEAR}). The level comes from the projective Jacobian, so it varies per pixel;
+ * for an affine placement it equals {@link levelOfDetail}. Both compositors implement exactly this.
+ */
+export function projectiveSample(
+  inv: Projective,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): ProjectiveSample | null {
+  const px = x + 0.5;
+  const py = y + 0.5;
+  const hx = inv[0] * px + inv[1] * py + inv[2];
+  const hy = inv[3] * px + inv[4] * py + inv[5];
+  const hz = inv[6] * px + inv[7] * py + inv[8];
+  if (!(hz > 0 && hz * NEAR < 1)) return null;
+  const qx = hx / hz;
+  const qy = hy / hz;
+  const rho = Math.max(
+    Math.hypot((inv[0] - qx * inv[6]) / hz, (inv[3] - qy * inv[6]) / hz),
+    Math.hypot((inv[1] - qx * inv[7]) / hz, (inv[4] - qy * inv[7]) / hz),
+  );
+  const lod = rho > 1 ? Math.min(Math.log2(rho), maxLevel(width, height), MAX_PROJECTIVE_LEVEL) : 0;
+  return { qx, qy, lod };
 }
 
 export const MATTE_MODES: Readonly<Record<TrackMatte["mode"], number>> = {

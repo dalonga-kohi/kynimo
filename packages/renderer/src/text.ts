@@ -11,7 +11,15 @@ import { effectPadding } from "./compositor/effects.js";
 import { RenderError } from "./errors.js";
 import type { FontLibrary, LoadedFont } from "./fonts.js";
 import type { PlannedMotionSample, RasterImage, RenderWarning } from "./raster.js";
-import { cropToComposition, motionCropRect, type Rect, transformRect, union } from "./rect.js";
+import {
+  cropToComposition,
+  type LayerRasterScale,
+  layerRasterRect,
+  motionCropRect,
+  type Rect,
+  transformRect,
+  union,
+} from "./rect.js";
 import { type Own, rasterize, scoped, toSkColor, toSkMatrix } from "./skia.js";
 
 /** Point text lays out without a width limit, so lines break only at newlines. */
@@ -410,6 +418,7 @@ function rasterizeAnimated(
   work: FrameTextWork | undefined,
   own: Own,
   motion: readonly PlannedMotionSample[] | null,
+  layerSpace: LayerRasterScale | undefined,
 ): { x: number; y: number; raster: RasterImage } | null {
   const glyphs = placeGlyphs(ck, layout, animation, layer.align).filter(
     (g) => g.effect.opacity * g.effect.fill.a > 0 && g.text.trim() !== "",
@@ -423,23 +432,26 @@ function rasterizeAnimated(
   const pad = layout.pad;
   let bounds: Rect | null = null;
   for (const g of glyphs) {
-    const box = transformRect(multiply(layer.matrix, glyphMatrix(g)), [
-      g.x - pad,
-      g.top - pad,
-      g.x + g.width + pad,
-      g.bottom + pad,
-    ]);
+    const box = transformRect(
+      layerSpace === undefined ? multiply(layer.matrix, glyphMatrix(g)) : glyphMatrix(g),
+      [g.x - pad, g.top - pad, g.x + g.width + pad, g.bottom + pad],
+    );
     if (box !== null) bounds = bounds === null ? box : union(bounds, box);
   }
   if (bounds === null) return null;
   const padding = effectPadding(layer.effects);
-  const crop = cropToComposition(
-    bounds,
-    width,
-    height,
-    padding,
-    motionCropRect(width, height, padding, motion),
-  );
+  const scale = layerSpace === undefined ? 1 : layerSpace(bounds);
+  if (scale === null) return null;
+  const crop =
+    layerSpace === undefined
+      ? cropToComposition(
+          bounds,
+          width,
+          height,
+          padding,
+          motionCropRect(width, height, padding, motion),
+        )
+      : layerRasterRect(bounds, scale);
   if (crop === null) return null;
   const [x0, y0, x1, y1] = crop;
   reserve(x1 - x0, y1 - y0);
@@ -478,7 +490,8 @@ function rasterizeAnimated(
 
   const raster = rasterize(ck, x1 - x0, y1 - y0, (canvas) => {
     canvas.translate(-x0, -y0);
-    canvas.concat(toSkMatrix(layer.matrix));
+    if (layerSpace === undefined) canvas.concat(toSkMatrix(layer.matrix));
+    else canvas.scale(scale, scale);
     for (const g of glyphs) {
       const { paragraph, baseline } = shape(g.text, {
         ...g.effect.fill,
@@ -519,6 +532,10 @@ export function textAnimatorWarnings(layer: ResolvedTextLayer): RenderWarning[] 
  * `width × height` composition. Returns `null` when nothing visible lands inside it. With text
  * animators that change something this frame, each cluster is drawn on its own (ADR-0038);
  * otherwise the layer is one paragraph, exactly as before animators existed.
+ *
+ * With `layerSpace` (a 3D layer, ADR-0054) the layer's own matrix is ignored and the raster is in
+ * layer space, uncropped: `layerSpace` picks its scale `s` from the layer-space bounds, and the
+ * result's `x`, `y` are the raster's origin in raster pixels (layer unit · `s`).
  */
 export function rasterizeTextLayer(
   ck: CanvasKit,
@@ -532,6 +549,7 @@ export function rasterizeTextLayer(
   work?: FrameTextWork,
   /** The layer's blur samples: the raster then also covers what the shutter brings into view. */
   motion: readonly PlannedMotionSample[] | null = null,
+  layerSpace?: LayerRasterScale,
 ): { x: number; y: number; raster: RasterImage } | null {
   if (!(layer.fill.a > 0) && layer.animators.length === 0) return null;
   return scoped((own) => {
@@ -552,26 +570,34 @@ export function rasterizeTextLayer(
           work,
           own,
           motion,
+          layerSpace,
         );
     }
     if (!(layer.fill.a > 0)) return null;
     const local = layoutBounds(layout);
-    const bounds = local === null ? null : transformRect(layer.matrix, local);
-    if (bounds === null) return null;
+    const bounds =
+      local === null ? null : layerSpace === undefined ? transformRect(layer.matrix, local) : local;
+    if (bounds === null || !bounds.every(Number.isFinite)) return null;
     const padding = effectPadding(layer.effects);
-    const crop = cropToComposition(
-      bounds,
-      width,
-      height,
-      padding,
-      motionCropRect(width, height, padding, motion),
-    );
+    const scale = layerSpace === undefined ? 1 : layerSpace(bounds);
+    if (scale === null) return null;
+    const crop =
+      layerSpace === undefined
+        ? cropToComposition(
+            bounds,
+            width,
+            height,
+            padding,
+            motionCropRect(width, height, padding, motion),
+          )
+        : layerRasterRect(bounds, scale);
     if (crop === null) return null;
     const [x0, y0, x1, y1] = crop;
     reserve(x1 - x0, y1 - y0);
     const raster = rasterize(ck, x1 - x0, y1 - y0, (canvas) => {
       canvas.translate(-x0, -y0);
-      canvas.concat(toSkMatrix(layer.matrix));
+      if (layerSpace === undefined) canvas.concat(toSkMatrix(layer.matrix));
+      else canvas.scale(scale, scale);
       canvas.drawParagraph(layout.paragraph, layout.origin[0], layout.origin[1]);
     });
     const trimmed = trimTransparent(raster);

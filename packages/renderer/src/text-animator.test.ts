@@ -33,7 +33,7 @@ const at = (x: number, y: number) => transform({ position: prop([x, y]) });
 const ink = (p: FramePlan): [number, number, number, number] => {
   expect(p.layers).toHaveLength(1);
   const l = p.layers[0];
-  if (l?.type !== "text") throw new Error("expected a text layer");
+  if (l?.type !== "text" || l.space !== "composition") throw new Error("expected a text layer");
   return [l.x, l.y, l.x + l.raster.width, l.y + l.raster.height];
 };
 

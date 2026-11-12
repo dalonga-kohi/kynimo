@@ -16,12 +16,17 @@ import {
 import {
   BLEND_MODE_IDS,
   invert,
+  layerProjection,
   levelOfDetail,
   MATTE_MODES,
+  MAX_PROJECTIVE_LEVEL,
   matteChain,
   maxLevel,
+  NEAR,
   placement,
   precompUses,
+  projectiveInvert,
+  projectivePlacement,
   samplePlacement,
 } from "./pipeline.js";
 import {
@@ -34,6 +39,7 @@ import {
   generatorShader,
   type MatteMode,
   PREPARE,
+  PROJECTIVE_LEVELS,
   placeShader,
   VERTEX,
 } from "./shaders.js";
@@ -96,6 +102,12 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
   if (gl.getExtension("EXT_color_buffer_float") === null)
     throw new CompositorError("the WebGL2 context cannot render to float (RGBA16F) targets");
   const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+  // A projective placement binds one sampler per mip level plus the matte, with a spare.
+  const units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number;
+  if (units < PROJECTIVE_LEVELS + 2)
+    throw new CompositorError(
+      `the WebGL2 context has ${units} texture units per shader; 3D layers need ${PROJECTIVE_LEVELS + 2}`,
+    );
   const debug = gl.getExtension("WEBGL_debug_renderer_info");
   const renderer = String(
     debug === null ? gl.getParameter(gl.RENDERER) : gl.getParameter(debug.UNMASKED_RENDERER_WEBGL),
@@ -535,64 +547,113 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         // A blurred layer is drawn once per shutter sample and summed into `out` (premultiplied,
         // additive blending); a plain layer is drawn once and replaces it.
         const draws = motion ?? [null];
-        const plans = draws.map((sample) => {
-          const inv = invert(
-            sample === null
-              ? placement(current, padding)
-              : samplePlacement(current, sample, padding),
-          );
-          const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
-          const k = Math.floor(lod);
-          // The hi level is only sampled with a positive weight, so an exact level needs no next one.
-          const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
-          return { sample, inv, lod, k, top };
-        });
-        // One mip chain per source, shared by every sample, built with blending off.
+        const projective = layerProjection(current) !== null;
+        const plans = projective
+          ? []
+          : draws.map((sample) => {
+              const inv = invert(
+                sample === null
+                  ? placement(current, padding)
+                  : samplePlacement(current, sample, padding),
+              );
+              const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
+              const k = Math.floor(lod);
+              // The hi level is only sampled with a positive weight, so an exact level needs no next one.
+              const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
+              return { sample, inv, lod, k, top };
+            });
+        // One mip chain per source, shared by every sample, built with blending off. A projective
+        // layer's levels vary per pixel, so it gets the whole chain.
         const levels = [src];
-        const deepest = plans.reduce((m, p) => Math.max(m, p.top), 0);
-        for (let n = 1; n <= deepest; n++) {
-          const prev = levels[n - 1] as Target;
-          const next = target(Math.ceil(prev.width / 2), Math.ceil(prev.height / 2));
-          pass(fixed.downsample(), next, [["u_src", prev.texture]], () => {});
-          levels.push(next);
-        }
+        const deepest = projective
+          ? Math.min(maxLevel(src.width, src.height), MAX_PROJECTIVE_LEVEL)
+          : plans.reduce((m, p) => Math.max(m, p.top), 0);
         try {
-          if (motion !== null) clear(gl, out);
-          for (const { sample, inv, lod, k, top } of plans) {
-            const lo = levels[k] as Target;
-            const hi = levels[top] as Target;
-            const shift =
-              sample === null && inv !== null && lod === 0 ? wholePixelShift(inv) : null;
-            const copy = shift !== null && top === 0;
-            if (motion !== null) {
-              gl.enable(gl.BLEND);
-              gl.blendFunc(gl.ONE, gl.ONE);
-            }
-            pass(
-              program(`place:${matteMode}${matteEmpty ? "e" : ""}${copy ? "c" : ""}`, () =>
-                placeShader({ matte: matteMode, empty: matteEmpty, copy }),
-              ),
-              out,
-              [
-                ["u_lo", lo.texture],
-                ["u_hi", hi.texture],
-                ["u_matte", below?.texture ?? empty],
-              ],
-              (u) => {
-                gl.uniform2f(u("u_scale"), 2 ** -k, 2 ** -top);
-                gl.uniform1f(u("u_t"), top > k ? lod - k : 0);
-                const [a, b, c, d, e, f] = inv ?? [0, 0, 0, 0, 0, 0];
-                gl.uniform3f(u("u_invX"), a, c, e);
-                gl.uniform3f(u("u_invY"), b, d, f);
-                gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
-                if (shift !== null) gl.uniform2i(u("u_shift"), shift[0], shift[1]);
-                gl.uniform1f(
-                  u("u_opacity"),
-                  sample === null ? current.opacity : sample.opacity / draws.length,
-                );
-              },
-            );
+          for (let n = 1; n <= deepest; n++) {
+            const prev = levels[n - 1] as Target;
+            const next = target(Math.ceil(prev.width / 2), Math.ceil(prev.height / 2));
+            levels.push(next);
+            pass(fixed.downsample(), next, [["u_src", prev.texture]], () => {});
           }
+          if (motion !== null) clear(gl, out);
+          if (projective)
+            for (const sample of draws) {
+              const inv = projectiveInvert(projectivePlacement(current, padding, sample));
+              if (motion !== null) {
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE);
+              }
+              pass(
+                program(`place:${matteMode}${matteEmpty ? "e" : ""}p`, () =>
+                  placeShader({
+                    matte: matteMode,
+                    empty: matteEmpty,
+                    copy: false,
+                    projective: true,
+                  }),
+                ),
+                out,
+                [
+                  ...Array.from({ length: PROJECTIVE_LEVELS }, (_, n): [string, WebGLTexture] => [
+                    `u_l${n}`,
+                    (levels[n] ?? { texture: empty }).texture,
+                  ]),
+                  ["u_matte", below?.texture ?? empty],
+                ],
+                (u) => {
+                  const m = inv ?? [0, 0, 0, 0, 0, 0, 0, 0, 0];
+                  // GLSL matrices are column-major.
+                  gl.uniformMatrix3fv(
+                    u("u_inv"),
+                    false,
+                    new Float32Array([m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]),
+                  );
+                  gl.uniform1f(u("u_near"), NEAR);
+                  gl.uniform1i(u("u_maxLevel"), deepest);
+                  gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
+                  gl.uniform1f(
+                    u("u_opacity"),
+                    sample === null ? current.opacity : sample.opacity / draws.length,
+                  );
+                },
+              );
+            }
+          else
+            for (const { sample, inv, lod, k, top } of plans) {
+              const lo = levels[k] as Target;
+              const hi = levels[top] as Target;
+              const shift =
+                sample === null && inv !== null && lod === 0 ? wholePixelShift(inv) : null;
+              const copy = shift !== null && top === 0;
+              if (motion !== null) {
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE);
+              }
+              pass(
+                program(`place:${matteMode}${matteEmpty ? "e" : ""}${copy ? "c" : ""}`, () =>
+                  placeShader({ matte: matteMode, empty: matteEmpty, copy }),
+                ),
+                out,
+                [
+                  ["u_lo", lo.texture],
+                  ["u_hi", hi.texture],
+                  ["u_matte", below?.texture ?? empty],
+                ],
+                (u) => {
+                  gl.uniform2f(u("u_scale"), 2 ** -k, 2 ** -top);
+                  gl.uniform1f(u("u_t"), top > k ? lod - k : 0);
+                  const [a, b, c, d, e, f] = inv ?? [0, 0, 0, 0, 0, 0];
+                  gl.uniform3f(u("u_invX"), a, c, e);
+                  gl.uniform3f(u("u_invY"), b, d, f);
+                  gl.uniform1i(u("u_visible"), inv === null ? 0 : 1);
+                  if (shift !== null) gl.uniform2i(u("u_shift"), shift[0], shift[1]);
+                  gl.uniform1f(
+                    u("u_opacity"),
+                    sample === null ? current.opacity : sample.opacity / draws.length,
+                  );
+                },
+              );
+            }
         } finally {
           gl.disable(gl.BLEND);
           for (const level of levels.slice(1)) free(level);

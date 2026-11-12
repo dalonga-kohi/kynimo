@@ -6,6 +6,7 @@ import type {
   Rgba,
 } from "@kynimo/engine";
 import type { BlendMode, TrackMatte } from "@kynimo/scene";
+import type { Projective } from "./compositor/pipeline.js";
 
 /**
  * Pixels for the compositor to upload as a texture: 8-bit RGBA, premultiplied alpha, sRGB-encoded,
@@ -37,6 +38,11 @@ export interface CoverageImage {
 export interface PlannedMotionSample {
   delta: Affine;
   opacity: number;
+  /**
+   * 3D layers only: the full raster → composition placement at this sample (not a delta; `delta` is
+   * then the identity and ignored). Camera motion is part of it.
+   */
+  projection?: Projective;
 }
 
 interface PlannedBase {
@@ -89,13 +95,19 @@ export interface PlannedVectorLayer extends PlannedBase {
 }
 
 /**
- * Image and solid layers are rasterized in layer space (one pixel per layer unit, origin at the
- * top-left corner) and placed by the compositor with `matrix` (layer → composition space).
+ * Planned in layer space: placed by the compositor with `matrix` (layer raster → composition
+ * space), or, for a 3D layer, with `projection` (`matrix` is then the identity and ignored).
+ *
+ * Image and solid layers have one raster pixel per layer unit, origin at the top-left corner. A
+ * shape or text layer is only planned like this when it is 3D (ADR-0054): rasterized in layer
+ * space at a power-of-two resolution scale, `projection` includes the map from its raster pixels.
  */
 export interface PlannedLayerSpaceLayer extends PlannedBase {
-  type: "image" | "solid";
+  type: "image" | "solid" | "shape" | "text";
   space: "layer";
   matrix: Affine;
+  /** Raster pixels (before effect padding) → composition pixels; `null` or absent for a 2D layer. */
+  projection?: Projective | null;
   raster: RasterImage;
 }
 
@@ -107,6 +119,7 @@ export interface PlannedPrecompLayer extends PlannedBase {
   type: "precomp";
   space: "layer";
   matrix: Affine;
+  projection?: Projective | null;
   frame: FramePlan;
 }
 
@@ -118,6 +131,7 @@ export interface PlannedGeneratorLayer extends PlannedBase {
   type: "generator";
   space: "layer";
   matrix: Affine;
+  projection?: Projective | null;
   width: number;
   height: number;
   generator: ResolvedGenerator;

@@ -12,6 +12,7 @@ import type {
 import { blendColor } from "./blend.js";
 import { type GpuSession, launchGpu } from "./browser.test-util.js";
 import { precompUses } from "./pipeline.js";
+import { cardProjection } from "./projective.test-util.js";
 import { compositeReference } from "./reference.js";
 
 let gpu: GpuSession;
@@ -1057,4 +1058,211 @@ describe("WebGL2 compositor on SwiftShader", () => {
     expect(got.length).toBe(ref.length);
     expect(gap).toBeLessThanOrEqual(2);
   }, 120_000);
+});
+
+describe("WebGL2 compositor: 3D layers (projective placement)", () => {
+  /** A layer-space layer placed by a projection; `matrix` is unused for it. */
+  const card = (
+    id: string,
+    raster: RasterImage,
+    view: Parameters<typeof cardProjection>[0] extends infer O
+      ? Omit<O, "comp" | "anchor"> & { anchor?: [number, number] }
+      : never,
+    overrides: Partial<PlannedLayer> = {},
+  ): PlannedLayer =>
+    solid(id, raster, {
+      projection: cardProjection({
+        comp: [W, H],
+        anchor: [raster.width / 2, raster.height / 2],
+        ...view,
+      }),
+      ...overrides,
+    } as Partial<PlannedLayer>);
+
+  /** Matches the reference, and renders byte-identically twice on one compositor (no leaked state). */
+  async function expectParity(p: FramePlan) {
+    const { bad } = await compare(p, p, () => false);
+    expect(bad.slice(0, 8)).toEqual([]);
+    const first = await gpu.composite(p);
+    const second = await gpu.composite(p);
+    expect(second.pixels).toEqual(first.pixels);
+    expect(first.pixels.some((v) => v !== 0)).toBe(true);
+  }
+
+  it("matches placement at the scales 1.0, 0.6 and 0.3, foreshortened so the level varies", async () => {
+    // Mean on-screen scale = zoom / depth; each card is also turned 50 degrees about Y, so its
+    // near edge is magnified and its far edge minified more than the mean.
+    const zoom = 60;
+    for (const [scale, size] of [
+      [1, [60, 45]],
+      [0.6, [100, 80]],
+      [0.3, [200, 160]],
+    ] as const) {
+      const p = plan([
+        card("p", gradient(size[0], size[1], 7), {
+          zoom,
+          position: [32, 24, zoom / scale - zoom],
+          rotationY: 50,
+        }),
+        card("q", gradient(size[0], size[1], 2), {
+          zoom,
+          position: [30, 26, zoom / scale - zoom],
+          rotationX: -40,
+          rotationY: -20,
+        }),
+      ]);
+      await expectParity(p);
+    }
+  });
+
+  it("matches a card crossing the near plane, with nothing mirrored", async () => {
+    // Zoom 20, a card 1.2 in front of the camera at its centre and tipped about X: the near plane
+    // cuts it across the frame, and the half behind the camera would mirror in over the rest.
+    const p = plan([
+      solid("bg", gradient(W, H, 3)),
+      card("p", gradient(40, 30, 5), { zoom: 20, position: [32, 24, -18.8], rotationX: 60 }),
+    ]);
+    await expectParity(p);
+    const out = await gpu.composite(p);
+    const bg = await gpu.composite(plan([solid("bg", gradient(W, H, 3))]));
+    // The in-front part (upper rows) covers the background...
+    const top = (y: number) => Array.from(out.pixels.slice((y * W + 32) * 4, (y * W + 32) * 4 + 4));
+    expect(top(20)).not.toEqual(
+      Array.from(bg.pixels.slice((20 * W + 32) * 4, (20 * W + 32) * 4 + 4)),
+    );
+    // ...lower rows (behind the near plane) show only the background.
+    for (const y of [30, 40, 47]) {
+      const i = (y * W + 32) * 4;
+      expect(Array.from(out.pixels.slice(i, i + 4))).toEqual(Array.from(bg.pixels.slice(i, i + 4)));
+    }
+  });
+
+  it("matches a 3D layer with a luma matte, a mask and an effect", async () => {
+    const matte = solid("m", gradient(W, H, 4));
+    await expectParity(
+      plan([
+        card(
+          "p",
+          gradient(40, 30, 6),
+          { zoom: 60, position: [32, 24, 20], rotationY: 35 },
+          {
+            opacity: 0.8,
+            mask: coverage(40, 30),
+            effects: [
+              { type: "gaussian-blur", radius: 2.5 },
+              {
+                type: "glow",
+                radius: 3,
+                color: { r: 0.2, g: 0.8, b: 0.4, a: 0.9 },
+                intensity: 0.6,
+              },
+            ],
+            matte: { layerId: "m", mode: "luma", source: matte } as never,
+          },
+        ),
+        solid("bg", gradient(W, H, 8)),
+      ]),
+    );
+  });
+
+  it("matches a 3D precomp", async () => {
+    const inner = plan([solid("a", gradient(40, 30, 10), { blendMode: "overlay" })], {
+      width: 40,
+      height: 30,
+    });
+    const nested = {
+      id: "pre",
+      type: "precomp",
+      space: "layer",
+      opacity: 0.9,
+      blendMode: "normal",
+      mask: null,
+      matte: null,
+      matrix: [1, 0, 0, 1, 0, 0],
+      frame: inner,
+      projection: cardProjection({
+        comp: [W, H],
+        zoom: 60,
+        position: [32, 24, 10],
+        anchor: [20, 15],
+        rotationY: -45,
+      }),
+    } as PlannedLayer;
+    await expectParity(plan([nested, solid("bg", gradient(W, H, 12))]));
+  });
+
+  it("matches a motion-blurred 3D layer under a moving camera", async () => {
+    const samples = [0, 1, 2, 3].map((i) => ({
+      delta: [1, 0, 0, 1, 0, 0] as [number, number, number, number, number, number],
+      opacity: 1,
+      projection: cardProjection({
+        comp: [W, H],
+        zoom: 60,
+        position: [32, 24, 0],
+        anchor: [20, 15],
+        rotationY: 30,
+        camera: [32 + 3 * i, 24, -60],
+      }),
+    }));
+    const centre = samples[1]?.projection;
+    await expectParity(
+      plan([
+        card("p", gradient(40, 30, 9), { zoom: 60, position: [32, 24, 0] }, {
+          projection: centre,
+          motion: samples,
+        } as Partial<PlannedLayer>),
+        solid("bg", gradient(W, H, 1)),
+      ]),
+    );
+  });
+
+  it("matches non-normal blend modes over a 2D layer", async () => {
+    for (const blendMode of ["multiply", "screen", "difference"] as const)
+      await expectParity(
+        plan([
+          card(
+            "p",
+            gradient(40, 30, 13),
+            { zoom: 60, position: [32, 24, 0], rotationX: 30 },
+            {
+              blendMode,
+              opacity: 0.85,
+            },
+          ),
+          solid("bg", gradient(W, H, 14)),
+        ]),
+      );
+  });
+
+  it("renders a 2D frame the same before and after 3D frames", async () => {
+    const flat = plan([
+      solid("a", gradient(40, 30, 2), {
+        matrix: [1, 0, 0, 1, 3.5, 2],
+        effects: [{ type: "gaussian-blur", radius: 2 }],
+      }),
+      solid("b", gradient(W, H, 5), { matrix: [0.4, 0.1, -0.1, 0.4, 5, 5], blendMode: "screen" }),
+    ]);
+    const before = await gpu.composite(flat);
+    await gpu.composite(
+      plan([card("p", gradient(40, 30, 1), { zoom: 60, position: [32, 24, 0], rotationY: 40 })]),
+    );
+    await gpu.composite(
+      plan([
+        card(
+          "p",
+          gradient(40, 30, 1),
+          { zoom: 60, position: [32, 24, 0], rotationY: 40 },
+          {
+            matte: { layerId: "m", mode: "alpha", source: solid("m", gradient(W, H, 4)) } as never,
+            effects: [{ type: "gaussian-blur", radius: 2 }],
+            motion: [
+              { delta: [1, 0, 0, 1, 0, 0], opacity: 1 },
+              { delta: [1, 0, 0, 1, 0, 0], opacity: 1 },
+            ],
+          },
+        ),
+      ]),
+    );
+    expect((await gpu.composite(flat)).pixels).toEqual(before.pixels);
+  });
 });

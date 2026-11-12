@@ -430,41 +430,100 @@ export interface PlaceVariant {
    * no hi-level blend), so bilinear sampling reads exactly one texel per pixel: copy it.
    */
   copy: boolean;
+  /**
+   * A projective (3D) placement: the whole mip chain is bound, one sampler per level, and the level
+   * of detail comes from the projective Jacobian per pixel. Never combined with `copy`.
+   */
+  projective?: boolean;
 }
+
+/** Samplers of a projective placement: one per mip level (levels 0..13 of an 8192 px source). */
+export const PROJECTIVE_LEVELS = 14;
+
+/** The projective sampling of `placeShader`: `projectiveSample` and `placeProjective` in TypeScript. */
+const projectiveSampling = `
+uniform sampler2D ${Array.from({ length: PROJECTIVE_LEVELS }, (_, n) => `u_l${n}`).join(", ")};
+uniform mat3 u_inv;      // true inverse of the placement, GLSL column-major
+uniform float u_near;
+uniform int u_maxLevel;  // deepest level to sample
+vec4 texel(sampler2D s, ivec2 p, ivec2 size) {
+  return (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) ? vec4(0.0) : texelFetch(s, p, 0);
+}
+vec4 bilinear(sampler2D s, vec2 q) {
+  ivec2 size = textureSize(s, 0);
+  // Far outside the texture everything is transparent; clamping keeps the integer conversion defined.
+  vec2 u = clamp(q - 0.5, vec2(-4.0), vec2(16384.0));
+  vec2 base = floor(u);
+  vec2 f = u - base;
+  ivec2 i = ivec2(base);
+  vec4 top = mix(texel(s, i, size), texel(s, i + ivec2(1, 0), size), f.x);
+  vec4 bottom = mix(texel(s, i + ivec2(0, 1), size), texel(s, i + ivec2(1, 1), size), f.x);
+  return mix(top, bottom, f.y);
+}
+// Samplers cannot be indexed dynamically in GLSL ES 3.00: a constant-index chain picks the level.
+vec4 atLevel(int n, vec2 q) {
+  vec2 s = q / float(1 << n); // exact: a power of two
+${Array.from(
+  { length: PROJECTIVE_LEVELS },
+  (_, n) =>
+    `  ${n === 0 ? "" : "else "}${n === PROJECTIVE_LEVELS - 1 ? "" : `if (n == ${n}) `}return bilinear(u_l${n}, s);`,
+).join("\n")}
+}
+`;
 
 /**
  * Places a prepared layer into composition space through the inverse placement, bilinear within
  * a mip level and linear between two levels, then applies the track matte and opacity. The matte
  * mode is compiled in, as is the texel-copy fast path (`u_shift` is the integer offset).
  */
-export function placeShader({ matte, empty, copy }: PlaceVariant): string {
+export function placeShader({ matte, empty, copy, projective = false }: PlaceVariant): string {
   const factor =
     matte === 0 ? "u_opacity" : "u_opacity * matteCoverage(u_matte, ivec2(gl_FragCoord.xy))";
-  const sample = copy
-    ? `c = texel(u_lo, ivec2(gl_FragCoord.xy) + u_shift, textureSize(u_lo, 0));`
-    : `vec3 p = vec3(gl_FragCoord.xy, 1.0);
+  const sample = projective
+    ? `vec3 h = u_inv * vec3(gl_FragCoord.xy, 1.0);
+    if (h.z > 0.0 && h.z * u_near < 1.0) {
+      vec2 q = h.xy / h.z;
+      vec2 dx = (u_inv[0].xy - q * u_inv[0].z) / h.z;
+      vec2 dy = (u_inv[1].xy - q * u_inv[1].z) / h.z;
+      float rho = max(length(dx), length(dy));
+      float lod = rho > 1.0 ? min(log2(rho), float(u_maxLevel)) : 0.0;
+      int k = int(floor(lod));
+      float t = lod - float(k);
+      c = atLevel(k, q);
+      if (t > 0.0) c = mix(c, atLevel(min(k + 1, u_maxLevel), q), t);
+    }`
+    : copy
+      ? `c = texel(u_lo, ivec2(gl_FragCoord.xy) + u_shift, textureSize(u_lo, 0));`
+      : `vec3 p = vec3(gl_FragCoord.xy, 1.0);
     vec2 q = vec2(dot(u_invX, p), dot(u_invY, p));
     c = bilinear(u_lo, q * u_scale.x);
     if (u_t > 0.0) c = mix(c, bilinear(u_hi, q * u_scale.y), u_t);`;
-  return `${HEADER}
+  const affine = `
 uniform sampler2D u_lo;
 uniform sampler2D u_hi;
 uniform vec2 u_scale; // texel scale of the lo and hi levels: 2^-k, 2^-(k+1)
 uniform float u_t;    // weight of the hi level
 uniform vec3 u_invX;  // inverse placement: q.x = dot(u_invX, (p, 1))
 uniform vec3 u_invY;
-uniform ivec2 u_shift; // copy variant: the integer offset of the placement
+uniform ivec2 u_shift; // copy variant: the integer offset of the placement`;
+  return `${HEADER}${projective ? "" : affine}
 uniform bool u_visible;
 uniform sampler2D u_matte;
 uniform float u_opacity;
 ${matteFunction(matte, empty)}
-vec4 texel(sampler2D s, ivec2 p, ivec2 size) {
+${
+  projective
+    ? projectiveSampling
+    : `vec4 texel(sampler2D s, ivec2 p, ivec2 size) {
   return (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) ? vec4(0.0) : texelFetch(s, p, 0);
+}`
 }
 ${
-  copy
+  projective
     ? ""
-    : `
+    : copy
+      ? ""
+      : `
 vec4 bilinear(sampler2D s, vec2 q) {
   ivec2 size = textureSize(s, 0);
   vec2 u = q - 0.5;

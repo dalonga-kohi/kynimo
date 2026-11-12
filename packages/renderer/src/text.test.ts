@@ -55,7 +55,7 @@ const render = (layers: Obj[]): RasterImage => compositeReference(plan(layers));
 const only = (p: FramePlan): PlannedVectorLayer => {
   expect(p.layers).toHaveLength(1);
   const l = p.layers[0];
-  if (l?.type !== "text") throw new Error("expected a text layer");
+  if (l?.type !== "text" || l.space !== "composition") throw new Error("expected a text layer");
   return l;
 };
 

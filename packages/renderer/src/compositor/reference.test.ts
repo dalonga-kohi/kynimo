@@ -2,6 +2,7 @@ import type { ResolvedEffect, ResolvedGenerator, Rgba } from "@kynimo/engine";
 import { describe, expect, it } from "vitest";
 import { pixel } from "../canvaskit.test-util.js";
 import type { FramePlan, PlannedLayer, RasterImage } from "../raster.js";
+import { cardProjection } from "./projective.test-util.js";
 import { compositeReference } from "./reference.js";
 
 /** A flat raster of one premultiplied RGBA8 value. */
@@ -369,5 +370,90 @@ describe("compositeReference", () => {
     expect(() => compositeReference(plan([g]))).toThrow(
       /layer 'huge-noise' exceeds the frame budget/,
     );
+  });
+});
+
+describe("compositeReference: 3D layers", () => {
+  const W = 64;
+  const H = 48;
+  const card = (
+    id: string,
+    raster: RasterImage,
+    position: [number, number, number],
+    extra: { rotationX?: number; rotationY?: number; zoom?: number } = {},
+    overrides: Partial<PlannedLayer> = {},
+  ): PlannedLayer =>
+    layerSpace(id, raster, [1, 0, 0, 1, 0, 0], {
+      projection: cardProjection({
+        comp: [W, H],
+        zoom: extra.zoom ?? 60,
+        position,
+        anchor: [raster.width / 2, raster.height / 2],
+        ...extra,
+      }),
+      ...overrides,
+    } as Partial<PlannedLayer>);
+  const frame = (layers: PlannedLayer[]) => plan(layers, { width: W, height: H });
+  const alphaAt = (out: RasterImage, x: number, y: number) => out.pixels[(y * W + x) * 4 + 3] ?? 0;
+  const column = (out: RasterImage, x: number) =>
+    Array.from({ length: H }, (_, y) => alphaAt(out, x, y)).filter((a) => a > 127).length;
+  const gradientRaster = (w: number, h: number): RasterImage => ({
+    width: w,
+    height: h,
+    pixels: Uint8Array.from({ length: w * h * 4 }, (_, i) => {
+      const px = Math.floor(i / 4);
+      const x = px % w;
+      const y = Math.floor(px / w);
+      return [(x * 255) / (w - 1), (y * 255) / (h - 1), 90, 255][i % 4] ?? 0;
+    }),
+  });
+
+  it("at the default camera, unrotated at z = 0, draws like the 2D layer", () => {
+    const raster = gradientRaster(20, 10);
+    const flat3 = compositeReference(frame([card("a", raster, [32, 24, 0])]));
+    // The 2D layer with the same position and anchor: translate(position - anchor).
+    const flat2 = compositeReference(frame([layerSpace("a", raster, [1, 0, 0, 1, 22, 19])]));
+    let gap = 0;
+    for (let i = 0; i < flat2.pixels.length; i++)
+      gap = Math.max(gap, Math.abs((flat2.pixels[i] ?? 0) - (flat3.pixels[i] ?? 0)));
+    expect(gap).toBeLessThanOrEqual(1);
+    expect(alphaAt(flat3, 32, 24)).toBe(255);
+    expect(alphaAt(flat3, 5, 5)).toBe(0);
+  });
+
+  it("a card turned 60 degrees about Y is narrower and trapezoidal: the near edge is taller", () => {
+    const solidCard = flat(40, 30, [0, 255, 0, 255]);
+    const out = compositeReference(frame([card("a", solidCard, [32, 24, 0], { rotationY: 60 })]));
+    const columns = Array.from({ length: W }, (_, x) => column(out, x));
+    const drawn = columns.flatMap((n, x) => (n > 0 ? [x] : []));
+    const left = drawn[0] as number;
+    const right = drawn[drawn.length - 1] as number;
+    // Narrower than the 40 px it is flat, and centred on the comp.
+    expect(right - left + 1).toBeLessThan(30);
+    expect(right - left + 1).toBeGreaterThan(10);
+    // The left edge (turned toward the camera) is taller than the right.
+    expect(columns[left + 1] as number).toBeGreaterThan(columns[right - 1] as number);
+    expect(columns[left + 1] as number).toBeGreaterThan(30);
+    expect(columns[right - 1] as number).toBeLessThan(30);
+  });
+
+  it("a card crossing the near plane draws only its in-front part, with no mirrored ghost", () => {
+    // Camera at z = -20; the card is 5 px in front of it at its centre, turned so its left half
+    // is behind the near plane. Its in-front part ends at about 10 px right of the centre.
+    const wide = flat(80, 30, [0, 0, 255, 255]);
+    const out = compositeReference(
+      frame([card("a", wide, [32, 24, -15], { rotationY: 60, zoom: 20 })]),
+    );
+    expect(alphaAt(out, 20, 24)).toBe(255);
+    expect(alphaAt(out, 40, 24)).toBe(255);
+    for (let x = 44; x < W; x++) expect(column(out, x)).toBe(0);
+    for (let y = 0; y < H; y++) expect(alphaAt(out, 60, y)).toBe(0);
+  });
+
+  it("a layer entirely behind the camera draws nothing", () => {
+    const out = compositeReference(
+      frame([card("a", flat(40, 30, [255, 255, 255, 255]), [32, 24, -90], { zoom: 60 })]),
+    );
+    expect(out.pixels.every((v) => v === 0)).toBe(true);
   });
 });
