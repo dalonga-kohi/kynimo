@@ -15,6 +15,7 @@ import {
   type Paint,
   type ShapeItem,
   type TrackMatte,
+  type TransitionKind,
 } from "@kynimo/scene";
 import { MAX_FRAME_SHAPE_WORK, MAX_SHAPE_LAYER_WORK } from "./binding.js";
 import { MAX_FRAME_EFFECT_SAMPLES } from "./compositor/effects.js";
@@ -172,6 +173,20 @@ export const EFFECT_LIMITS = {
   absoluteShadowOffset: MAX_SHADOW_OFFSET,
   samplesPerFrame: MAX_FRAME_EFFECT_SAMPLES,
 } as const;
+
+/** Built-in shader transitions (ADR-0045), typed over the scene's kind list like the tables above. */
+export const TRANSITION_SUPPORT: Readonly<Record<TransitionKind, Support>> = {
+  dissolve: { status: "renders", note: "cross-fade between the layers below and the layer" },
+  "noise-dissolve": { status: "renders", note: "seeded value-noise threshold with a soft edge" },
+  wipe: { status: "renders", note: "straight edge sweeping across the frame at an angle" },
+  clock: { status: "renders", note: "radial sweep around a center from a start angle" },
+  iris: { status: "renders", note: "circle, diamond or square growing from a center" },
+  blinds: { status: "renders", note: "parallel slats opening across the frame" },
+  pixelate: { status: "renders", note: "mosaic that coarsens, switches, then refines" },
+  push: { status: "renders", note: "the layer pushes the layers below out of the frame" },
+  zoom: { status: "renders", note: "scale cross-fade about a center" },
+  glitch: { status: "renders", note: "seeded band displacement with channel split" },
+};
 
 export const PAINT_SUPPORT: Readonly<Record<Paint["type"], Support>> = {
   solid: RENDERS,

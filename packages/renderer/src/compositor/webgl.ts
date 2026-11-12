@@ -14,6 +14,7 @@ import {
   gaussianWeights,
   generatorSamples,
   MAX_FRAME_EFFECT_SAMPLES,
+  transitionSamples,
 } from "./effects.js";
 import {
   BLEND_MODE_IDS,
@@ -43,8 +44,10 @@ import {
   PREPARE,
   PROJECTIVE_LEVELS,
   placeShader,
+  transitionShader,
   VERTEX,
 } from "./shaders.js";
+import { transitionUniforms } from "./transition.js";
 
 /** Thrown when the WebGL2 context cannot run the compositor (missing float render targets, sizes). */
 export class CompositorError extends Error {
@@ -780,7 +783,21 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           acc = next;
           continue;
         }
+        const transition = layer.transition ?? null;
+        // At progress 0 the result is the backdrop: the layer is still placed (budgets and skip
+        // reports stay the same) but not blended or charged for a transition pass.
+        const drawn = transition !== null && transition.progress > 0 ? transition : null;
+        if (drawn !== null)
+          chargeSamples(
+            layer.id,
+            frame.width * frame.height * transitionSamples(drawn.kind),
+            "composition size or number of transitions",
+          );
         const src = placed(layer, frame.width, frame.height);
+        if (transition !== null && drawn === null) {
+          free(src);
+          continue;
+        }
         const next = target(frame.width, frame.height);
         pass(
           blendProgram(BLEND_MODE_IDS[layer.blendMode], false),
@@ -794,8 +811,33 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           () => {},
         );
         free(src);
+        if (drawn === null) {
+          free(acc);
+          acc = next;
+          continue;
+        }
+        const out = target(frame.width, frame.height);
+        const uniforms = transitionUniforms(drawn, frame.width, frame.height);
+        pass(
+          program(`transition:${drawn.kind}`, () => transitionShader(drawn.kind)),
+          out,
+          [
+            ["u_a", acc.texture],
+            ["u_b", next.texture],
+          ],
+          (u) => {
+            for (const [name, values] of Object.entries(uniforms)) {
+              const location = u(`u_${name}`);
+              const f = Float32Array.from(values);
+              if (f.length === 1) gl.uniform1fv(location, f);
+              else gl.uniform2fv(location, f);
+            }
+            if ("seed" in drawn) gl.uniform1ui(u("u_seed"), drawn.seed);
+          },
+        );
         free(acc);
-        acc = next;
+        free(next);
+        acc = out;
       }
       return acc;
     };

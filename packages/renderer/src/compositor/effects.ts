@@ -1,4 +1,5 @@
 import type { ResolvedEffect, ResolvedGenerator } from "@kynimo/engine";
+import type { TransitionKind } from "@kynimo/scene";
 
 /** Per-frame texture samples, including repeated matte sources and nested compositions. */
 export const MAX_FRAME_EFFECT_SAMPLES = 500_000_000;
@@ -95,6 +96,23 @@ export function effectSamples(effect: ResolvedEffect): number {
       return 9; // the source plus a bilinear sample (four reads) for each of two shifted channels
     default:
       return 1;
+  }
+}
+
+/**
+ * Samples per pixel a built-in transition costs, charged like effects against the frame budget:
+ * the two inputs for the mask-style kinds, four reads per bilinear sample for the displacing ones.
+ */
+export function transitionSamples(kind: TransitionKind): number {
+  switch (kind) {
+    case "pixelate":
+    case "push":
+    case "zoom":
+      return 8;
+    case "glitch":
+      return 12;
+    default:
+      return 2;
   }
 }
 

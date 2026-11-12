@@ -6,6 +6,7 @@ import {
   MASK_MODES,
   PaintSchema,
   TrackMatteSchema,
+  TransitionSchema,
 } from "@kynimo/scene";
 import { describe, expect, it } from "vitest";
 import {
@@ -16,6 +17,7 @@ import {
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
   PAINT_SUPPORT,
+  TRANSITION_SUPPORT,
 } from "./capabilities.js";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
@@ -50,6 +52,13 @@ describe("renderer capabilities", () => {
       ...Object.values(EFFECT_SUPPORT),
     ])
       expect(support.status).toBe("renders");
+  });
+
+  it("draws every transition kind the schema accepts", () => {
+    expect(sorted(Object.keys(TRANSITION_SUPPORT))).toEqual(
+      sorted(TransitionSchema.options.map((o) => o.shape.kind.value)),
+    );
+    for (const support of Object.values(TRANSITION_SUPPORT)) expect(support.status).toBe("renders");
   });
 
   it("gives a reason for everything it accepts without rendering", () => {

@@ -221,6 +221,10 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
       matte: null,
       motion,
       ...(effects.length > 0 ? { effects } : {}),
+      // Progress 1 is exactly the plain layer, so it is planned as no transition at all.
+      ...(layer.transition !== null && layer.transition.progress < 1
+        ? { transition: layer.transition }
+        : {}),
     };
     // A 3D layer is placed by its projection (raster = layer units unless noted).
     const projection = layer.projection;

@@ -3,6 +3,7 @@ import {
   MAX_EFFECT_RADIUS,
   MAX_GENERATOR_STOPS,
   MAX_NOISE_OCTAVES,
+  type TransitionKind,
 } from "@kynimo/scene";
 
 /**
@@ -381,6 +382,151 @@ export function effectShader(mode: EffectMode): string {
     body = correctionBody(mode);
   }
   return `${HEADER}${EFFECT_UNIFORMS}${parts}${body}`;
+}
+
+const TRANSITION_COMMON = `
+uniform sampler2D u_a;
+uniform sampler2D u_b;
+uniform float u_p;
+uniform vec2 u_size;
+${TRANSPARENT_FETCH}
+// Bilinear sample at a texel-space point (centres at i + 0.5), clamped to the centre range.
+vec4 bilinearAt(sampler2D s, vec2 pos) {
+  vec2 q = clamp(pos, vec2(0.5), u_size - 0.5) - 0.5;
+  ivec2 i = ivec2(floor(q));
+  vec2 f = q - floor(q);
+  vec4 top = mix(at(s, i), at(s, i + ivec2(1, 0)), f.x);
+  vec4 bottom = mix(at(s, i + ivec2(0, 1)), at(s, i + ivec2(1, 1)), f.x);
+  return mix(top, bottom, f.y);
+}
+`;
+
+const COVERAGE_TRANSITION = `
+vec4 transition(vec2 c, vec4 a, vec4 b) { return mix(a, b, coverage(c)); }
+`;
+
+/** Per transition kind: the declarations and the `transition(c, a, b)` (or `coverage(c)`) body. */
+const TRANSITION_PARTS: Readonly<Record<TransitionKind, string>> = {
+  dissolve: `
+float coverage(vec2 c) { return u_p; }
+${COVERAGE_TRANSITION}`,
+  "noise-dissolve": `${HASH}
+uniform uint u_seed;
+uniform float u_scale;
+uniform float u_feather;
+float lattice(ivec2 i) { return hashUnit(hashWords4(u_seed, uint(i.x), uint(i.y), 0u, 0u)); }
+float coverage(vec2 c) {
+  vec2 g = c / u_scale;
+  vec2 fl = floor(g);
+  ivec2 i = ivec2(fl);
+  vec2 f = g - fl;
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float n = mix(mix(lattice(i), lattice(i + ivec2(1, 0)), u.x),
+                mix(lattice(i + ivec2(0, 1)), lattice(i + ivec2(1, 1)), u.x), u.y);
+  if (u_feather > 0.0) return clamp((u_p * (1.0 + u_feather) - n) / u_feather, 0.0, 1.0);
+  return n < u_p ? 1.0 : 0.0;
+}
+${COVERAGE_TRANSITION}`,
+  wipe: `
+uniform vec2 u_dir;
+uniform vec2 u_range; // sMin, length
+uniform float u_feather;
+float coverage(vec2 c) {
+  float e = u_range.x + u_p * (u_range.y + u_feather);
+  return clamp((e - dot(c, u_dir)) / u_feather, 0.0, 1.0);
+}
+${COVERAGE_TRANSITION}`,
+  clock: `
+uniform vec2 u_center;
+uniform vec2 u_dir0;
+uniform float u_turn;
+uniform float u_feather;
+float coverage(vec2 c) {
+  vec2 v = c - u_center;
+  float phi = 0.0;
+  if (v != vec2(0.0)) {
+    float deg = atan(u_turn * (u_dir0.x * v.y - u_dir0.y * v.x), dot(u_dir0, v)) * 57.29577951308232;
+    phi = deg < 0.0 ? deg + 360.0 : deg;
+  }
+  if (u_feather > 0.0) return clamp((u_p * (360.0 + u_feather) - phi) / u_feather, 0.0, 1.0);
+  return phi < u_p * 360.0 ? 1.0 : 0.0;
+}
+${COVERAGE_TRANSITION}`,
+  iris: `
+uniform vec2 u_center;
+uniform float u_feather;
+uniform float u_rmax;
+uniform float u_shape;
+float coverage(vec2 c) {
+  vec2 v = abs(c - u_center);
+  float r = u_shape < 0.5 ? length(v) : (u_shape < 1.5 ? v.x + v.y : max(v.x, v.y));
+  return clamp((u_p * (u_rmax + u_feather) - r) / u_feather, 0.0, 1.0);
+}
+${COVERAGE_TRANSITION}`,
+  blinds: `
+uniform vec2 u_dir;
+uniform float u_smin;
+uniform float u_period;
+uniform float u_feather;
+float coverage(vec2 c) {
+  float s = dot(c, u_dir) - u_smin;
+  float u = s - u_period * floor(s / u_period);
+  return clamp((u_p * (u_period + u_feather) - u) / u_feather, 0.0, 1.0);
+}
+${COVERAGE_TRANSITION}`,
+  pixelate: `
+uniform float u_cell;
+uniform float u_mix;
+vec4 transition(vec2 c, vec4 a, vec4 b) {
+  vec2 q = (floor(c / u_cell) + 0.5) * u_cell;
+  return mix(bilinearAt(u_a, q), bilinearAt(u_b, q), u_mix);
+}`,
+  push: `
+uniform vec2 u_dir;
+uniform vec2 u_range;
+vec4 transition(vec2 c, vec4 a, vec4 b) {
+  float len = u_range.y;
+  float m = clamp(u_range.x + u_p * len - dot(c, u_dir) + 0.5, 0.0, 1.0);
+  return mix(bilinearAt(u_a, c - u_p * len * u_dir), bilinearAt(u_b, c - (u_p - 1.0) * len * u_dir), m);
+}`,
+  zoom: `
+uniform vec2 u_center;
+uniform vec2 u_scale;
+vec4 transition(vec2 c, vec4 a, vec4 b) {
+  vec2 v = c - u_center;
+  return mix(bilinearAt(u_a, u_center + v / u_scale.x), bilinearAt(u_b, u_center + v / u_scale.y), u_p);
+}`,
+  glitch: `${HASH}
+uniform uint u_seed;
+uniform float u_bands;
+uniform float u_step;
+uniform float u_amp;
+vec4 pick(bool showB, vec2 pos) { return showB ? bilinearAt(u_b, pos) : bilinearAt(u_a, pos); }
+vec4 transition(vec2 c, vec4 a, vec4 b) {
+  uint row = uint(floor(c.y * u_bands / u_size.y));
+  uint stepIndex = uint(u_step);
+  bool showB = hashUnit(hashWords4(u_seed, row, stepIndex, 0u, 0u)) < u_p;
+  float shift = (2.0 * hashUnit(hashWords4(u_seed, row, stepIndex, 1u, 0u)) - 1.0) * u_amp;
+  float ca = 0.25 * u_amp;
+  float x = c.x + shift;
+  vec4 r = pick(showB, vec2(x + ca, c.y));
+  vec4 g = pick(showB, vec2(x, c.y));
+  vec4 bl = pick(showB, vec2(x - ca, c.y));
+  return vec4(r.r, g.g, bl.b, max(r.a, max(g.a, bl.a)));
+}`,
+};
+
+/**
+ * Draws one built-in transition (ADR-0045): inputs `u_a` (the backdrop) and `u_b` (the layer
+ * composited over it), output the premultiplied mix. One program per kind; the twin is
+ * `transitionPixel` in reference.ts, and the CPU-side uniforms come from `transitionUniforms`.
+ */
+export function transitionShader(kind: TransitionKind): string {
+  return `${HEADER}${TRANSITION_COMMON}${TRANSITION_PARTS[kind]}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  outColor = transition(vec2(p) + 0.5, texelFetch(u_a, p, 0), texelFetch(u_b, p, 0));
+}`;
 }
 
 const MATTE_COVERAGE = `
