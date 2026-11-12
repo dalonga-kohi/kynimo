@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: components",
   "mainCompositionId": "main",
   "style": null,
@@ -51,6 +51,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -64,7 +73,8 @@
           "props": {
             "kind": "panels",
             "direction": "right"
-          }
+          },
+          "threeD": false
         },
         {
           "id": "lower-third",
@@ -99,6 +109,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -112,7 +131,8 @@
           "props": {
             "variant": "bar",
             "exit": false
-          }
+          },
+          "threeD": false
         },
         {
           "id": "headline",
@@ -147,6 +167,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -162,7 +191,8 @@
             "variant": "rise",
             "exit": false,
             "position": [0, -60]
-          }
+          },
+          "threeD": false
         },
         {
           "id": "logo",
@@ -197,6 +227,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -212,7 +251,8 @@
             "tagline": "Motion, by agents",
             "variant": "stamp",
             "exit": true
-          }
+          },
+          "threeD": false
         },
         {
           "id": "background",
@@ -247,6 +287,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -260,7 +309,8 @@
           "props": {
             "kind": "aurora",
             "loops": 1
-          }
+          },
+          "threeD": false
         }
       ]
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composition,
+  groupTransform,
   issues,
   nullLayer,
   type Obj,
@@ -143,7 +144,7 @@ describe("spring segments", () => {
       opacity: { keyframes: [kf(0, 0, SPRING), kf(1, 1)] },
       rule: "nonzero",
     };
-    const group = { type: "group", id: "g", name: "G", transform: transform(), items: [fill] };
+    const group = { type: "group", id: "g", name: "G", transform: groupTransform(), items: [fill] };
     const input = doc({ ...visual("s"), type: "shape", contents: [group] });
     expect(paths(input)).toEqual([
       "compositions.0.layers.0.contents.0.items.0.opacity.keyframes.1.frame",

@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: text animators",
   "mainCompositionId": "main",
   "style": null,
@@ -79,6 +79,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "animators": [
@@ -139,7 +148,8 @@
                 }
               }
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "title",
@@ -202,6 +212,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "animators": [
@@ -268,7 +287,8 @@
                 }
               }
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }

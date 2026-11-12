@@ -14,6 +14,9 @@ export const UnitIntervalSchema = z.number().min(0).max(1);
 export const Vec2Schema = z.tuple([z.number(), z.number()]);
 export type Vec2 = z.infer<typeof Vec2Schema>;
 
+export const Vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
+export type Vec3 = z.infer<typeof Vec3Schema>;
+
 /** sRGB hex, lowercase so equal colors have one canonical spelling: `#rrggbb` or `#rrggbbaa`. */
 export const ColorSchema = z
   .string()

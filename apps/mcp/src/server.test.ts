@@ -137,7 +137,8 @@ describe("MCP server", () => {
     // 97_000 with the structured storyboard tool (ADR-0050).
     // 101_000 with the beat tools (ADR-0052): 96.1 KB before, 100.9 KB after.
     // 102_000 after describing the sync_to_beats fields (review fixes): 101.2 KB.
-    expect(JSON.stringify(tools).length).toBeLessThan(102_000);
+    // 103_500 with 2.5D layers and cameras (ADR-0054): 101.2 KB before, 102.9 KB after.
+    expect(JSON.stringify(tools).length).toBeLessThan(103_500);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -612,10 +613,10 @@ describe("MCP server", () => {
     const text_ = await call(client, "get_layer_schema", { type: "text" });
     expect(await text("kynimo://schema/layer/text")).toEqual(text_.schema);
     await expect(
-      client.readResource({ uri: "kynimo://schema/layer/camera" }),
+      client.readResource({ uri: "kynimo://schema/layer/hologram" }),
     ).rejects.toMatchObject({
       code: ErrorCode.InvalidParams,
-      message: expect.stringMatching(/unknown layer type 'camera'/),
+      message: expect.stringMatching(/unknown layer type 'hologram'/),
     });
   });
 

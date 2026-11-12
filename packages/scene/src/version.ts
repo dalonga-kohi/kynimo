@@ -35,10 +35,14 @@
  * 11: transform motion blur on drawn layers (ADR-0053). The step from 10 adds `motionBlur: null` to
  *    drawn layers, which renders exactly as version 10 did.
  *
+ * 12: 2.5D layers and cameras (ADR-0054). Visual layers gain `threeD` and their transforms gain
+ *    `positionZ`, `rotationX` and `rotationY`; camera layers are a new variant. The step from 11
+ *    adds `threeD: false` and zero tracks, which render exactly as version 11 did.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 11 as const;
+export const SCENE_FORMAT_VERSION = 12 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;

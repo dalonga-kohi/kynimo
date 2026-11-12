@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: shader backgrounds",
   "mainCompositionId": "main",
   "style": null,
@@ -51,6 +51,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -126,7 +135,8 @@
                 "value": 1.5
               }
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "title",
@@ -176,6 +186,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -206,7 +225,8 @@
           "fill": {
             "value": "#ffffff"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "spotlight",
@@ -241,6 +261,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "screen",
@@ -274,7 +303,8 @@
                 }
               ]
             }
-          }
+          },
+          "threeD": false
         },
         {
           "id": "dots-card",
@@ -309,6 +339,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -353,7 +392,8 @@
             "background": {
               "value": "#ffffff0d"
             }
-          }
+          },
+          "threeD": false
         },
         {
           "id": "noise",
@@ -388,6 +428,15 @@
             },
             "opacity": {
               "value": 0.5
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "overlay",
@@ -430,7 +479,8 @@
             "high": {
               "value": "#ffffff"
             }
-          }
+          },
+          "threeD": false
         },
         {
           "id": "aurora",
@@ -465,6 +515,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -511,7 +570,8 @@
             "softness": {
               "value": 0.45
             }
-          }
+          },
+          "threeD": false
         }
       ]
     }

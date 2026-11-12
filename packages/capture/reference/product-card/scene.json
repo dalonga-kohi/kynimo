@@ -1,5 +1,5 @@
 {
-  "formatVersion": 11,
+  "formatVersion": 12,
   "name": "Reference: product card",
   "mainCompositionId": "main",
   "style": null,
@@ -61,6 +61,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -91,7 +100,8 @@
           "fill": {
             "value": "#1b1b1f"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "badge",
@@ -160,6 +170,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -200,7 +219,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "cta-label",
@@ -254,6 +274,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -284,7 +313,8 @@
           "fill": {
             "value": "#ffffff"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "cta",
@@ -355,6 +385,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -391,7 +430,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "price",
@@ -445,6 +485,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -475,7 +524,8 @@
           "fill": {
             "value": "#1b1b1f"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "meta",
@@ -529,6 +579,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -559,7 +618,8 @@
           "fill": {
             "value": "#6b6b75"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "name",
@@ -632,6 +692,15 @@
                   }
                 }
               ]
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -662,7 +731,8 @@
           "fill": {
             "value": "#1b1b1f"
           },
-          "animators": []
+          "animators": [],
+          "threeD": false
         },
         {
           "id": "product",
@@ -731,13 +801,23 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
           "matte": null,
           "masks": [],
           "type": "image",
-          "assetId": "bottle"
+          "assetId": "bottle",
+          "threeD": false
         },
         {
           "id": "shadow",
@@ -772,6 +852,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -820,7 +909,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "halo",
@@ -874,6 +964,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -922,7 +1021,8 @@
               },
               "rule": "nonzero"
             }
-          ]
+          ],
+          "threeD": false
         },
         {
           "id": "card",
@@ -976,6 +1076,15 @@
             },
             "opacity": {
               "value": 1
+            },
+            "positionZ": {
+              "value": 0
+            },
+            "rotationX": {
+              "value": 0
+            },
+            "rotationY": {
+              "value": 0
             }
           },
           "blendMode": "normal",
@@ -1036,7 +1145,8 @@
                 "value": 0
               }
             }
-          ]
+          ],
+          "threeD": false
         }
       ]
     }

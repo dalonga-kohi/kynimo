@@ -95,7 +95,8 @@ describe("tool listing", () => {
 
   it("keeps each tool within a size cap, so one tool cannot eat the budget unnoticed", async () => {
     for (const tool of await listTools()) {
-      const cap = tool.name === "apply_ops" ? 15_000 : 4_500;
+      // apply_ops: 15_000 before the 3D transform properties and camera patch fields (ADR-0054).
+      const cap = tool.name === "apply_ops" ? 15_500 : 4_500;
       expect(JSON.stringify(tool).length, tool.name).toBeLessThan(cap);
     }
   });

@@ -12,13 +12,28 @@ import type {
   ShapeItem,
 } from "@kynimo/scene";
 import { MAX_COMPOSITION_SIZE } from "@kynimo/scene";
-import { type Affine, multiply } from "./affine.js";
+import { type Affine, multiply, transformMatrix } from "./affine.js";
 import { createBehaviorResolver } from "./behavior-resolve.js";
 import { parseColor } from "./color.js";
 import { COMPONENT_COST_WEIGHT, type ComponentHost, MAX_COMPONENT_DEPTH } from "./component.js";
 import { resolveEffects } from "./effect.js";
 import { resolveGenerator } from "./generator.js";
 import { hashWords } from "./hash.js";
+import {
+  affineApproximation,
+  affineToMat4,
+  lookAtRotation,
+  type Mat4,
+  mat4Invert,
+  mat4Multiply,
+  mat4RotateX,
+  mat4RotateY,
+  mat4RotateZ,
+  mat4Translate,
+  type Projective,
+  projectiveDepth,
+  projectLayerPlane,
+} from "./projective.js";
 import { resolveTransform, sampleNonNegative, sampleSize, sampleUnit } from "./properties.js";
 import type {
   MotionSample,
@@ -30,10 +45,32 @@ import type {
 } from "./resolved.js";
 import { resolveShapeItems, samplePath } from "./shape.js";
 import { resolveTextAnimators } from "./text-animator.js";
-import { sampleColor, sampleNumber } from "./track.js";
+import { sampleColor, sampleNumber, sampleVector } from "./track.js";
 
 type VisualLayer = Exclude<Layer, { type: "audio" }>;
-type DrawnLayer = Exclude<VisualLayer, { type: "null" }>;
+type DrawnLayer = Exclude<VisualLayer, { type: "null" | "camera" }>;
+type CameraLayer = Extract<Layer, { type: "camera" }>;
+
+/** A layer that lives in 3D space: a camera, or a layer with its 3D switch on (ADR-0054). */
+const is3D = (layer: VisualLayer): boolean => layer.type === "camera" || layer.threeD;
+
+/** After Effects' default 50 mm lens on a 36 mm film back, in composition pixels. */
+const defaultZoom = (width: number) => (width * 50) / 36;
+
+interface Local {
+  transform: ResolvedTransform;
+  matrix: Affine;
+}
+
+/**
+ * Everything that depends on one point in time (the composition frame, or a motion blur sample):
+ * local and world transforms, the active camera's view and layer projections.
+ */
+interface Space {
+  local(layer: VisualLayer): Local;
+  /** The layer's placement: for a 3D layer, its projection and the affine approximation of it. */
+  place(layer: DrawnLayer): { matrix: Affine; projection: Projective | null };
+}
 
 const vertexCount = (path: Animatable<BezierPath>): number =>
   ("value" in path ? path.value : path.keyframes[0]?.value)?.vertices.length ?? 0;
@@ -89,7 +126,7 @@ function compositionCost(comp: Composition): number {
   let units = 0;
   for (const layer of comp.layers) {
     units += 1;
-    if (layer.type === "audio" || layer.type === "null") continue;
+    if (layer.type === "audio" || layer.type === "null" || layer.type === "camera") continue;
     units += layer.effects.length;
     for (const mask of layer.masks) units += 1 + vertexCount(mask.path);
     if (layer.type !== "shape") continue;
@@ -177,8 +214,6 @@ function evaluateComposition(
 
   const fps = comp.fps;
   const byId = new Map(comp.layers.map((l) => [l.id as string, l]));
-  const local = new Map<string, { transform: ResolvedTransform; matrix: Affine }>();
-  const world = new Map<string, Affine>();
 
   // Layers without behaviors take the plain sampling path below, untouched.
   const behaviors = createBehaviorResolver(byId, fps, (layerId, property) => {
@@ -188,104 +223,190 @@ function evaluateComposition(
       );
   });
 
-  const localOf = (layer: VisualLayer) => {
-    let entry = local.get(layer.id);
-    if (entry === undefined) {
-      entry =
-        layer.behaviors.length === 0
-          ? resolveTransform(layer.transform, frame - layer.startFrame, fps)
-          : behaviors.transform(layer, frame);
-      local.set(layer.id, entry);
-    }
-    return entry;
-  };
+  // Solo is per composition and covers audio too: once any layer is soloed, only soloed layers render or play.
+  const anySolo = comp.layers.some((l) => l.solo);
+  const inRange = (l: Layer) => l.inFrame <= frame && frame < l.outFrame;
+  const active = (l: Layer) => !l.hidden && (!anySolo || l.solo) && inRange(l);
+
+  // The active camera: the topmost one that is not hidden and is in range. Solo does not apply.
+  const camera = comp.layers.find(
+    (l): l is CameraLayer => l.type === "camera" && !l.hidden && inRange(l),
+  );
 
   /**
-   * Layer → composition space. Parents drive children whether or not they are visible on this
-   * frame, each sampled at its own layer time. Iterative: chains can be MAX_LAYERS long, and the
-   * schema rules out cycles.
+   * Builds the space at `time` (composition frames). The center frame's space is free; every other
+   * transform a motion blur sample resolves is charged against MAX_FRAME_MOTION_TRANSFORMS, camera
+   * chain links included, and `owner` is the blurred layer the charge names.
    */
-  const worldOf = (layer: VisualLayer): Affine => {
-    const chain: VisualLayer[] = [];
-    let current: VisualLayer | undefined = layer;
-    while (current !== undefined && !world.has(current.id)) {
-      chain.push(current);
-      const parent: Layer | undefined =
-        current.parent === null ? undefined : byId.get(current.parent);
-      current = parent?.type === "audio" ? undefined : parent;
-    }
-    let above = current === undefined ? null : (world.get(current.id) as Affine);
-    for (let i = chain.length - 1; i >= 0; i--) {
-      const link = chain[i] as VisualLayer;
-      const m = above === null ? localOf(link).matrix : multiply(above, localOf(link).matrix);
-      world.set(link.id, m);
-      above = m;
-    }
-    return world.get(layer.id) as Affine;
-  };
+  const createSpace = (time: number, charged: boolean): Space => {
+    let owner = "";
+    const localMemo = new Map<string, Local>();
+    const worldMemo = new Map<string, Affine>();
+    const local3Memo = new Map<string, Mat4>();
+    const world3Memo = new Map<string, Mat4>();
 
-  // Motion blur (ADR-0053): the layer's world matrix and own opacity at each sub-frame time, in
-  // maps of their own so the center-frame `local` and `world` stay untouched.
-  const sampled = new Map<
-    number,
-    {
-      local: Map<string, { transform: ResolvedTransform; matrix: Affine }>;
-      world: Map<string, Affine>;
-    }
-  >();
-  const motionOf = (layer: DrawnLayer): readonly MotionSample[] | null => {
-    const settings = layer.motionBlur;
-    if (settings === null || settings.shutterAngle === 0 || layer.type === "adjustment")
-      return null;
-    return motionSampleTimes(frame, settings).map((t) => {
-      let maps = sampled.get(t);
-      if (maps === undefined) {
-        maps = { local: new Map(), world: new Map() };
-        sampled.set(t, maps);
+    const local = (link: VisualLayer): Local => {
+      let entry = localMemo.get(link.id);
+      if (entry === undefined) {
+        if (charged && --ctx.motionTransforms < 0)
+          throw new RangeError(
+            `evaluating this frame needs more than ${MAX_FRAME_MOTION_TRANSFORMS} motion blur transform samples (layer '${owner}'); use fewer samples or blur fewer layers`,
+          );
+        entry =
+          link.behaviors.length === 0
+            ? resolveTransform(link.transform, time - link.startFrame, fps)
+            : behaviors.transform(link, time);
+        localMemo.set(link.id, entry);
       }
-      const { local: localAt, world: worldAt } = maps;
-      const localSample = (link: VisualLayer) => {
-        let entry = localAt.get(link.id);
-        if (entry === undefined) {
-          if (--ctx.motionTransforms < 0)
-            throw new RangeError(
-              `evaluating this frame needs more than ${MAX_FRAME_MOTION_TRANSFORMS} motion blur transform samples (layer '${layer.id}'); use fewer samples or blur fewer layers`,
-            );
-          entry =
-            link.behaviors.length === 0
-              ? resolveTransform(link.transform, t - link.startFrame, fps)
-              : behaviors.transform(link, t);
-          localAt.set(link.id, entry);
-        }
-        return entry;
-      };
+      return entry;
+    };
+
+    /** Walks up the parent chain to the first layer `memo` already knows, then folds back down. */
+    const fold = <M>(
+      layer: VisualLayer,
+      memo: Map<string, M>,
+      localMatrix: (link: VisualLayer) => M,
+      times: (above: M, own: M) => M,
+    ): M => {
       const chain: VisualLayer[] = [];
       let current: VisualLayer | undefined = layer;
-      while (current !== undefined && !worldAt.has(current.id)) {
+      while (current !== undefined && !memo.has(current.id)) {
         chain.push(current);
         const parent: Layer | undefined =
           current.parent === null ? undefined : byId.get(current.parent);
         current = parent?.type === "audio" ? undefined : parent;
       }
-      let above = current === undefined ? null : (worldAt.get(current.id) as Affine);
+      let above = current === undefined ? null : (memo.get(current.id) as M);
       for (let i = chain.length - 1; i >= 0; i--) {
         const link = chain[i] as VisualLayer;
-        const m =
-          above === null ? localSample(link).matrix : multiply(above, localSample(link).matrix);
-        worldAt.set(link.id, m);
+        const m = above === null ? localMatrix(link) : times(above, localMatrix(link));
+        memo.set(link.id, m);
         above = m;
       }
-      return {
-        matrix: worldAt.get(layer.id) as Affine,
-        opacity: localSample(layer).transform.opacity,
-      };
-    });
+      return memo.get(layer.id) as M;
+    };
+
+    /**
+     * Layer → composition space, including every parent's transform. Parents drive children
+     * whether or not they are visible on this frame, each sampled at its own layer time.
+     * Iterative: chains can be MAX_LAYERS long, and the schema rules out cycles.
+     */
+    const world = (layer: VisualLayer): Affine =>
+      fold(layer, worldMemo, (link) => local(link).matrix, multiply);
+
+    /** A 3D layer's or camera's local matrix. */
+    const local3 = (link: VisualLayer): Mat4 => {
+      let m = local3Memo.get(link.id);
+      if (m === undefined) {
+        const t = local(link).transform;
+        const [px, py] = t.position;
+        if (link.type === "camera") {
+          const poi =
+            link.pointOfInterest === null
+              ? null
+              : sampleVector(link.pointOfInterest, time - link.startFrame, fps);
+          const look =
+            poi === null
+              ? lookAtRotation(0, 0, 0)
+              : lookAtRotation(poi[0] - px, poi[1] - py, poi[2] - t.positionZ);
+          m = mat4Multiply(
+            mat4Multiply(mat4Translate(px, py, t.positionZ), look),
+            mat4Multiply(
+              mat4RotateX(t.rotationX),
+              mat4Multiply(mat4RotateY(t.rotationY), mat4RotateZ(t.rotation)),
+            ),
+          );
+        } else {
+          // translate · rotateX · rotateY · (rotateZ · skew · scale · translate(-anchor))
+          const flat = transformMatrix({ ...t, position: [0, 0] });
+          m = mat4Multiply(
+            mat4Multiply(mat4Translate(px, py, t.positionZ), mat4RotateX(t.rotationX)),
+            mat4Multiply(mat4RotateY(t.rotationY), affineToMat4(flat)),
+          );
+        }
+        local3Memo.set(link.id, m);
+      }
+      return m;
+    };
+
+    /** Layer → composition space in 3D: 3D links contribute their full local, 2D links their 2D one. */
+    const world3 = (layer: VisualLayer): Mat4 =>
+      fold(
+        layer,
+        world3Memo,
+        (link) => (is3D(link) ? local3(link) : affineToMat4(local(link).matrix)),
+        mat4Multiply,
+      );
+
+    let cameraState: { view: Mat4; zoom: number } | undefined;
+    const activeCamera = () => {
+      if (cameraState === undefined) {
+        if (camera === undefined) {
+          const zoom = defaultZoom(comp.width);
+          cameraState = {
+            view: mat4Translate(-comp.width / 2, -comp.height / 2, zoom),
+            zoom,
+          };
+        } else {
+          const view = mat4Invert(world3(camera));
+          const zoom = sampleNumber(camera.zoom, time - camera.startFrame, fps);
+          if (view === null || !Number.isFinite(zoom))
+            throw new RangeError(
+              `the 3D transform of layer '${camera.id}' is not finite; check positionZ, rotations and the camera zoom`,
+            );
+          cameraState = { view, zoom: Math.min(100_000, Math.max(1, zoom)) };
+        }
+      }
+      return cameraState;
+    };
+
+    return {
+      local(layer) {
+        owner = layer.id;
+        return local(layer);
+      },
+      place(layer) {
+        owner = layer.id;
+        if (!layer.threeD) return { matrix: world(layer), projection: null };
+        const { view, zoom } = activeCamera();
+        const projection = projectLayerPlane(
+          mat4Multiply(view, world3(layer)),
+          zoom,
+          comp.width,
+          comp.height,
+        );
+        if (!projection.every(Number.isFinite))
+          throw new RangeError(
+            `the 3D transform of layer '${layer.id}' is not finite; check positionZ, rotations and the camera zoom`,
+          );
+        const anchor = local(layer).transform.anchorPoint;
+        return {
+          matrix: affineApproximation(projection, anchor) ?? world(layer),
+          projection,
+        };
+      },
+    };
   };
 
-  // Solo is per composition and covers audio too: once any layer is soloed, only soloed layers render or play.
-  const anySolo = comp.layers.some((l) => l.solo);
-  const inRange = (l: Layer) => l.inFrame <= frame && frame < l.outFrame;
-  const active = (l: Layer) => !l.hidden && (!anySolo || l.solo) && inRange(l);
+  const center = createSpace(frame, false);
+
+  // Motion blur (ADR-0053): the layer's placement and own opacity at each sub-frame time, in
+  // spaces of their own so the center frame's stays untouched. A 3D layer samples the camera too.
+  const sampled = new Map<number, Space>();
+  const motionOf = (layer: DrawnLayer): readonly MotionSample[] | null => {
+    const settings = layer.motionBlur;
+    if (settings === null || settings.shutterAngle === 0 || layer.type === "adjustment")
+      return null;
+    return motionSampleTimes(frame, settings).map((t) => {
+      let space = sampled.get(t);
+      if (space === undefined) {
+        space = createSpace(t, true);
+        sampled.set(t, space);
+      }
+      const { matrix, projection } = space.place(layer);
+      return { matrix, projection, opacity: space.local(layer).transform.opacity };
+    });
+  };
 
   const resolvedById = new Map<string, ResolvedLayer>();
   const resolve = (layer: DrawnLayer): ResolvedLayer => {
@@ -296,8 +417,8 @@ function evaluateComposition(
         id: layer.id,
         name: layer.name,
         layerFrame,
-        transform: localOf(layer).transform,
-        matrix: worldOf(layer),
+        transform: center.local(layer).transform,
+        ...center.place(layer),
         blendMode: layer.blendMode,
         masks: resolveMasks(layer.masks, layerFrame, fps),
         effects: resolveEffects(layer.effects, layerFrame, fps),
@@ -323,9 +444,10 @@ function evaluateComposition(
       });
       continue;
     }
-    if (layer.type === "null") continue;
+    if (layer.type === "null" || layer.type === "camera") continue;
     layers.push(resolve(layer));
   }
+  sortDepthRuns(layers);
 
   // Track mattes, linked in a second pass so chains need no recursion. A matte source is resolved
   // whatever its hidden and solo switches say, but only inside its in/out range. The schema rules
@@ -358,6 +480,35 @@ function evaluateComposition(
   return result;
 }
 
+/**
+ * Depth sorting (ADR-0054, After Effects without collapse): every maximal run of consecutive 3D
+ * layers is stably sorted by the camera-space depth of its anchor point, nearest first. A 2D layer
+ * or an adjustment layer ends a run, so layers never sort across them.
+ */
+function sortDepthRuns(layers: ResolvedLayer[]): void {
+  const depth = (l: ResolvedLayer) =>
+    projectiveDepth(l.projection as Projective, l.transform.anchorPoint);
+  let i = 0;
+  while (i < layers.length) {
+    if ((layers[i] as ResolvedLayer).projection === null) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < layers.length && (layers[j] as ResolvedLayer).projection !== null) j++;
+    if (j - i > 1) {
+      const run = layers
+        .slice(i, j)
+        .map((layer, order) => ({ layer, order, depth: depth(layer) }))
+        .sort((a, b) => a.depth - b.depth || a.order - b.order);
+      run.forEach((entry, k) => {
+        layers[i + k] = entry.layer;
+      });
+    }
+    i = j;
+  }
+}
+
 /** Charges one evaluation of a nested composition against the budget. Only reached through a precomp, so `chain` is never empty. */
 function charge(ctx: Context, comp: Composition): void {
   let cost = ctx.costs.get(comp.id);
@@ -388,6 +539,7 @@ type Base = Pick<
   | "layerFrame"
   | "transform"
   | "matrix"
+  | "projection"
   | "blendMode"
   | "masks"
   | "effects"

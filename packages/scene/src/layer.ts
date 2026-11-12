@@ -18,6 +18,7 @@ import {
   NumberSchema,
   PositiveSchema,
   SemverSchema,
+  Vec3Schema,
 } from "./primitives.js";
 import { MAX_SHAPE_ITEMS, ShapeItemSchema } from "./shape.js";
 import { MAX_TEXT_ANIMATORS, TextAnimatorSchema } from "./text-animator.js";
@@ -64,8 +65,8 @@ const common = {
   markers: z.array(MarkerSchema).max(MAX_MARKERS),
 };
 
-/** Layers that draw: they have a transform and may be parented to another visual layer. */
-const visual = {
+/** Layers with a transform: they may be parented to another layer with a transform (not a camera). */
+const spatial = {
   ...common,
   parent: LayerIdSchema.nullable(),
   transform: TransformSchema,
@@ -74,6 +75,16 @@ const visual = {
    * Absent means none, so layers written before format 7 still validate (ADR-0024).
    */
   behaviors: z.array(BehaviorSchema).max(MAX_BEHAVIORS).default([]),
+};
+
+/**
+ * Layers that draw, plus null layers. `threeD` puts the layer in 3D space (ADR-0054): a flat card
+ * placed with `positionZ`, `rotationX`, `rotationY` and seen through the composition's camera.
+ * Absent means a 2D layer, so older addLayer operations still validate.
+ */
+const visual = {
+  ...spatial,
+  threeD: z.boolean().default(false),
 };
 
 /**
@@ -165,6 +176,21 @@ export const GeneratorLayerSchema = z.strictObject({
   generator: GeneratorSchema,
 });
 
+/**
+ * The view onto the 3D layers of a composition (ADR-0054). The topmost camera that is visible and
+ * in range is the active one. It uses only `position`, `positionZ`, `rotation`, `rotationX`,
+ * `rotationY` and its parent chain: `anchorPoint`, `scale`, `skew` and `opacity` are kept but
+ * ignored. It draws nothing, so it has no blend mode, matte, masks, effects or motion blur, and it
+ * is always 3D (no `threeD` field). `zoom` is the distance, in composition pixels, at which one
+ * pixel maps to one screen pixel. `pointOfInterest` aims the camera when it is not null.
+ */
+export const CameraLayerSchema = z.strictObject({
+  ...spatial,
+  type: z.literal("camera"),
+  zoom: animatable(z.number().min(1).max(100_000)),
+  pointOfInterest: animatable(Vec3Schema).nullable(),
+});
+
 /** Invisible parent or controller. */
 export const NullLayerSchema = z.strictObject({ ...visual, type: z.literal("null") });
 
@@ -208,6 +234,7 @@ export const LayerSchema = z.discriminatedUnion("type", [
   SolidLayerSchema,
   GeneratorLayerSchema,
   NullLayerSchema,
+  CameraLayerSchema,
   PrecompLayerSchema,
   AdjustmentLayerSchema,
   ComponentLayerSchema,

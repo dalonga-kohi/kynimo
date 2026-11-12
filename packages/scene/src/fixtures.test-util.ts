@@ -7,11 +7,23 @@ export const prop = <T>(value: T) => ({ value });
 export const transform = (): Obj => ({
   anchorPoint: prop([0, 0]),
   position: prop([960, 540]),
+  positionZ: prop(0),
   scale: prop([1, 1]),
   rotation: prop(0),
+  rotationX: prop(0),
+  rotationY: prop(0),
   skew: prop(0),
   opacity: prop(1),
 });
+
+/** A shape group's transform: the 2D properties only. */
+export const groupTransform = (): Obj => {
+  const { positionZ, rotationX, rotationY, ...flat } = transform();
+  void positionZ;
+  void rotationX;
+  void rotationY;
+  return flat;
+};
 
 export const common = (id: string): Obj => ({
   id,
@@ -29,6 +41,7 @@ export const common = (id: string): Obj => ({
 export const visual = (id: string, parent: string | null = null): Obj => ({
   ...common(id),
   parent,
+  threeD: false,
   transform: transform(),
   blendMode: "normal",
   matte: null,
@@ -39,6 +52,7 @@ export const visual = (id: string, parent: string | null = null): Obj => ({
 export const nullLayer = (id: string, parent: string | null = null): Obj => ({
   ...common(id),
   parent,
+  threeD: false,
   transform: transform(),
   behaviors: [],
   type: "null",

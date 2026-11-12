@@ -76,9 +76,9 @@ function nextId(
   return id;
 }
 
-type DrawnLayer = Exclude<Layer, { type: "audio" | "null" }>;
+type DrawnLayer = Exclude<Layer, { type: "audio" | "null" | "camera" }>;
 const isDrawn = (layer: Layer): layer is DrawnLayer =>
-  layer.type !== "audio" && layer.type !== "null";
+  layer.type !== "audio" && layer.type !== "null" && layer.type !== "camera";
 
 /** Resolves a selector to a layer that can carry masks and a track matte. */
 function resolveDrawn(ctx: Ctx, selector: LayerSelector, path: (string | number)[]) {
@@ -86,7 +86,7 @@ function resolveDrawn(ctx: Ctx, selector: LayerSelector, path: (string | number)
   if (!isDrawn(ref.layer))
     fail(
       path,
-      `layer '${ref.layer.id}' is ${ref.layer.type === "audio" ? "an audio" : "a null"} layer and has no masks or track matte; use a shape, text, image, solid, precomp, adjustment or component layer`,
+      `layer '${ref.layer.id}' is ${ref.layer.type === "audio" ? "an audio" : ref.layer.type === "camera" ? "a camera" : "a null"} layer and has no masks or track matte; use a shape, text, image, solid, precomp, adjustment or component layer`,
     );
   return { ...ref, layer: ref.layer };
 }
@@ -231,8 +231,25 @@ function run(ctx: Ctx, op: Op, i: number): void {
     }
     case "updateLayer": {
       const { layer } = resolve(ctx, op.layer, [i, "layer"]);
+      if ("threeD" in op.set) {
+        const where = [i, "set", "threeD"];
+        if (layer.type === "audio")
+          fail(where, `layer '${layer.id}' is an audio layer and has no transform, so no threeD`);
+        if (layer.type === "camera")
+          fail(where, `layer '${layer.id}' is a camera: camera layers are always 3D`);
+        if (layer.type === "adjustment" && op.set.threeD === true)
+          fail(where, "adjustment layers cannot be 3D; set threeD to false");
+      }
+      for (const field of ["zoom", "pointOfInterest"] as const)
+        if (field in op.set && layer.type !== "camera")
+          fail(
+            [i, "set", field],
+            `layer '${layer.id}' is ${/^[aeiou]/.test(layer.type) ? "an" : "a"} ${layer.type} layer; only camera layers have ${field}`,
+          );
       if ("motionBlur" in op.set) {
         const where = [i, "set", "motionBlur"];
+        if (layer.type === "camera")
+          fail(where, `layer '${layer.id}' is a camera and has no motion blur`);
         if (layer.type === "null")
           fail(
             where,
@@ -677,11 +694,15 @@ function precomposeLayers(ctx: Ctx, op: Extract<Op, { op: "precompose" }>, i: nu
     transform: {
       anchorPoint: { value: center },
       position: { value: center },
+      positionZ: { value: 0 },
       scale: { value: [1, 1] },
       rotation: { value: 0 },
+      rotationX: { value: 0 },
+      rotationY: { value: 0 },
       skew: { value: 0 },
       opacity: { value: 1 },
     },
+    threeD: false,
     blendMode: "normal",
     matte: null,
     masks: [],

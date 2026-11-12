@@ -239,6 +239,12 @@ function planComposition(ctx: Context, comp: ResolvedComposition): FramePlan {
   const planned = new Map<string, PlannedFrameLayer | null>();
   const plan = (layer: ResolvedLayer): PlannedFrameLayer | null => {
     if (planned.has(layer.id)) return planned.get(layer.id) ?? null;
+    if (layer.projection !== null) {
+      // 3D layers (ADR-0054) are placed by a projective matrix, which the compositors cannot draw yet.
+      skipped.push({ id: layer.id, type: layer.type, reason: "3D layers are not drawn yet" });
+      planned.set(layer.id, null);
+      return null;
+    }
     const blocker = undrawableMatteSource(layer);
     if (blocker !== null) {
       // An empty matte would hide (or fully show) the layer: drawn wrong, so leave it out instead.

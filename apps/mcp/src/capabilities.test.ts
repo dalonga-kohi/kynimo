@@ -205,6 +205,6 @@ describe("capability manifest", () => {
 
   it("names the format version and stays small enough to read in one go", () => {
     expect(manifest.scene_format_version).toBe(SCENE_FORMAT_VERSION);
-    expect(JSON.stringify(manifest).length).toBeLessThan(10_500); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053)
+    expect(JSON.stringify(manifest).length).toBeLessThan(10_700); // 9_000 before the export block (ADR-0048); 10_000 before motion blur (ADR-0053); 10_500 before the camera layer type (ADR-0054)
   });
 });

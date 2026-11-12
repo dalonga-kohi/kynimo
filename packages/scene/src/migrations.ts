@@ -113,6 +113,26 @@ function addMotionBlur(doc: Json): Json {
 }
 
 /**
+ * 11 → 12: visual layers (drawn and null) gain `threeD: false` and their transforms gain zero
+ * `positionZ`, `rotationX` and `rotationY` tracks (ADR-0054), which render exactly as before.
+ * Shape-group transforms are a separate schema without these tracks and are not touched.
+ */
+function addThreeD(doc: Json): Json {
+  const compositions = Array.isArray(doc.compositions) ? doc.compositions : [];
+  for (const comp of compositions) {
+    if (!isJson(comp) || !Array.isArray(comp.layers)) continue;
+    for (const layer of comp.layers) {
+      if (!isJson(layer) || layer.type === "audio") continue;
+      if (!("threeD" in layer)) layer.threeD = false;
+      if (isJson(layer.transform))
+        for (const track of ["positionZ", "rotationX", "rotationY"])
+          if (!(track in layer.transform)) layer.transform[track] = { value: 0 };
+    }
+  }
+  return doc;
+}
+
+/**
  * Every step, ordered by `from` (version 0 was a placeholder with no documents). Any format change
  * adds the step that upgrades the previous version.
  */
@@ -132,6 +152,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 9, migrate: (doc) => doc },
   // 10 → 11: transform motion blur; drawn layers gain `motionBlur: null` (ADR-0053).
   { from: 10, migrate: addMotionBlur },
+  // 11 → 12: 2.5D layers; visual layers gain `threeD: false` and zero Z tracks (ADR-0054).
+  { from: 11, migrate: addThreeD },
 ];
 
 export interface MigrationError {

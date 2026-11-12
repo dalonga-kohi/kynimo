@@ -595,6 +595,24 @@ describe("component layers", () => {
   });
 });
 
+describe("3D layers (not drawn yet)", () => {
+  it("are skipped with a reason and left out of the plan; 2D layers still draw", () => {
+    const solid3d = layer("deep", "solid", {
+      width: 10,
+      height: 10,
+      color: "#00ff00",
+      threeD: true,
+      transform: transform({ position: prop([20, 20]) }),
+    });
+    const flat = shapeLayer("flat", [rect([50, 50], [20, 10]), fill()]);
+    const p = plan([solid3d, flat]);
+    expect(p.skipped).toEqual([
+      { id: "deep", type: "solid", reason: "3D layers are not drawn yet" },
+    ]);
+    expect(p.layers.map((l) => l.id)).toEqual(["flat"]);
+  });
+});
+
 describe("generator layers", () => {
   const stripes = (thickness = 1) => ({
     type: "pattern",
@@ -703,6 +721,7 @@ describe("raster budget", () => {
         props: {},
       }),
       null: layer("null", "null"),
+      camera: layer("camera", "null", { type: "camera", zoom: prop(2000), pointOfInterest: null }),
       audio: layer("audio", "audio", { assetId: "img", volume: prop(1) }),
     };
     expect(Object.keys(one).sort()).toEqual(
@@ -722,7 +741,7 @@ describe("raster budget", () => {
       expect(skipped !== undefined, type).toBe(expectSkipped);
       if (skipped !== undefined && support.status === "accepted")
         expect(skipped.reason).toBe(support.reason);
-      if (type !== "null")
+      if (type !== "null" && type !== "camera")
         expect(
           p.layers.some((l) => l.id === type),
           type,
