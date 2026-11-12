@@ -263,6 +263,43 @@ const triangle = (a: number[], b: number[], c: number[], [u, v]: [number, number
 ];
 
 describe("deform compositor parity", () => {
+  it("preserves source samples in a near-collapsed triangle that covers a pixel center", async () => {
+    const r = raster(8, 8, (x) => (x === 6 ? red : [0, 0, 0, 255]));
+    const { warp } = planDeform(
+      "thin",
+      {
+        density: 4,
+        iterations: 10,
+        pins: [
+          { id: "left", rest: [6, 6], position: [1.4375, 1.5] },
+          { id: "middle", rest: [8, 8], position: [129.4375, 129.4375] },
+          { id: "right", rest: [6, 8], position: [257.625, 257.5625] },
+        ],
+      },
+      { width: 8, height: 8, raster: r, mask: null },
+      [1, 0, 0],
+      [0, 0],
+      new FrameDeformWork(),
+    );
+    if (warp === null) throw new Error("expected a mesh");
+    const [x, y] = warp.origin;
+    const p = {
+      ...makePlan(sourceLayer(r, warp, { matrix: [1, 0, 0, 1, -x, -y] })),
+      width: warp.width,
+      height: warp.height,
+    };
+    const cpu = pixel(compositeReference(p), 129, 129);
+    expect(cpu).toEqual([212, 0, 0, 255]);
+    const first = await gpu.composite(p);
+    const sample = pixel(first, 129, 129);
+    // The thin triangle's exact centroid lands at this pixel. Its alpha must stay opaque.
+    expect(sample[3], `sample [${sample}] at the centroid`).toBe(255);
+    expect(Math.abs(sample[0] - cpu[0]), `sample [${sample}] at the centroid`).toBeLessThanOrEqual(
+      1,
+    );
+    expect((await gpu.composite(p)).pixels).toEqual(first.pixels);
+  });
+
   it.each([1, 0.6, 0.3])(
     "renders a masked and effected nonrigid raster twice at %s",
     async (scale) => {

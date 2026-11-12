@@ -14,7 +14,7 @@ Puppet pins let an agent bend artwork while keeping its source, placement, and a
 - **Mesh.** The density is the cell count along the longer side, with `ceil(density × short / long)` along the other side and at least one cell per side. Image, video, shape and text retain cells touched by positive source alpha and positive mask coverage, including any positive-area overlap of a source pixel and a cell. A one-cell margin includes diagonal neighbors and stays within the grid. Solid, generator, precomp and component sources use the full rectangle. The renderer compacts active vertices in row-major order and splits each retained cell along its northwest–southeast diagonal. Empty alpha sources need no solve.
 - **Solve.** During frame planning, the renderer runs a fixed number of Float64 as-rigid-as-possible (ARAP) local/global iterations with uniform edge weights. Local rotations use `atan2` of the summed cross and dot products. The global step uses the average endpoint rotations and a graph Laplacian with the pinned coordinates eliminated. One banded Cholesky factor serves both axes and all iterations. Connected components with no pin keep their rest pose. A mesh whose winning pins all have zero displacement needs no warp.
 - **Draw order.** Masks multiply source alpha before the triangle pass. Deformation draws into layer space with a one-texel transparent border, followed by effect padding and effects. Deformed shape and text use the camera feature's layer-space raster at 1×, halved as needed to fit. The same affine or projective placement uses the solved origin, and 3D near clipping sees the warped result. Motion blur reuses the center-frame warp and varies placement and opacity across the shutter. A shader transition mixes the backdrop with the warped, placed layer composited over it (ADR-0057).
-- **Sampling.** WebGL uses `drawArrays(TRIANGLES)` and four `texelFetch` taps for transparent-outside bilinear sampling of masked premultiplied source texels. The CPU uses a top-left fill rule and barycentric interpolation. Both share destination vertices at 1/16-pixel precision and float32 source coordinates. Later triangles overwrite earlier ones in triangle index order, including transparent samples in folds. WebGL clears recycled targets before the triangle pass.
+- **Sampling.** WebGL uses `drawArrays(TRIANGLES)` for coverage and four `texelFetch` taps for transparent-outside bilinear sampling of masked premultiplied source texels. The CPU uses a top-left fill rule. Both share destination vertices at 1/16-pixel precision, float32 source coordinates, and edge-based barycentric interpolation. WebGL passes all three corners as flat attributes and splits signed subpixel edge determinants into 8-bit terms before converting to float. This preserves source coordinates on near-collapsed triangles. Later triangles overwrite earlier ones in triangle index order, including transparent samples in folds. WebGL clears recycled targets before the triangle pass.
 
 ## Limits and measured costs
 
@@ -27,14 +27,16 @@ Planning and compositing each have a shared 128 million-unit frame budget, inclu
 - `I[4N(b+1) + 12T + V]` for local rotations, right-hand sides and substitutions, O(`Nb + E`) per iteration for `E` mesh edges.
 - The padded target area, plus `T`, plus the sum of `(ceil(width)+2) × (ceil(height)+2)` over triangle bounding boxes. Each compositor charges that same draw estimate per actual draw, including repeated matte reads.
 
-Warmed medians on an AMD Ryzen 5 3600 with Node 24.19.0, using two pins per layer. CPU composite times include placement and blending.
+Warmed medians on an AMD Ryzen 5 3600 with Node 24.19.0, using two pins per layer. CPU composite times include placement and blending. Each uploaded triangle uses 144 bytes because each of its three vertices carries all three corners.
 
 | Source                 | Density / iterations | Triangles |  Plan work | Draw work |      Factor | GPU vertex buffer |      Plan | CPU composite |
 | ---------------------- | -------------------: | --------: | ---------: | --------: | ----------: | ----------------: | --------: | ------------: |
-| 256×160 alpha raster   |              24 / 10 |       720 |  1,093,561 |   179,619 |    85,968 B |          34,560 B |   6.00 ms |      16.97 ms |
-| 256×256 full rectangle |              64 / 30 |     8,192 | 56,602,063 |   472,576 | 2,263,528 B |         393,216 B | 191.66 ms |      25.40 ms |
+| 256×160 alpha raster   |              24 / 10 |       720 |  1,093,561 |   179,619 |    85,968 B |         103,680 B |   6.00 ms |      16.97 ms |
+| 256×256 full rectangle |              64 / 30 |     8,192 | 56,602,063 |   472,576 | 2,263,528 B |       1,179,648 B | 191.66 ms |      25.40 ms |
 
 The CPU and pinned SwiftShader differed by at most 1/255 per channel at placement scales 1.0, 0.6 and 0.3. The shared-edge, fold and recycled-target cases matched exactly. Repeating each frame on the same compositor produced identical bytes. The `puppet-deform` reference pins a cyan ribbon with inset bands and a purple-and-amber precomp card bending in opposite directions. The ribbon casts a post-deform shadow. The card uses 3D placement and transform motion blur.
+
+A near-collapsed triangle in the parity suite covers a pixel center with equal barycentric weights. The CPU reference returned RGBA8 `[212, 0, 0, 255]`. Computing UVs from edge determinants changed the SwiftShader sample from `[96, 0, 0, 191]` to `[213, 0, 0, 255]`. The corrected puppet frames differ from the smooth varying path by one RGB channel value in each of five pixels at frame 12 and one pixel at frame 24. Alpha and frame 0 are unchanged.
 
 ## MCP surface
 

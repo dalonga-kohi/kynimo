@@ -198,15 +198,26 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         deformGeometry = { array, buffer };
         gl.bindVertexArray(array);
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.enableVertexAttribArray(0);
-        gl.enableVertexAttribArray(1);
-        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0);
-        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 16, 8);
+        for (let attr = 0; attr < 3; attr++) {
+          gl.enableVertexAttribArray(attr);
+          gl.vertexAttribPointer(attr, 4, gl.FLOAT, false, 48, 16 * attr);
+        }
       } else {
         gl.bindVertexArray(deformGeometry.array);
         gl.bindBuffer(gl.ARRAY_BUFFER, deformGeometry.buffer);
       }
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(warp.vertices), gl.STREAM_DRAW);
+      // Every vertex passes all three corners as flat attributes for exact fragment barycentrics.
+      const corners = new Float32Array(warp.vertices.length * 3);
+      for (let i = 0; i < warp.vertices.length; i += 12) {
+        const start = i * 3;
+        for (let j = 0; j < 12; j++) {
+          const value = warp.vertices[i + j] as number;
+          corners[start + j] = value;
+          corners[start + 12 + j] = value;
+          corners[start + 24 + j] = value;
+        }
+      }
+      gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STREAM_DRAW);
       const prog = fixed.deform();
       // Triangle passes write only part of a recycled target, including when the mesh folds.
       clear(gl, into);
