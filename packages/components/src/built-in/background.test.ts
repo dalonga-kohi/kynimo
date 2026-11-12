@@ -34,9 +34,10 @@ function raw(
     assetSize: () => null,
   };
   const out = background.evaluate({ ...defaults, ...COLORS, ...props } as never, ctx as never);
+  const adjustment = out.layers.find((l) => l.type === "adjustment");
   return {
-    effects: (out.layers[0] as { effects: Effect[] }).effects,
-    generators: out.layers.map((l) => (l.type === "generator" ? l.generator : (null as never))),
+    effects: adjustment?.effects ?? [],
+    generators: out.layers.flatMap((l) => (l.type === "generator" ? [l.generator] : [])),
   };
 }
 /** Generator `index` (top first) resolved at a frame of a `duration`-frame instance. */
@@ -85,11 +86,13 @@ describe("background", () => {
               { kind, useFourth: true, scanlines: true },
               { frame, duration, width, height },
             );
-            expect(comp.layers).toHaveLength(kind === "mesh" ? 2 : 1);
-            for (const l of comp.layers) {
-              expect(l.type).toBe("generator");
+            // The looks' adjustment layer on top, then the generators (mesh: overlay, base).
+            expect(comp.layers.map((l) => l.type)).toEqual([
+              "adjustment",
+              ...Array(kind === "mesh" ? 2 : 1).fill("generator"),
+            ]);
+            for (const l of comp.layers)
               if (l.type === "generator") expect([l.width, l.height]).toEqual([width, height]);
-            }
             expect(comp.background).toBeNull();
           }
         });
@@ -103,7 +106,7 @@ describe("background", () => {
     expect(g("noise")).toMatchObject({ type: "noise", octaves: 4 });
     for (const kind of PATTERNS) expect(g(kind)).toMatchObject({ type: "pattern", kind });
     const comp = run(ID, { kind: "mesh" }, { frame: 10 });
-    const [overlay, base] = comp.layers;
+    const [, overlay, base] = comp.layers;
     expect(base?.type === "generator" && base.generator.type).toBe("aurora");
     expect(overlay?.type === "generator" && overlay.generator.type).toBe("noise");
     expect(overlay?.blendMode).toBe("overlay");
@@ -112,9 +115,10 @@ describe("background", () => {
   });
 
   it("works with no props: an aurora in the pack's colors with a vignette and grain", () => {
-    const l = layerById(run(ID, {}, { frame: 10 }), "background");
+    const comp = run(ID, {}, { frame: 10 });
+    const l = layerById(comp, "background");
     expect(l?.type === "generator" && l.generator.type).toBe("aurora");
-    expect(l?.effects.map((e) => e.type)).toEqual(["vignette", "grain"]);
+    expect(layerById(comp, "looks")?.effects.map((e) => e.type)).toEqual(["vignette", "grain"]);
     const g = l?.type === "generator" ? l.generator : null;
     expect(g?.type === "aurora" && g.colors).toHaveLength(3);
   });
@@ -135,7 +139,7 @@ describe("background", () => {
       .stops;
     expect(stops.at(-1)?.color).toEqual(stops[0]?.color);
     expect(stops.at(-1)?.offset).toBe(1);
-    const mesh = run(ID, { kind: "mesh", useFourth: true }, { frame: 10 }).layers[1];
+    const mesh = layerById(run(ID, { kind: "mesh", useFourth: true }, { frame: 10 }), "background");
     expect(
       mesh?.type === "generator" && mesh.generator.type === "aurora" && mesh.generator.colors,
     ).toHaveLength(4);
@@ -209,7 +213,7 @@ describe("background", () => {
     });
     it("give the mesh overlay its own seed and the grain the aurora's", () => {
       const comp = run(ID, { kind: "mesh" }, { frame: 10 });
-      const [overlay, base] = comp.layers;
+      const [, overlay, base] = comp.layers;
       const seed = (l: typeof base) =>
         l?.type === "generator" && "seed" in l.generator ? l.generator.seed : -1;
       expect(seed(overlay)).not.toBe(seed(base));
@@ -220,8 +224,8 @@ describe("background", () => {
   });
 
   describe("looks", () => {
-    const effects = (props: Obj) =>
-      layerById(run(ID, props, { frame: 10 }), "background")?.effects ?? [];
+    const effects = (props: Obj, kind = "aurora") =>
+      layerById(run(ID, { kind, ...props }, { frame: 10 }), "looks")?.effects ?? [];
     it("adds vignette, grain and scanlines on request", () => {
       const all = effects({ vignette: true, grain: true, scanlines: true });
       expect(all.map((e) => e.type)).toEqual(["vignette", "grain", "scanlines"]);
@@ -237,17 +241,29 @@ describe("background", () => {
     });
     it("scales grain and scanlines with the composition", () => {
       const at = (width: number, height: number) =>
-        layerById(run(ID, { scanlines: true }, { frame: 10, width, height }), "background")
-          ?.effects ?? [];
+        layerById(run(ID, { scanlines: true }, { frame: 10, width, height }), "looks")?.effects ??
+        [];
       const big = at(3840, 2160);
       expect(big.find((e) => e.type === "grain")).toMatchObject({ size: 2 });
       expect(big.find((e) => e.type === "scanlines")).toMatchObject({ spacing: 8 });
       expect(at(1920, 1080).find((e) => e.type === "scanlines")).toMatchObject({ spacing: 4 });
     });
-    it("puts the looks on the top layer", () => {
-      const comp = run(ID, { kind: "mesh" }, { frame: 10 });
-      expect(comp.layers[0]?.effects.map((e) => e.type)).toEqual(["vignette", "grain"]);
-      expect(comp.layers[1]?.effects).toEqual([]);
+    it("puts the looks on a full-frame adjustment layer on top of the stack, for every kind", () => {
+      for (const kind of KINDS) {
+        const comp = run(ID, { kind }, { frame: 10 });
+        const [top, ...rest] = comp.layers;
+        expect(top?.type).toBe("adjustment");
+        expect(top?.id).toBe("looks");
+        expect(top?.effects.map((e) => e.type)).toEqual(["vignette", "grain"]);
+        expect([top?.layerFrame, top?.transform.opacity]).toEqual([10, 1]);
+        // The generators (the mesh's overlay noise too) carry no look themselves.
+        expect(rest.length).toBe(kind === "mesh" ? 2 : 1);
+        for (const l of rest) expect(l.effects).toEqual([]);
+      }
+    });
+    it("adds no adjustment layer when every look is off", () => {
+      const comp = run(ID, { vignette: false, grain: false }, { frame: 10 });
+      expect(comp.layers.map((l) => l.id)).toEqual(["background"]);
     });
   });
 
@@ -414,12 +430,13 @@ describe("background", () => {
   describe("size and cost", () => {
     const cost = (comp: ReturnType<typeof run>) =>
       comp.layers.reduce((sum, l) => {
+        // Vignette, grain and scanlines are one sample each, over the whole frame.
+        if (l.type === "adjustment") return sum + comp.width * comp.height * l.effects.length;
         if (l.type !== "generator") return sum;
         const g = l.generator;
         const perPixel =
           g.type === "aurora" ? g.colors.length : g.type === "noise" ? 8 * g.octaves : 1;
-        // Vignette, grain and scanlines are one sample each.
-        return sum + l.width * l.height * (perPixel + l.effects.length);
+        return sum + l.width * l.height * perPixel;
       }, 0);
 
     it("evaluates every kind at 4K within the frame's sample budget", () => {
@@ -430,7 +447,7 @@ describe("background", () => {
           { frame: 75, width: 3840, height: 2160 },
         );
         expect(cost(comp), kind).toBeLessThan(500_000_000);
-        for (const l of comp.layers)
+        for (const l of comp.layers.filter((l) => l.type === "generator"))
           expect([l.type === "generator" && l.width, l.type === "generator" && l.height]).toEqual([
             3840, 2160,
           ]);

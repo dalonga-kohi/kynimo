@@ -167,6 +167,11 @@ export function generatorLayer(
   };
 }
 
+/** A full-frame adjustment layer: its effects apply to everything composited below it. */
+export function adjustmentLayer(o: LayerOptions): Layer {
+  return { ...base(o), type: "adjustment" };
+}
+
 export function imageLayer(o: LayerOptions & { assetId: string }): Layer {
   return { ...base(o), type: "image", assetId: AssetIdSchema.parse(o.assetId) };
 }

@@ -11,6 +11,7 @@ import {
 } from "@kynimo/scene";
 import { defineComponent } from "../define.js";
 import {
+  adjustmentLayer,
   generatorLayer,
   grainEffect,
   key,
@@ -336,9 +337,9 @@ export const background = defineComponent({
       );
 
     const base = { span, width: W, height: H };
-    const layers =
+    const stack =
       overlay === null
-        ? [generatorLayer({ ...base, id: "background", name: "Background", generator, effects })]
+        ? [generatorLayer({ ...base, id: "background", name: "Background", generator })]
         : [
             generatorLayer({
               ...base,
@@ -347,10 +348,15 @@ export const background = defineComponent({
               generator: overlay,
               blendMode: "overlay",
               transform: { opacity: still(0.4) },
-              effects,
             }),
             generatorLayer({ ...base, id: "background", name: "Background", generator }),
           ];
+    // The looks sit on an adjustment layer over the whole stack, so they apply to the composite
+    // (the mesh's overlay noise included). With no look there is nothing to adjust.
+    const layers =
+      effects.length === 0
+        ? stack
+        : [adjustmentLayer({ span, id: "looks", name: "Background looks", effects }), ...stack];
     return { width: W, height: H, background: null, layers };
   },
 });
