@@ -2,10 +2,15 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { hasFfmpeg } from "./assets.test-util.js";
 import type { EncodeOptions } from "./encode.js";
 import { Ffmpeg, MediaError } from "./media.js";
+
+vi.mock("node:os", async (original) => {
+  const os = await original<typeof import("node:os")>();
+  return { ...os, tmpdir: vi.fn(os.tmpdir) };
+});
 
 const runMedia = hasFfmpeg || process.env.CI !== undefined;
 const FPS = { num: 30, den: 1 };
@@ -304,10 +309,17 @@ describe.runIf(runMedia)("FFmpeg encode and PCM decode", () => {
     });
 
     it("fails on garbage and removes its temp files", async () => {
-      const before = (await readdir(tmpdir())).filter((n) => n.startsWith("kynimo-media-")).length;
-      await expect(ffmpeg.decodePcm(new Uint8Array(100), 48_000)).rejects.toThrow(MediaError);
-      const after = (await readdir(tmpdir())).filter((n) => n.startsWith("kynimo-media-")).length;
-      expect(after).toBeLessThanOrEqual(before);
+      const scratch = await mkdtemp(join(dir, "pcm-"));
+      // The export and upload suites also create kynimo-media-* folders in the system temp root.
+      const tempRoot = vi.mocked(tmpdir).mockClear();
+      await tempRoot.withImplementation(
+        () => scratch,
+        async () => {
+          await expect(ffmpeg.decodePcm(new Uint8Array(100), 48_000)).rejects.toThrow(MediaError);
+          expect(tempRoot).toHaveBeenCalledOnce();
+          expect(await readdir(scratch)).toEqual([]);
+        },
+      );
     });
   });
 });
