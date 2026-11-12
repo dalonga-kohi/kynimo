@@ -155,25 +155,31 @@ describe("transition", () => {
             }
           });
 
-    it("covers from every origin and with every count", () => {
-      for (const origin of [
-        [0, 0],
-        [900, 500],
-        [-900, -500],
-        [3000, 0],
-      ]) {
-        for (const kind of ["iris", "circles"])
-          for (const count of [2, 6, 24]) {
-            const comp = run(ID, { kind, origin, count }, { frame: 74 });
-            expect(gaps(comp), `${kind} ${origin} ${count}`).toBe(0);
-          }
-      }
-      for (const kind of ["panels", "blinds", "shutter", "circles"])
-        for (const count of [2, 3, 7, 24])
-          for (const [width, height] of SIZES) {
-            const comp = run(ID, { kind, count }, { frame: 74, width, height });
-            expect(gaps(comp), `${kind} ${count}`).toBe(0);
-          }
+    // One test per case: the circle grids at count 24 are heavy, and one loop over all of them
+    // passed the 5 s default timeout under a parallel workspace run.
+    const origins = [
+      [0, 0],
+      [900, 500],
+      [-900, -500],
+      [3000, 0],
+    ];
+    it.each(
+      origins.flatMap((origin) =>
+        ["iris", "circles"].flatMap((kind) => [2, 6, 24].map((count) => ({ kind, origin, count }))),
+      ),
+    )("$kind covers from origin $origin with count $count", ({ kind, origin, count }) => {
+      const comp = run(ID, { kind, origin, count }, { frame: 74 });
+      expect(gaps(comp)).toBe(0);
+    });
+    it.each(
+      ["panels", "blinds", "shutter", "circles"].flatMap((kind) =>
+        [2, 3, 7, 24].flatMap((count) =>
+          SIZES.map(([width, height]) => ({ kind, count, width, height })),
+        ),
+      ),
+    )("$kind covers with count $count at $width×$height", ({ kind, count, width, height }) => {
+      const comp = run(ID, { kind, count }, { frame: 74, width, height });
+      expect(gaps(comp)).toBe(0);
     });
 
     it("iris and circles reach the farthest corner", () => {
