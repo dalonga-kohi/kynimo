@@ -1,3 +1,4 @@
+import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
   EasingInput,
@@ -6,7 +7,10 @@ import {
 } from "@kynimo/intent";
 import {
   ColorSchema,
+  CompositionIdSchema,
   EffectIdSchema,
+  ID_PATTERN,
+  JsonObjectSchema,
   LayerIdSchema,
   LayerPatchSchema,
   LayerSchema,
@@ -19,7 +23,9 @@ import {
   MAX_LAYERS,
   MAX_SHAPE_ITEMS,
   MAX_TEXT_ANIMATORS,
+  NameSchema,
   OpSchema,
+  SemverSchema,
   TRANSFORM_PROPERTIES,
   TrackMatteSchema,
 } from "@kynimo/scene";
@@ -472,6 +478,46 @@ export const ImportSvgRequest = z.object({
 });
 
 export const ImportSvgInput = ImportSvgRequest.extend(intentMeta);
+
+const ComponentIdSchema = z.string().regex(ID_PATTERN);
+const ComponentFrameSchema = z.number().int().min(0).max(MAX_DURATION_FRAMES);
+
+export const AddComponentRequest = z.strictObject({
+  component_id: ComponentIdSchema.describe("Built-in component id from list_components."),
+  component_version: SemverSchema.optional().describe("Default: latest built-in version."),
+  composition: CompositionIdSchema.optional().describe("Default: the main composition."),
+  layer_id: LayerIdSchema.optional().describe("Generated when omitted."),
+  name: NameSchema.optional().describe("Default: the component title."),
+  in_frame: ComponentFrameSchema.optional().describe("First visible frame. Default: 0."),
+  out_frame: ComponentFrameSchema.optional().describe(
+    "Exclusive end frame. Default: the composition duration.",
+  ),
+  index: z.number().int().nonnegative().optional().describe("Stack position. Default: 0 (top)."),
+  props: JsonObjectSchema.refine(
+    (props) => Object.keys(props).length <= MAX_PROPS_PER_COMPONENT,
+    `at most ${MAX_PROPS_PER_COMPONENT} props`,
+  )
+    .optional()
+    .meta({
+      type: "object",
+      description: "See list_components for props and defaults.",
+    }),
+});
+
+export const AddComponentInput = AddComponentRequest.extend(intentMeta);
+
+export const ListComponentsOutput = z.object({
+  components: z.array(
+    z.object({
+      id: ComponentIdSchema,
+      version: SemverSchema,
+      title: NameSchema,
+      description: z.string().min(1).max(1000),
+      // Definitions validate each full descriptor at registration. Keep those variants out of tools/list.
+      props: z.record(z.string(), z.looseObject({ type: z.string(), description: z.string() })),
+    }),
+  ),
+});
 
 export const CreateProjectInput = z.object({
   name: z.string().min(1).max(200),

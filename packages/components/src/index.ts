@@ -24,5 +24,5 @@ export {
   type ComponentRegistry,
   createComponentRegistry,
 } from "./registry.js";
-export { type ResolveEnv, resolveProps } from "./resolve-props.js";
+export { ComponentPropError, type ResolveEnv, resolveProps } from "./resolve-props.js";
 export { type ComponentStyle, createComponentStyle } from "./style.js";

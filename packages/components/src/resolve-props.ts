@@ -26,6 +26,15 @@ export interface ResolveEnv {
   fps: FrameRate;
 }
 
+export class ComponentPropError extends RangeError {
+  constructor(
+    readonly path: (string | number)[],
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 const MAX_ECHO = 60;
 
 /** A value as it appears in an error message: JSON, cut to {@link MAX_ECHO} characters. */
@@ -94,14 +103,22 @@ export function resolveProps(
   given: Readonly<Record<string, Json>>,
   env: ResolveEnv,
 ): ResolvedProps {
-  const fail = (name: string, problem: string, at = ""): never => {
-    throw new RangeError(`${env.who}: props.${name}${at} ${problem}`);
+  const fail = (name: string, problem: string, at: readonly PropertyKey[] = []): never => {
+    // Report the exact key up to the descriptor name limit. Oversized keys point at props itself.
+    const path =
+      name.length <= 64
+        ? [name, ...at.map((part) => (typeof part === "number" ? part : String(part)))]
+        : [];
+    throw new ComponentPropError(
+      path,
+      `${env.who}: props.${echoKey(name)}${formatPath(at)} ${problem}`,
+    );
   };
 
   for (const key of Object.keys(given)) {
     if (!Object.hasOwn(descriptors, key))
       fail(
-        echoKey(key),
+        key,
         `is not a prop of this component; its props are: ${Object.keys(descriptors).join(", ") || "none"}`,
       );
   }
@@ -112,7 +129,7 @@ export function resolveProps(
     const parsed = animatable(item).safeParse(value);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
-      return fail(name, issue?.message ?? "is invalid", formatPath(issue?.path ?? []));
+      return fail(name, issue?.message ?? "is invalid", issue?.path);
     }
     if ("value" in parsed.data)
       return fail(name, "takes a plain value or { keyframes }, not { value }");

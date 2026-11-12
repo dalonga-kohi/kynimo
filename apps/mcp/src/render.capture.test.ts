@@ -259,6 +259,35 @@ describe("render tools with the capture renderer", () => {
     expect(sum(looked.at(1, 1))).toBeLessThan(sum(plain.at(1, 1)));
   }, 60_000);
 
+  it("renders a placed component at its local midpoint and composition origin", async () => {
+    const created = await call("create_project", {
+      name: "Components",
+      idempotency_key: "components",
+      width: 96,
+      height: 64,
+      duration_frames: 30,
+      background: "#102030",
+    });
+    const project_id = created.structuredContent?.id as string;
+    await call("add_component", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "cover",
+      component_id: "transition",
+      component_version: "1.0.0",
+      in_frame: 10,
+      out_frame: 19,
+      props: { color: "#ff0000" },
+    });
+    const result = await call("render_frames", { project_id, frames: [9, 14, 19] });
+    expect(result.structuredContent?.skipped).toEqual([]);
+    expect(images(result).map(({ data }) => decodePng(data).at(1, 1))).toEqual([
+      [16, 32, 48, 255],
+      [255, 0, 0, 255],
+      [16, 32, 48, 255],
+    ]);
+  }, 60_000);
+
   it("returns downscaled PNG frames and caches by document", async () => {
     const r = await call("render_frames", { project_id: project, frames: [0, 29], max_size: 160 });
     const imgs = images(r);

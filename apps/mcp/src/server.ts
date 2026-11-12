@@ -23,12 +23,15 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { capabilityManifest, RESOURCES } from "./capabilities.js";
+import { addComponentExpansion, componentCatalog } from "./components.js";
 import { importSvgExpansion } from "./import-svg.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
 import { compactToolListing } from "./listing.js";
 import {
   AddBehaviorInput,
   AddBehaviorRequest,
+  AddComponentInput,
+  AddComponentRequest,
   AddEffectInput,
   AddLayerInput,
   AddMaskInput,
@@ -58,6 +61,7 @@ import {
   JobOutput,
   LAYER_TYPES,
   ListAssetsOutput,
+  ListComponentsOutput,
   ListPresetsOutput,
   ListProjectsOutput,
   PrecomposeInput,
@@ -92,6 +96,7 @@ For anything beyond a few edits, write a script: run_script runs TypeScript agai
 Call get_capabilities once: it says what this build draws, what it accepts but leaves out of frames, and what is not available yet.
 Workflow: create_project or list_projects → get_scene (summary) → add layers (add_layer) → animate them → check with get_scene / get_layer / describe_motion (timing), and look at the result with render_contact_sheet (whole animation) and render_frames (details).
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
+Use list_components or kynimo://components to discover built-ins and their props. add_component places a version-pinned instance; use dry_run to validate placement and props first.
 Every write needs base_version (the version you last read) and a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
 Time is integer frames at the composition frame rate. Layers are top-first (index 0 draws on top). Keyframe frames are in layer time (composition frame = startFrame + frame).
 Shape contents are top-first too, with After Effects semantics: a fill or stroke paints the paths listed above it in its group (nested groups included); trim, round-corners and repeater change or copy everything listed above them, and every fill and stroke draws the changed paths.
@@ -649,6 +654,15 @@ export function createServer(service: KynimoService): McpServer {
   );
 
   intentTool(
+    "add_component",
+    "Add component",
+    "Places a built-in component with validated props as a component layer. Local frame 0 is in_frame. Omit component_version to pin the latest; see list_components for versions and props.",
+    AddComponentInput,
+    AddComponentRequest,
+    addComponentExpansion,
+  );
+
+  intentTool(
     "add_effect",
     "Add effect",
     "Inserts an effect on a drawing or adjustment layer. Returns the setEffects operation and effect id. See get_capabilities for limits.",
@@ -729,6 +743,18 @@ export function createServer(service: KynimoService): McpServer {
   );
 
   server.registerTool(
+    "list_components",
+    {
+      title: "List components",
+      description: "Built-in component versions and prop descriptors. Same as kynimo://components.",
+      inputSchema: z.object({}),
+      outputSchema: ListComponentsOutput,
+      annotations: READ,
+    },
+    guard(async () => componentCatalog()),
+  );
+
+  server.registerTool(
     "list_presets",
     {
       title: "List presets",
@@ -787,6 +813,16 @@ function registerResources(server: McpServer): void {
       mimeType: "application/json",
     },
     (uri) => json(uri, capabilityManifest(SERVER)),
+  );
+  server.registerResource(
+    "components",
+    RESOURCES.components,
+    {
+      title: "Built-in components",
+      description: "Component versions and prop descriptors. Same as list_components.",
+      mimeType: "application/json",
+    },
+    (uri) => json(uri, componentCatalog()),
   );
   server.registerResource(
     "presets",

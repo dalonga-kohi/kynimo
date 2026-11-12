@@ -143,23 +143,30 @@ describe("capability manifest", () => {
     });
     expect(manifest.unavailable).not.toHaveProperty("shaders");
     expect(manifest.unavailable.custom_shaders?.reason).toContain("M6");
-    expect(manifest.unavailable.catalogs?.reason).toContain("shader catalogs in M6");
+    expect(manifest.unavailable.catalogs?.reason).toContain("shader catalog in M6");
     expect(manifest.layer_types.generator.status).toBe("renders");
     expect(manifest.layer_types.component.status).toBe("renders");
-    expect(manifest.unavailable.components?.reason).toBe(
-      "built-in components render (kinetic-type, lower-third, logo-reveal, transition, background); add_component and the component catalog arrive next in M6",
-    );
-    // The reason names every built-in component, so a new one can't ship unlisted.
-    for (const { id } of BUILT_IN_COMPONENTS)
-      expect(manifest.unavailable.components?.reason).toContain(id);
+    expect(manifest.unavailable.custom_components?.reason).toContain("define_component");
+    expect(manifest.components).toEqual({
+      tools: ["add_component", "list_components"],
+      resource: "kynimo://components",
+      built_ins: [...new Set(BUILT_IN_COMPONENTS.map(({ id }) => id))].sort(),
+    });
   });
 
   it("doesn't list the shipped intent tools as unavailable", () => {
     expect(manifest.unavailable).not.toHaveProperty("intent_tools");
     const text = JSON.stringify(manifest.unavailable);
-    // The preset catalog is a resource now; only the tokens/components/shaders catalogs are missing.
+    // The preset and component catalogs are available as resources.
     expect(manifest.unavailable.catalogs?.reason).toContain("kynimo://presets");
-    for (const tool of ["animate", "apply_preset", "stagger", "retime", "add_behavior"])
+    for (const tool of [
+      "animate",
+      "apply_preset",
+      "stagger",
+      "retime",
+      "add_behavior",
+      "add_component",
+    ])
       expect(text).not.toMatch(new RegExp(`\\b${tool}\\b.*arrive`));
   });
 
