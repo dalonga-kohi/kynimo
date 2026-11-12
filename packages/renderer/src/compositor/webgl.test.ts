@@ -1,4 +1,4 @@
-import type { ResolvedEffect, ResolvedGenerator } from "@kynimo/engine";
+import type { ResolvedEffect, ResolvedGenerator, ResolvedShader } from "@kynimo/engine";
 import { BLEND_MODES, type BlendMode } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -1275,4 +1275,116 @@ describe("WebGL2 compositor: 3D layers (projective placement)", () => {
     );
     expect((await gpu.composite(flat)).pixels).toEqual(before.pixels);
   });
+});
+
+it("matches the reference for a custom generator and a single-input effect", async () => {
+  const shader = (kind: "generator" | "effect", source: string): ResolvedShader => ({
+    type: "custom-shader",
+    definition: {
+      id: "custom-parity",
+      title: "Parity",
+      version: "1.0.0",
+      hash: "0".repeat(64),
+      kind,
+      source,
+      uniforms: {},
+    },
+    frame: 3,
+    fps: 30,
+    seed: 0.25,
+    uniforms: [],
+  });
+  const generator = shader("generator", "return vec4(uv, seed, 0.75);");
+  const effect = shader(
+    "effect",
+    "vec4 c = sampleInput(uv); return vec4(c.bgr * (0.75 + frame / fps), c.a);",
+  );
+  const custom: PlannedLayer = {
+    id: "generator",
+    type: "generator",
+    width: W,
+    height: H,
+    generator,
+    space: "layer",
+    opacity: 1,
+    blendMode: "normal",
+    mask: coverage(W, H),
+    matte: null,
+    matrix: [1, 0, 0, 1, 0, 0],
+    effects: [effect],
+  };
+  const p = plan([custom]);
+  await expectMatches(p);
+  const first = await gpu.composite(p);
+  expect((await gpu.composite(p)).pixels).toEqual(first.pixels);
+  expect(first.pixels.some((value) => value > 0)).toBe(true);
+});
+
+it("rejects custom shader work before allocating its target", async () => {
+  const huge: PlannedLayer = {
+    id: "oversized-shader",
+    type: "generator",
+    width: 8192,
+    height: 8192,
+    generator: {
+      type: "custom-shader",
+      definition: {
+        id: "custom-large",
+        version: "1.0.0",
+        title: "Large",
+        hash: "0".repeat(64),
+        kind: "generator",
+        uniforms: {},
+        source: "return vec4(uv, 0.0, 1.0);",
+      },
+      frame: 0,
+      fps: 30,
+      seed: 0,
+      uniforms: [],
+    },
+    space: "layer",
+    opacity: 1,
+    blendMode: "normal",
+    mask: null,
+    matte: null,
+    matrix: [1, 0, 0, 1, 0, 0],
+  };
+  const p = plan([huge]);
+  await expect(gpu.composite(p)).rejects.toThrow(/oversized-shader.*custom shader work/);
+  expect(() => compositeReference(p)).toThrow(/oversized-shader.*custom shader work/);
+});
+
+it("rounds custom shader intermediates like GLSL highp", async () => {
+  const shader: PlannedLayer = {
+    id: "rounding",
+    type: "generator",
+    width: W,
+    height: H,
+    generator: {
+      type: "custom-shader",
+      definition: {
+        id: "custom-rounding",
+        version: "1.0.0",
+        title: "Rounding",
+        hash: "0".repeat(64),
+        kind: "generator",
+        uniforms: { u_offset: { type: "float", default: 500000 } },
+        source:
+          "float offset = u_offset + 0.01; return vec4((offset - u_offset) * 100.0, 0.0, 0.0, 1.0);",
+      },
+      frame: 0,
+      fps: 30,
+      seed: 0,
+      uniforms: [[500000]],
+    },
+    space: "layer",
+    opacity: 1,
+    blendMode: "normal",
+    mask: null,
+    matte: null,
+    matrix: [1, 0, 0, 1, 0, 0],
+  };
+  const p = plan([shader]);
+  expect([...compositeReference(p).pixels.slice(0, 4)]).toEqual([0, 0, 0, 255]);
+  await expectMatches(p);
 });

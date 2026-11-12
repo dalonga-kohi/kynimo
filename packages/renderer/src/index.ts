@@ -8,7 +8,15 @@ export {
 } from "./binding.js";
 export { type CanvasKit, loadCanvasKit } from "./canvaskit.js";
 export * from "./capabilities.js";
+export {
+  compileShader,
+  MAX_FRAME_SHADER_WORK,
+  MAX_SHADER_SAMPLES,
+  MAX_SHADER_TOKENS,
+  ShaderSourceError,
+} from "./compositor/custom-shader.js";
 export { compositeReference } from "./compositor/reference.js";
+export { VERTEX as FULLSCREEN_VERTEX_SHADER } from "./compositor/shaders.js";
 export {
   type Compositor,
   CompositorError,

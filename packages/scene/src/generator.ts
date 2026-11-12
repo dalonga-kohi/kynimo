@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { animatable } from "./keyframes.js";
 import { ColorSchema, UnitIntervalSchema } from "./primitives.js";
+import { CustomShaderSchema } from "./shader.js";
 import { sameLengthCheck } from "./shape.js";
 
 export const MAX_GENERATOR_STOPS = 16;
@@ -35,6 +36,7 @@ const point = animatable(z.tuple([pointAxis, pointAxis]));
 
 /** A procedural source that fills a generator layer. Points and sizes are in layer pixels. */
 export const GeneratorSchema = z.discriminatedUnion("type", [
+  CustomShaderSchema,
   z.strictObject({
     type: z.literal("gradient"),
     kind: z.enum(["linear", "radial", "conic"]),

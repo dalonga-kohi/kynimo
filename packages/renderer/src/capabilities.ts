@@ -140,6 +140,7 @@ export const BEHAVIOR_LIMITS = {
 
 /** Generator kinds (ADR-0045), typed over the scene's generator union like the tables above. */
 export const GENERATOR_SUPPORT: Readonly<Record<Generator["type"], Support>> = {
+  "custom-shader": { status: "renders", note: "project-defined generator with typed uniforms" },
   gradient: {
     status: "renders",
     note: `linear, radial or conic, up to ${MAX_GENERATOR_STOPS} stops`,
@@ -150,6 +151,7 @@ export const GENERATOR_SUPPORT: Readonly<Record<Generator["type"], Support>> = {
 };
 
 export const EFFECT_SUPPORT: Readonly<Record<Effect["type"], Support>> = {
+  "custom-shader": { status: "renders", note: "project-defined single-input effect" },
   "gaussian-blur": RENDERS,
   "drop-shadow": RENDERS,
   glow: RENDERS,

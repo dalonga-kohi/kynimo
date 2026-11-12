@@ -2,14 +2,28 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { type CapturedFrame, type CapturedSheet, fitSize, sheetSize } from "@kynimo/capture";
+import {
+  type CapturedFrame,
+  type CapturedSheet,
+  CaptureError,
+  fitSize,
+  sheetSize,
+  validateShaderProgram,
+} from "@kynimo/capture";
 import { createComponentHost } from "@kynimo/components";
-import { evaluateFrame, type ResolvedComposition, type ResolvedLayer } from "@kynimo/engine";
+import {
+  evaluateFrame,
+  indexShaderDefinitions,
+  type ResolvedComposition,
+  type ResolvedLayer,
+  shaderDefinitionKey,
+} from "@kynimo/engine";
 import { IntentError } from "@kynimo/intent";
 import {
   AssetInfoError,
   readFontInfo,
   readImageInfo,
+  ShaderSourceError,
   sniffFontFormat,
   sniffImageFormat,
   videoFrameKey,
@@ -22,6 +36,7 @@ import {
   type Layer,
   LayerSelectorSchema,
   MAX_COMPOSITION_SIZE,
+  MAX_PROJECT_DEFINITIONS,
   matchLayers,
   type Op,
   type OpError,
@@ -30,6 +45,9 @@ import {
   redo,
   SCENE_FORMAT_VERSION,
   type SceneState,
+  type ShaderDefinition,
+  type ShaderDefinitionInput,
+  type ShaderDefinitionSummary,
   type StepResult,
   undo,
 } from "@kynimo/scene";
@@ -66,6 +84,13 @@ import {
   sampleFrames,
   type WarningReport,
 } from "./render.js";
+import {
+  shaderBindingError,
+  shaderBindings,
+  shaderHash,
+  shaderSummary,
+  verifiedShaders,
+} from "./shaders.js";
 import {
   type KeyLookup,
   newProjectId,
@@ -674,6 +699,7 @@ export class ServiceRuntime {
   readonly media: MediaTools | undefined;
   readonly decodeSlots = new Slots(MEDIA_CONCURRENCY);
   readonly scriptSlots = new Slots(SCRIPT_CONCURRENCY);
+  readonly shaderSlots = new Slots(2);
   readonly maxRenderAssetBytes: number;
   readonly scriptLimits: Partial<ScriptLimits>;
   readonly mediaUnavailable: string;
@@ -1026,6 +1052,7 @@ export class KynimoService {
     compositionId: string,
     frames: readonly number[],
     video = true,
+    shaders: readonly ShaderDefinition[] = [],
   ): Promise<RenderMedia> {
     const images = new Set<string>();
     const families = new Set<string>();
@@ -1046,7 +1073,7 @@ export class KynimoService {
     // or a video's source frames are needed.
     const evaluated =
       hasComponents || (video && doc.assets.some((a) => a.type === "video"))
-        ? walkEvaluated(doc, compositionId, frames)
+        ? walkEvaluated(doc, compositionId, frames, shaders)
         : undefined;
     for (const id of evaluated?.images ?? []) images.add(id);
     for (const family of evaluated?.families ?? []) families.add(family);
@@ -1068,7 +1095,7 @@ export class KynimoService {
     const videoFrames = video
       ? await this.loadVideoFrames(doc, evaluated?.videoFrames ?? new Map(), budget)
       : new Map<string, Uint8Array>();
-    return { assets: out, videoFrames };
+    return { assets: out, videoFrames, ...(shaders.length === 0 ? {} : { shaders }) };
   }
 
   /**
@@ -1483,6 +1510,10 @@ export class KynimoService {
                 : `nothing to ${write.kind}`;
           return reject(step.kind, message, step.errors);
         }
+        const shaderError = await shaderBindingError(step.state.doc, tx.definitions);
+        if (shaderError !== undefined)
+          return reject("invalid", "the scene contains an invalid shader binding", [shaderError]);
+
         const version = step.changes.length > 0 ? p.version + 1 : p.version;
         const result = summarizeChanges(p.id, version, step.changes);
         return {
@@ -1570,6 +1601,17 @@ export class KynimoService {
           p.version,
           echoOps ? { expanded_ops: ops } : undefined,
         );
+      const shaderError = await shaderBindingError(
+        step.state.doc,
+        async () => (await this.store.listShaderDefinitions(p.id)) ?? [],
+      );
+      if (shaderError !== undefined)
+        throw new ToolError(
+          "invalid",
+          "the scene contains an invalid shader binding",
+          [shaderError],
+          p.version,
+        );
       onDryRun?.(step.state.doc);
       return {
         ...summarizeChanges(p.id, p.version, step.changes),
@@ -1652,6 +1694,149 @@ export class KynimoService {
     return main === undefined ? counted : { ...counted, motion: describeMotion(wouldBe, main) };
   }
 
+  async defineShader(
+    projectId: string,
+    key: string,
+    input: ShaderDefinitionInput,
+  ): Promise<{
+    project_id: string;
+    definition: ShaderDefinitionSummary;
+    created: boolean;
+    replayed: boolean;
+  }> {
+    const print = fingerprint({ tool: "define_shader", input });
+    const hash = shaderHash(input);
+    const reply = (result: WriteResult, replayed: boolean) => {
+      if (result.definition === undefined || result.definition_created === undefined)
+        throw new Error("define_shader outcome is missing its definition");
+      return {
+        project_id: projectId,
+        definition: result.definition,
+        created: result.definition_created,
+        replayed,
+      };
+    };
+    type Validation = { ok: true } | { ok: false; message: string };
+    const attempt = async (validation?: Validation) => {
+      const done = await this.store.transact(
+        projectId,
+        async (tx): Promise<Step<ReturnType<typeof reply> | ToolError | undefined>> => {
+          const earlier = await previousUse(
+            await tx.lookup(this.actor, key),
+            key,
+            print,
+            "define_shader",
+            (o) => reply(o.result, true),
+          );
+          if (earlier !== undefined) return { value: earlier };
+          const record = (outcome: WriteOutcome): WriteRecord => ({
+            actor: this.actor,
+            key,
+            fingerprint: print,
+            outcome,
+          });
+          const reject = (kind: "invalid" | "conflict", path: string, message: string) => {
+            const errors = [{ path: [path], message }];
+            const currentVersion = tx.project.version;
+            return {
+              commit: {
+                record: record({ status: "rejected", kind, message, errors, currentVersion }),
+              },
+              value: new ToolError(kind, message, errors, currentVersion),
+            };
+          };
+          const definitions = verifiedShaders(await tx.definitions());
+          const existing = definitions.find(
+            ({ id, version }) => id === input.id && version === input.version,
+          );
+          if (existing !== undefined && existing.hash !== hash)
+            return reject(
+              "conflict",
+              "version",
+              "this shader version is immutable; publish a new version",
+            );
+          if (existing === undefined) {
+            if (definitions.length >= MAX_PROJECT_DEFINITIONS)
+              return reject(
+                "invalid",
+                "id",
+                `the project already stores ${MAX_PROJECT_DEFINITIONS} definition versions`,
+              );
+            if (validation === undefined) return { value: undefined };
+            if (!validation.ok) return reject("invalid", "source", validation.message);
+          }
+          const definition = existing ?? { ...input, hash };
+          const version = tx.project.version;
+          const result: WriteResult = {
+            ...summarizeChanges(projectId, version, []),
+            definition: shaderSummary(definition),
+            definition_created: existing === undefined,
+          };
+          return {
+            commit: {
+              record: record({ status: "applied", version, result }),
+              ...(existing === undefined ? { definition } : {}),
+            },
+            value: reply(result, false),
+          };
+        },
+      );
+      if (done === undefined) throw notFound(projectId);
+      return unwrap(done.value);
+    };
+
+    const ready = await attempt();
+    if (ready !== undefined) return ready;
+
+    // Browser startup and compilation can take seconds. Recheck the write under the lock once
+    // validation finishes so normal scene edits and other publications can proceed in the meantime.
+    const validation = await this.rt.shaderSlots.run(async (): Promise<Validation> => {
+      try {
+        await validateShaderProgram(input);
+        return { ok: true };
+      } catch (error) {
+        if (
+          error instanceof ShaderSourceError ||
+          (error instanceof CaptureError && error.pageError === "ShaderSourceError")
+        )
+          return { ok: false, message: error.message.slice(0, 300) };
+        throw new ToolError(
+          "unavailable",
+          error instanceof CaptureError && error.pageError === "ShaderValidationUnavailable"
+            ? error.message
+            : "shader validation could not start or communicate with the pinned Chromium",
+        );
+      }
+    });
+    const result = await attempt(validation);
+    if (result === undefined) throw new Error("shader validation outcome was not committed");
+    return result;
+  }
+
+  async listDefinitions(projectId: string): Promise<{ definitions: ShaderDefinitionSummary[] }> {
+    const definitions = await this.store.listShaderDefinitions(projectId);
+    if (definitions === undefined) throw notFound(projectId);
+    return {
+      definitions: verifiedShaders(definitions)
+        .sort((a, b) => {
+          const left = shaderDefinitionKey(a.id, a.version);
+          const right = shaderDefinitionKey(b.id, b.version);
+          return left < right ? -1 : left > right ? 1 : 0;
+        })
+        .map(shaderSummary),
+    };
+  }
+
+  private async shadersFor(projectId: string, doc: Project): Promise<ShaderDefinition[]> {
+    const pins = new Set<string>();
+    for (const { instance } of shaderBindings(doc))
+      pins.add(shaderDefinitionKey(instance.shaderId, instance.shaderVersion));
+    if (pins.size === 0) return [];
+    return verifiedShaders((await this.store.listShaderDefinitions(projectId)) ?? []).filter(
+      ({ id, version }) => pins.has(shaderDefinitionKey(id, version)),
+    );
+  }
+
   /** The run_script source and seed that wrote a version (default: the latest), ADR-0044. */
   async getScript(projectId: string, version?: number) {
     await this.load(projectId);
@@ -1727,7 +1912,13 @@ export class KynimoService {
     const misses = frames.filter((f) => !found.has(f));
     const cachedFrames = new Set(found.keys());
     if (misses.length > 0) {
-      const media = await this.assetsFor(p.doc, comp.id, misses);
+      const media = await this.assetsFor(
+        p.doc,
+        comp.id,
+        misses,
+        true,
+        await this.shadersFor(p.id, p.doc),
+      );
       const drawn = await this.draw(() =>
         renderer.frames(p.doc, comp.id, misses, input.max_size, media),
       );
@@ -1832,7 +2023,13 @@ export class KynimoService {
     let sheet: CapturedSheet;
     if (hit?.kind === "sheet") sheet = hit.sheet;
     else {
-      const media = await this.assetsFor(p.doc, comp.id, frames);
+      const media = await this.assetsFor(
+        p.doc,
+        comp.id,
+        frames,
+        true,
+        await this.shadersFor(p.id, p.doc),
+      );
       sheet = await this.draw(() =>
         renderer.sheet(p.doc, comp.id, frames, { maxSize: input.cell_size, columns, gap }, media),
       );
@@ -1926,17 +2123,25 @@ export class KynimoService {
     };
   }
 
-  private exportDeps(): ExportDeps {
+  private exportDeps(plan: ExportPlan): ExportDeps {
     const { renderer, media, files } = this.exportTools();
+    let shaders: Promise<ShaderDefinition[]> | undefined;
+    const definitions = () => (shaders ??= this.shadersFor(plan.project.id, plan.project.doc));
     return {
       renderer,
       media,
       files,
       draw: (fn) => this.draw(fn),
-      stillAssets: (doc, composition, frames) => this.assetsFor(doc, composition, frames, false),
+      stillAssets: async (doc, composition, frames) =>
+        this.assetsFor(doc, composition, frames, false, await definitions()),
       videoFrames: async (doc, composition, frame) =>
-        this.loadVideoFrames(doc, shownVideoFrames(doc, composition, [frame]), this.assetBudget()),
-      allAssets: (doc, composition, frames) => this.assetsFor(doc, composition, frames),
+        this.loadVideoFrames(
+          doc,
+          shownVideoFrames(doc, composition, [frame], await definitions()),
+          this.assetBudget(),
+        ),
+      allAssets: async (doc, composition, frames) =>
+        this.assetsFor(doc, composition, frames, true, await definitions()),
       audioBytes: (asset) => {
         const failed = (why: string) =>
           new ToolError("render_failed", `audio asset '${asset.id}' ${why}; upload the file again`);
@@ -1955,7 +2160,7 @@ export class KynimoService {
 
   /** Queues the job for a validated plan. Jobs belong to the actor: on every transport it identifies the account. */
   private submitExport(plan: ExportPlan, idempotencyKey?: string): JobReply {
-    const deps = this.exportDeps();
+    const deps = this.exportDeps(plan);
     try {
       const { job, replayed } = this.rt.jobs.submit({
         account: this.actor,
@@ -2056,6 +2261,7 @@ function walkEvaluated(
   doc: Project,
   compositionId: string,
   frames: readonly number[],
+  shaders: readonly ShaderDefinition[],
 ): EvaluatedUsage {
   const usage: EvaluatedUsage = { images: new Set(), families: new Set(), videoFrames: new Map() };
   const onLayer = (l: ResolvedLayer) => {
@@ -2068,6 +2274,10 @@ function walkEvaluated(
     }
   };
   const components = createComponentHost(doc);
+  const options = {
+    components,
+    ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
+  };
   const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
     if (seen.has(comp)) return;
     seen.add(comp);
@@ -2081,7 +2291,7 @@ function walkEvaluated(
   };
   for (const f of frames) {
     try {
-      visit(evaluateFrame(doc, f, compositionId, { components }), new Set());
+      visit(evaluateFrame(doc, f, compositionId, options), new Set());
     } catch {
       // The renderer evaluates again and reports the same error with its own message.
     }
@@ -2097,9 +2307,10 @@ export function shownVideoFrames(
   doc: Project,
   compositionId: string,
   frames: readonly number[],
+  shaders: readonly ShaderDefinition[] = [],
 ): Map<string, Set<number>> {
   if (!doc.assets.some((a) => a.type === "video")) return new Map();
-  return walkEvaluated(doc, compositionId, frames).videoFrames;
+  return walkEvaluated(doc, compositionId, frames, shaders).videoFrames;
 }
 
 const jobNotFound = (id: string) =>

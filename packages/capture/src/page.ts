@@ -4,7 +4,7 @@
  * evaluate → CanvasKit raster → WebGL2 compositor → PNG.
  */
 import { createComponentHost } from "@kynimo/components";
-import { evaluateFrame } from "@kynimo/engine";
+import { type EvaluateOptions, evaluateFrame, indexShaderDefinitions } from "@kynimo/engine";
 import {
   BUNDLED_FONTS,
   type CanvasKit,
@@ -88,6 +88,7 @@ interface Pixels {
 
 async function renderFrames({
   project,
+  shaders,
   compositionId,
   frames,
   assets,
@@ -120,10 +121,10 @@ async function renderFrames({
       );
     }
     const out: Pixels[] = [];
-    const components = createComponentHost(project);
+    const options = evaluationOptions(project, shaders);
     for (const frame of frames)
       out.push(
-        drawFrame(ck, compositor, project, compositionId, frame, maxSize, components, {
+        drawFrame(ck, compositor, project, compositionId, frame, maxSize, options, {
           images,
           fonts,
           videos,
@@ -135,7 +136,13 @@ async function renderFrames({
   }
 }
 
-type Components = ReturnType<typeof createComponentHost>;
+const evaluationOptions = (
+  project: PageRequest["project"],
+  shaders: PageRequest["shaders"],
+): EvaluateOptions => ({
+  components: createComponentHost(project),
+  ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
+});
 
 /** Evaluates, rasterizes, composites and downscales one frame; shared by `render` and exports. */
 function drawFrame(
@@ -145,9 +152,9 @@ function drawFrame(
   compositionId: string,
   frame: number,
   maxSize: number | null,
-  components: Components,
+  options: EvaluateOptions,
   libraries: { images: ImageLibrary; fonts: FontLibrary; videos: VideoFrameLibrary },
-  evaluated = evaluateFrame(project, frame, compositionId, { components }),
+  evaluated = evaluateFrame(project, frame, compositionId, options),
 ): Pixels {
   const plan = rasterizeFrame(ck, evaluated, libraries);
   const full = compositor.composite(plan);
@@ -167,7 +174,8 @@ interface ExportState {
   compositionId: string;
   maxSize: number | null;
   alpha: ExportRequest["alpha"];
-  components: Components;
+  options: EvaluateOptions;
+  shaderKeys: ReadonlyMap<object, string>;
   images: ImageLibrary;
   fonts: FontLibrary;
   videos: VideoFrameLibrary;
@@ -208,7 +216,13 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
       compositionId: request.compositionId,
       maxSize: request.maxSize,
       alpha: request.alpha,
-      components: createComponentHost(project),
+      options: evaluationOptions(project, request.shaders),
+      shaderKeys: new Map(
+        request.shaders.map((definition) => [
+          definition,
+          `${definition.id}@${definition.version}:${definition.hash}`,
+        ]),
+      ),
       images,
       fonts,
       videos,
@@ -263,9 +277,7 @@ export async function exportFrame(
       e.videos.add(asset, n, await fetchBytes(`assets/${encodeURIComponent(key)}`));
       e.loaded.add(key);
     }
-    const evaluated = evaluateFrame(e.project, frame, e.compositionId, {
-      components: e.components,
-    });
+    const evaluated = evaluateFrame(e.project, frame, e.compositionId, e.options);
     // Sound because the evaluated frame carries everything that decides the pixels: effects,
     // grain, generators and video source frames are all resolved into it, and rendering reads
     // nothing else that changes between frames (the libraries only gain the frames it names).
@@ -273,7 +285,13 @@ export async function exportFrame(
     // null, which cannot make two different frames look equal in practice. Only the frame
     // root frame index and the sign of `layerFrame` differ by definition and are neutralized; every
     // nested `frame` (grain, precomps) stays, which can only miss a dedupe, never repeat wrong pixels.
-    const key = JSON.stringify({ ...evaluated, frame: 0 }, frameIndependent);
+    const key = JSON.stringify({ ...evaluated, frame: 0 }, (key, value: unknown) => {
+      // Shared precomps can reference one definition thousands of times. Keep its immutable pin
+      // in the key and leave per-frame values (frame, seed, uniforms) in the resolved instance.
+      if (key === "definition" && value !== null && typeof value === "object")
+        return e.shaderKeys.get(value) ?? value;
+      return frameIndependent(key, value);
+    });
     if (e.previousKey !== undefined && key === e.previousKey)
       return { frame, repeated: true, rgba: null, ...e.previous };
     const drawn = drawFrame(
@@ -283,7 +301,7 @@ export async function exportFrame(
       e.compositionId,
       frame,
       e.maxSize,
-      e.components,
+      e.options,
       e,
       evaluated,
     );

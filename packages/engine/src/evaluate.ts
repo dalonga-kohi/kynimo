@@ -43,6 +43,7 @@ import type {
   ResolvedMask,
   ResolvedTransform,
 } from "./resolved.js";
+import { type ResolveShader, resolveShader, type ShaderDefinitions } from "./shader.js";
 import { resolveShapeItems, samplePath } from "./shape.js";
 import { resolveTextAnimators } from "./text-animator.js";
 import { sampleColor, sampleNumber, sampleVector } from "./track.js";
@@ -192,6 +193,8 @@ interface Context {
   componentDepth: number;
   /** Seed of the component instance being evaluated; 0 in a document composition. */
   componentSeed: number;
+  shaderSeed: number;
+  shaders: ShaderDefinitions | undefined;
 }
 
 /**
@@ -413,18 +416,39 @@ function evaluateComposition(
     let resolved = resolvedById.get(layer.id);
     if (resolved === undefined) {
       const layerFrame = frame - layer.startFrame;
-      resolved = resolveLayer(ctx, comp, layer, layerFrame, {
-        id: layer.id,
-        name: layer.name,
+      const shader: ResolveShader | undefined =
+        ctx.shaders === undefined
+          ? undefined
+          : (instance, kind) => {
+              try {
+                const seed =
+                  deriveComponentSeed(ctx.shaderSeed ^ ctx.componentSeed, layer.id) / 0x100000000;
+                return resolveShader(instance, kind, ctx.shaders, layerFrame, fps, seed);
+              } catch (error) {
+                if (error instanceof RangeError)
+                  throw new RangeError(`layer '${layer.id}': ${error.message}`);
+                throw error;
+              }
+            };
+      resolved = resolveLayer(
+        ctx,
+        comp,
+        layer,
         layerFrame,
-        transform: center.local(layer).transform,
-        ...center.place(layer),
-        blendMode: layer.blendMode,
-        masks: resolveMasks(layer.masks, layerFrame, fps),
-        effects: resolveEffects(layer.effects, layerFrame, fps),
-        matte: null,
-        motion: motionOf(layer),
-      });
+        {
+          id: layer.id,
+          name: layer.name,
+          layerFrame,
+          transform: center.local(layer).transform,
+          ...center.place(layer),
+          blendMode: layer.blendMode,
+          masks: resolveMasks(layer.masks, layerFrame, fps),
+          effects: resolveEffects(layer.effects, layerFrame, fps, shader),
+          matte: null,
+          motion: motionOf(layer),
+        },
+        shader,
+      );
       resolvedById.set(layer.id, resolved);
     }
     return resolved;
@@ -574,6 +598,7 @@ function resolveLayer(
   layer: DrawnLayer,
   frame: number,
   base: Base,
+  shader?: ResolveShader,
 ): ResolvedLayer {
   const fps = parent.fps;
   switch (layer.type) {
@@ -638,7 +663,7 @@ function resolveLayer(
         type: "generator",
         width: layer.width,
         height: layer.height,
-        generator: resolveGenerator(layer.generator, frame, fps, layer.width, layer.height),
+        generator: resolveGenerator(layer.generator, frame, fps, layer.width, layer.height, shader),
       };
     case "precomp": {
       const nested = ctx.compositions.get(layer.compositionId);
@@ -739,6 +764,7 @@ function resolveComponent(
 export interface EvaluateOptions {
   /** Evaluates component instances into nested compositions. Without it they pass through unevaluated. */
   components?: ComponentHost;
+  shaders?: ShaderDefinitions;
 }
 
 /**
@@ -777,6 +803,9 @@ export function evaluateFrame(
     components: options.components,
     componentDepth: 0,
     componentSeed: 0,
+    shaderSeed:
+      options.shaders === undefined ? 0 : deriveComponentSeed(0, project.mainCompositionId),
+    shaders: options.shaders,
   };
   return evaluateComposition(ctx, comp, frame, "root");
 }

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { applyOps, type Project, ProjectSchema } from "@kynimo/scene";
+import { applyOps, migrateProject, type Project } from "@kynimo/scene";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchTestCapture } from "./launch.test-util.js";
 import type { CaptureSession } from "./session.js";
@@ -16,7 +16,9 @@ afterAll(async () => {
 
 describe("precompose", () => {
   it("leaves every pixel as it was", async () => {
-    const before = ProjectSchema.parse(JSON.parse(readFileSync(SCENE, "utf8")));
+    const migrated = migrateProject(JSON.parse(readFileSync(SCENE, "utf8")));
+    if (!migrated.ok) throw new Error(JSON.stringify(migrated.errors));
+    const before = migrated.doc;
     const result = applyOps(before, [
       // Mattes inside the selection move with it; a masked layer on its own; layers in between stay.
       { op: "precompose", layers: ["ink", "headline", "underline", "sweep"] },

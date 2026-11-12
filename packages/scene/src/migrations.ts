@@ -154,6 +154,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { from: 10, migrate: addMotionBlur },
   // 11 → 12: 2.5D layers; visual layers gain `threeD: false` and zero Z tracks (ADR-0054).
   { from: 11, migrate: addThreeD },
+  // 12 → 13: custom shaders are new variants.
+  { from: 12, migrate: (doc) => doc },
 ];
 
 export interface MigrationError {

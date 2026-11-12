@@ -23,6 +23,7 @@ export {
   LayerSelectorSchema,
   matchLayers,
 } from "./selectors.js";
+export * from "./shader.js";
 export * from "./shape.js";
 export * from "./spring.js";
 export * from "./text-animator.js";

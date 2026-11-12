@@ -411,6 +411,7 @@ export async function runExport(
         plan.maxSize,
         still.assets,
         flatten ? "premultiplied" : "straight",
+        still.shaders,
       ),
     );
     // Started only now: the open and the asset loads can fail, and the stall timer starts with it.

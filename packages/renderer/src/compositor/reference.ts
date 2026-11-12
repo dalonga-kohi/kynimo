@@ -1,4 +1,4 @@
-import { hashWords, type ResolvedEffect } from "@kynimo/engine";
+import { hashWords, type ResolvedEffect, type ResolvedShader } from "@kynimo/engine";
 import type {
   FramePlan,
   PlannedAdjustmentLayer,
@@ -7,6 +7,7 @@ import type {
   RasterImage,
 } from "../raster.js";
 import { blendColor, blendPixel } from "./blend.js";
+import { compiledShader, MAX_FRAME_SHADER_WORK } from "./custom-shader.js";
 import {
   band,
   effectPadding,
@@ -60,6 +61,7 @@ export function compositeReference(plan: FramePlan): RasterImage {
     cache: new Map(),
     uses: precompUses(plan),
     remaining: MAX_FRAME_EFFECT_SAMPLES,
+    shaderWork: MAX_FRAME_SHADER_WORK,
   });
   const out = new Uint8Array(acc.data.length);
   const bg = plan.background;
@@ -79,6 +81,7 @@ type Nested = {
   cache: Map<FramePlan, FloatImage>;
   uses: Map<FramePlan, number>;
   remaining: number;
+  shaderWork: number;
 };
 
 function compositeFloat(plan: FramePlan, nested: Nested): FloatImage {
@@ -179,7 +182,10 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
   } else if (layer.type === "generator") {
     const { width, height, generator } = layer;
     chargeSamples(nested, layer.id, width * height * generatorSamples(generator), "layer size");
-    img = { width, height, data: renderGenerator(width, height, generator) };
+    img =
+      generator.type === "custom-shader"
+        ? drawShader(nested, layer.id, width, height, generator)
+        : { width, height, data: renderGenerator(width, height, generator) };
   } else {
     const { width, height, pixels } = layer.raster;
     img = blank(width, height);
@@ -204,7 +210,7 @@ function source(layer: PlannedLayer, nested: Nested, [x, y]: [number, number]): 
     }
     img = padded;
   }
-  return effects.reduce((acc, effect) => applyEffect(acc, effect, [x, y]), img);
+  return effects.reduce((acc, effect) => applyEffect(acc, effect, [x, y], nested, layer.id), img);
 }
 
 function charge(
@@ -257,7 +263,10 @@ const straight = (data: Float64Array, p: number, a: number): [number, number, nu
 function adjust(layer: PlannedAdjustmentLayer, acc: FloatImage, plan: FramePlan, nested: Nested) {
   if (layer.effects.length === 0) return;
   charge(nested, layer.id, layer.effects, acc.width, acc.height);
-  const filtered = layer.effects.reduce((img, effect) => applyEffect(img, effect, [0, 0]), acc);
+  const filtered = layer.effects.reduce(
+    (img, effect) => applyEffect(img, effect, [0, 0], nested, layer.id),
+    acc,
+  );
   const source = layer.matte?.source;
   const matte = source == null ? null : placed(source, plan, nested);
   for (let p = 0; p < acc.data.length; p += 4) {
@@ -300,11 +309,49 @@ function gaussian(src: FloatImage, radius: number): FloatImage {
   return pass(pass(src, 1, 0), 0, 1);
 }
 
+function drawShader(
+  nested: Nested,
+  id: string,
+  width: number,
+  height: number,
+  shader: ResolvedShader,
+  src?: FloatImage,
+): FloatImage {
+  const compiled = compiledShader(shader.definition);
+  nested.shaderWork -= width * height * compiled.work;
+  if (nested.shaderWork < 0)
+    throw new RangeError(
+      `layer '${id}' exceeds the frame budget of ${MAX_FRAME_SHADER_WORK} custom shader work units`,
+    );
+  const out = blank(width, height);
+  const shade = compiled.reference(
+    { width, height, ...shader },
+    src === undefined
+      ? undefined
+      : (u, v, data, offset) => {
+          const x = Math.min(width - 1, Math.floor(Math.fround(clamp(u) * width)));
+          const y = Math.min(height - 1, Math.floor(Math.fround(clamp(v) * height)));
+          const p = (y * width + x) * 4;
+          const alpha = src.data[p + 3] ?? 0;
+          for (let lane = 0; lane < 3; lane++)
+            data[offset + lane] = alpha <= 0 ? 0 : clamp((src.data[p + lane] ?? 0) / alpha);
+          data[offset + 3] = alpha;
+        },
+  );
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) shade(x, y, out.data, (y * width + x) * 4);
+  return out;
+}
+
 function applyEffect(
   src: FloatImage,
   effect: ResolvedEffect,
   pad: readonly [number, number],
+  nested: Nested,
+  id: string,
 ): FloatImage {
+  if (effect.type === "custom-shader")
+    return drawShader(nested, id, src.width, src.height, effect, src);
   if (effect.type === "gaussian-blur") return gaussian(src, effect.radius);
   const out = blank(src.width, src.height);
   if (effect.type === "drop-shadow" || effect.type === "glow") {

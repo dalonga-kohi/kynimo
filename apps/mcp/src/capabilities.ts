@@ -1,3 +1,4 @@
+import { SHADER_COMPILE_TIMEOUT_MS } from "@kynimo/capture";
 import { builtInRegistry } from "@kynimo/components";
 import {
   BEHAVIOR_LIMITS,
@@ -9,6 +10,9 @@ import {
   LAYER_SUPPORT,
   MASK_MODE_SUPPORT,
   MATTE_MODE_SUPPORT,
+  MAX_FRAME_SHADER_WORK,
+  MAX_SHADER_SAMPLES,
+  MAX_SHADER_TOKENS,
   PAINT_SUPPORT,
   RENDERER_FORMATS,
   SHAPE_ITEM_SUPPORT,
@@ -31,7 +35,10 @@ import {
   MAX_PATTERN_ANGLE,
   MAX_PATTERN_SIZE,
   MAX_POSTERIZE_LEVELS,
+  MAX_PROJECT_DEFINITIONS,
   MAX_SCANLINE_SPACING,
+  MAX_SHADER_SOURCE,
+  MAX_SHADER_UNIFORMS,
   MAX_VIGNETTE_FEATHER,
   MAX_VIGNETTE_RADIUS,
   MIN_NOISE_SCALE,
@@ -61,6 +68,8 @@ export const RESOURCES = {
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
   components: "kynimo://components",
+  shaders: "kynimo://shaders",
+  projectShaders: "kynimo://projects/{project_id}/shaders",
   presets: "kynimo://presets",
   sdk: "kynimo://sdk",
 } as const;
@@ -92,13 +101,12 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  * goes when the item that builds it ships.
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
-  custom_shaders: unavailable(
-    "custom GLSL shaders (define_shader) arrive in M6; built-in generators and looks render now",
-  ),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
-  custom_components: unavailable("custom components (define_component) arrive in M6"),
+  custom_components: unavailable(
+    "define_component awaits an evaluator that meets the browser performance and isolation gate in ADR-0051",
+  ),
   catalogs: unavailable(
-    "the token catalog arrives in M5 and the shader catalog in M6; kynimo://presets and kynimo://components are available",
+    "the token catalog arrives in M5; kynimo://presets, kynimo://components and kynimo://shaders are available",
   ),
   keyframed_text: unavailable(
     "text content is constant; keyframed source text is planned after the beta",
@@ -141,6 +149,41 @@ const THREE_D_LIMITS = {
   zoom: { min: 1, max: 100_000 },
   vectorRasterScale: { max: 8 },
 } as const;
+
+export const SHADER_LIMITS = {
+  sourceCharacters: MAX_SHADER_SOURCE,
+  tokens: MAX_SHADER_TOKENS,
+  uniforms: MAX_SHADER_UNIFORMS,
+  inputSamplesPerPixel: MAX_SHADER_SAMPLES,
+  workPerFrame: MAX_FRAME_SHADER_WORK,
+  definitionsPerProject: MAX_PROJECT_DEFINITIONS,
+  compileTimeoutMs: SHADER_COMPILE_TIMEOUT_MS,
+} as const;
+
+export function shaderCatalog() {
+  const builtIns = (kind: "generator" | "effect", table: Readonly<Record<string, Support>>) =>
+    Object.entries(table)
+      .filter(([id]) => id !== "custom-shader")
+      .map(([id, support]) => ({ id, kind, ...support }));
+  return {
+    built_in: [...builtIns("generator", GENERATOR_SUPPORT), ...builtIns("effect", EFFECT_SUPPORT)],
+    custom: {
+      tools: ["define_shader", "list_definitions"],
+      language: "Bounded GLSL ES 3.00 function body with typed locals and a final return vec4",
+      inputs: {
+        uv: "vec2",
+        pixel: "vec2",
+        resolution: "vec2",
+        frame: "float",
+        fps: "float",
+        seed: "float",
+        sampleInput: "vec4 sampleInput(vec2 uv), effects only",
+      },
+      functions: ["abs", "cos", "floor", "fract", "sin", "min", "max", "mix", "clamp"],
+      limits: SHADER_LIMITS,
+    },
+  };
+}
 
 const STATUSES = {
   renders:
@@ -221,6 +264,7 @@ export function capabilityManifest(server: { name: string; version: string }) {
       },
       note: "jobs run in the server process: a restart loses queued and running jobs and download links; audio layers inside precomps are not mixed yet (reported)",
     },
+    shaders: { tools: ["define_shader", "list_definitions"], limits: SHADER_LIMITS },
     scripts: {
       tool: "run_script",
       resource: RESOURCES.sdk,

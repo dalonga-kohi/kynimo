@@ -10,7 +10,7 @@ import { band } from "./effects.js";
 export function renderGenerator(
   width: number,
   height: number,
-  generator: ResolvedGenerator,
+  generator: Exclude<ResolvedGenerator, { type: "custom-shader" }>,
 ): Float64Array {
   const data = new Float64Array(width * height * 4);
   const shade = shader(width, height, generator);
@@ -40,7 +40,11 @@ function mixInto(out: Straight, a: Straight, b: Straight, t: number) {
   for (let k = 0; k < 4; k++) out[k] = mix(a[k] ?? 0, b[k] ?? 0, t);
 }
 
-function shader(width: number, height: number, g: ResolvedGenerator): Shader {
+function shader(
+  width: number,
+  height: number,
+  g: Exclude<ResolvedGenerator, { type: "custom-shader" }>,
+): Shader {
   switch (g.type) {
     case "gradient": {
       const sx = f(g.start[0]);

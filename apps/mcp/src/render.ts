@@ -6,7 +6,7 @@ import {
   type ExportSession,
   launchCapture,
 } from "@kynimo/capture";
-import type { Project } from "@kynimo/scene";
+import type { Project, ShaderDefinition } from "@kynimo/scene";
 
 export type { ExportFrame, ExportSession };
 
@@ -38,6 +38,7 @@ export const RENDER_LIMITS = {
 
 /** Asset bytes for one render: image and font assets by id, video frames by `videoFrameKey`. */
 export interface RenderMedia {
+  shaders?: readonly ShaderDefinition[];
   assets: ReadonlyMap<string, Uint8Array>;
   videoFrames: ReadonlyMap<string, Uint8Array>;
 }
@@ -70,6 +71,7 @@ export interface FrameRenderer {
     maxSize: number,
     assets: ReadonlyMap<string, Uint8Array>,
     alpha: "premultiplied" | "straight",
+    shaders?: readonly ShaderDefinition[],
   ): Promise<ExportSession>;
   close(): Promise<void>;
 }
@@ -124,13 +126,14 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     maxSize: number,
-    { assets, videoFrames }: RenderMedia,
+    { assets, videoFrames, shaders = [] }: RenderMedia,
   ) {
     return (await this.#current()).captureFrames(doc, frames, {
       composition,
       maxSize,
       assets,
       videoFrames,
+      shaders,
     });
   }
 
@@ -139,13 +142,14 @@ export class CaptureRenderer implements FrameRenderer {
     composition: string,
     frames: readonly number[],
     layout: { maxSize: number; columns: number; gap: number },
-    { assets, videoFrames }: RenderMedia,
+    { assets, videoFrames, shaders = [] }: RenderMedia,
   ) {
     return (await this.#current()).captureSheet(doc, frames, {
       composition,
       ...layout,
       assets,
       videoFrames,
+      shaders,
     });
   }
 
@@ -155,8 +159,15 @@ export class CaptureRenderer implements FrameRenderer {
     maxSize: number,
     assets: ReadonlyMap<string, Uint8Array>,
     alpha: "premultiplied" | "straight",
+    shaders?: readonly ShaderDefinition[],
   ) {
-    return (await this.#current()).openExport(doc, { composition, maxSize, assets, alpha });
+    return (await this.#current()).openExport(doc, {
+      composition,
+      maxSize,
+      assets,
+      alpha,
+      shaders: shaders ?? [],
+    });
   }
 
   async close(): Promise<void> {

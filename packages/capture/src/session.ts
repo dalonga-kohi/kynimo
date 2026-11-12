@@ -8,7 +8,7 @@ import {
   type SkippedLayer,
   videoFrameKey,
 } from "@kynimo/renderer";
-import { migrateProject, type Project } from "@kynimo/scene";
+import { migrateProject, type Project, type ShaderDefinition } from "@kynimo/scene";
 import { type Browser, chromium, type Page, type Route } from "playwright";
 import {
   type ExportRequest,
@@ -26,7 +26,7 @@ import { fitSize } from "./size.js";
 export const MAX_FRAMES_PER_CALL = 64;
 
 /** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
-const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
+export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
 
 export class CaptureError extends Error {
   override name = "CaptureError";
@@ -61,6 +61,8 @@ export interface CapturedFrame {
 export interface CaptureOptions {
   /** The composition to render; the project's main composition by default. */
   composition?: string;
+  /** Project definitions pinned by shader layers and effects in this document. */
+  shaders?: readonly ShaderDefinition[];
   /**
    * The longest output edge in pixels. Larger frames are composited at full size, then
    * downscaled on the CPU with the pinned CanvasKit (trilinear), keeping the aspect ratio
@@ -103,6 +105,8 @@ export interface CapturedSheet {
 export interface ExportOptions {
   /** The composition to export; the project's main composition by default. */
   composition?: string;
+  /** Project definitions pinned by shader layers and effects in this document. */
+  shaders?: readonly ShaderDefinition[];
   /** As {@link CaptureOptions.maxSize}. */
   maxSize?: number;
   /** Image and font bytes by asset id, as for captureFrames; checked against pins. */
@@ -392,7 +396,13 @@ function session(
   const call = (
     document: unknown,
     frames: readonly number[],
-    { composition, assets = new Map(), videoFrames = new Map(), maxSize }: CaptureOptions,
+    {
+      composition,
+      assets = new Map(),
+      videoFrames = new Map(),
+      maxSize,
+      shaders = [],
+    }: CaptureOptions,
     sheet: PageRequest["sheet"],
   ) =>
     serialized(async () => {
@@ -414,6 +424,7 @@ function session(
       const response = await render(
         {
           project,
+          shaders,
           compositionId: composition ?? project.mainCompositionId,
           frames: [...frames],
           assets: [...assets.keys()],
@@ -450,7 +461,7 @@ function session(
       const { sheet } = response;
       return { ...sheet, ...png(sheet.png), columns: Math.min(columns, frames.length) };
     },
-    async openExport(document, { composition, maxSize, assets = new Map(), alpha }) {
+    async openExport(document, { composition, maxSize, assets = new Map(), alpha, shaders = [] }) {
       if (closed) throw new CaptureError("the capture session is closed");
       const project = checkDocument(document);
       checkMaxSize(maxSize);
@@ -464,7 +475,14 @@ function session(
         );
       const exported = await openExportPage(
         openPage,
-        { project, compositionId, assets: [...assets.keys()], maxSize: maxSize ?? null, alpha },
+        {
+          project,
+          shaders,
+          compositionId,
+          assets: [...assets.keys()],
+          maxSize: maxSize ?? null,
+          alpha,
+        },
         assets,
         project,
         () => closed,

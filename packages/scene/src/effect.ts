@@ -2,6 +2,7 @@ import { z } from "zod";
 import { EffectIdSchema } from "./ids.js";
 import { animatable } from "./keyframes.js";
 import { ColorSchema, NameSchema, UnitIntervalSchema } from "./primitives.js";
+import { CustomShaderSchema } from "./shader.js";
 
 export const MAX_EFFECTS = 8;
 export const MAX_EFFECT_RADIUS = 48;
@@ -86,6 +87,7 @@ const bodies = [
     offset: animatable(z.number().min(-MAX_SCANLINE_OFFSET).max(MAX_SCANLINE_OFFSET)),
     color,
   }),
+  CustomShaderSchema.extend(metadata),
 ] as const;
 
 /** The authoring body. Parameters are sampled in layer-local frames. */

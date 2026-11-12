@@ -24,7 +24,7 @@ To connect an MCP client (e.g. Claude Desktop or Claude Code), point it at the b
 }
 ```
 
-Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `mark_beats`, `sync_to_beats`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `get_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`, `export`, `render_preview_clip`, `get_export_status`, `cancel_export`. Every write takes `base_version` and `idempotency_key`. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
+Tools: `create_project`, `list_projects`, `get_project`, `upload_asset`, `list_assets`, `get_scene`, `get_layer`, `find_layers`, `get_layer_schema`, `get_write_outcome`, `describe_motion`, `apply_ops`, `add_layer`, `update_layer`, `animate`, `apply_preset`, `list_presets`, `stagger`, `retime`, `mark_beats`, `sync_to_beats`, `import_svg`, `add_behavior`, `add_effect`, `set_keyframes`, `add_mask`, `set_matte`, `precompose`, `run_script`, `get_script`, `undo`, `redo`, `render_frames`, `render_contact_sheet`, `export`, `render_preview_clip`, `get_export_status`, `cancel_export`. Scene edits take `base_version` and `idempotency_key`. Use `define_shader` to publish a project definition with an idempotency key and `list_definitions` to discover versions. Resources include `kynimo://presets` and `kynimo://sdk` (the type declarations `run_script` scripts are written against).
 
 Audio uploads are analysed for a steady beat; `list_assets` shows `bpm` and `beat_count` for audio that has one. `mark_beats` puts the beats on an audio layer as markers (`beat 1`, `beat 2`, ...), or a grid from `grid: { bpm, first_beat_frame, count }`; `replace: true` clears the layer's markers first. `sync_to_beats` snaps keyframes and/or cuts (`snap`) of `layers` to the markers of `audio_layer`, optionally every nth beat (`every`, `phase`), within `max_distance` frames (`window` is judged on the frames before the call, so a cut slide never moves a keyframe in or out of it). Both take `dry_run` (ADR-0052).
 
@@ -63,7 +63,28 @@ Shots are contiguous from `start_frame` (default 0) in the selected composition 
 
 The dry run returns the planned operations and resolved shot and transition windows. A requested wipe becomes a hard cut when adjacent shots are too short. When the timing fits, submit the write and use `render_contact_sheet` to inspect the result.
 
-The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Chromium starts on the first render, so every other tool works without it.
+The render tools need the pinned Chromium (`pnpm --filter @kynimo/renderer exec playwright install chromium`) and a built `@kynimo/capture` (`pnpm build`). Rendering and publishing a new shader version start Chromium on demand.
+
+### Custom shaders
+
+Call the `define_shader` tool to publish a generator or a single-input effect. For example, the following request publishes a generator that scales its red channel with an editable uniform.
+
+```json
+{
+  "project_id": "p-00000000000000000000000000000000",
+  "idempotency_key": "define-poster-1",
+  "id": "custom-poster",
+  "version": "1.0.0",
+  "title": "Poster",
+  "kind": "generator",
+  "source": "return vec4(uv.x * u_amount, uv.y, 0.2, 1.0);",
+  "uniforms": { "u_amount": { "type": "float", "default": 0.8 } }
+}
+```
+
+Place it with `add_layer` using a generator layer and a generator body of `{"type":"custom-shader","shaderId":"custom-poster","shaderVersion":"1.0.0","uniforms":{}}`. Use the same pin fields in `add_effect` for an effect. Uniforms take the usual `value` or `keyframes` track. Missing values use the definition defaults. A new shader version leaves existing scene pins in place.
+
+The catalog at `kynimo://shaders` describes the language and built-ins. Read `kynimo://projects/{project_id}/shaders` or call `list_definitions` for the project versions.
 
 ## Export (MP4, WebM, GIF; ADR-0048)
 
