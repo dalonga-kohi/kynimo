@@ -1,3 +1,4 @@
+import { builtInRegistry } from "@kynimo/components";
 import {
   BEHAVIOR_LIMITS,
   BEHAVIOR_SUPPORT,
@@ -58,6 +59,7 @@ export const RESOURCES = {
   scene: "kynimo://schema/scene",
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
+  components: "kynimo://components",
   presets: "kynimo://presets",
   sdk: "kynimo://sdk",
 } as const;
@@ -93,11 +95,10 @@ const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
     "custom GLSL shaders (define_shader) arrive in M6; built-in generators and looks render now",
   ),
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
-  components: unavailable(
-    "built-in components render (kinetic-type, lower-third, logo-reveal, transition, background); add_component and the component catalog arrive next in M6",
-  ),
+  custom_components: unavailable("custom components (define_component) arrive in M6"),
+  build_from_brief: unavailable("build_from_brief arrives in M6"),
   catalogs: unavailable(
-    "the token catalog arrives in M5, the component and shader catalogs in M6; the preset catalog is the resource kynimo://presets (tool list_presets)",
+    "the token catalog arrives in M5 and the shader catalog in M6; kynimo://presets and kynimo://components are available",
   ),
   keyframed_text: unavailable(
     "text content is constant; keyframed source text is planned after the beta",
@@ -192,6 +193,11 @@ export function capabilityManifest(server: { name: string; version: string }) {
         status: "renders",
         note: "import_svg: paths, basic shapes, groups, transforms, fills, strokes, dashes, linear/radial gradients, <use>. Not carried (reported): text, images, filters, clip paths, masks, patterns, markers, <style> sheets, animation.",
       },
+    },
+    components: {
+      tools: ["add_component", "list_components"],
+      resource: RESOURCES.components,
+      built_ins: [...new Set(builtInRegistry.list().map(({ id }) => id))],
     },
     unavailable: UNAVAILABLE,
     resources: RESOURCES,

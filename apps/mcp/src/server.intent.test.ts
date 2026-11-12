@@ -401,6 +401,126 @@ describe("intent tools", () => {
     expect(JSON.parse(first.text)).toEqual(tool);
   });
 
+  it("lists the same component versions and prop descriptors in the tool and resource", async () => {
+    const catalog = await call(client, "list_components", {});
+    expect(catalog.components).toMatchObject([
+      { id: "background", version: "1.0.0" },
+      {
+        id: "kinetic-type",
+        version: "1.0.0",
+        props: { position: { type: "point", default: [0, 0], animatable: true } },
+      },
+      { id: "logo-reveal", version: "1.0.0", props: { logo: { assetType: "image" } } },
+      { id: "lower-third", version: "1.0.0" },
+      { id: "transition", version: "1.0.0" },
+    ]);
+    const [first] = (await client.readResource({ uri: "kynimo://components" })).contents;
+    if (first === undefined || !("text" in first)) throw new Error("expected text contents");
+    expect(JSON.parse(first.text)).toEqual(catalog);
+  });
+
+  it("previews and writes one pinned component layer, with idempotent retry and undo", async () => {
+    const props = {
+      text: "Launch",
+      color: { role: "accent" },
+      position: {
+        keyframes: [
+          { frame: 0, value: [0, 0], interpolation: { type: "linear" } },
+          { frame: 10, value: [12, 20], interpolation: { type: "linear" } },
+        ],
+      },
+    };
+    const args = {
+      ...meta(3, "component"),
+      component_id: "kinetic-type",
+      layer_id: "title",
+      in_frame: 12,
+      out_frame: 36,
+      index: 1,
+      props,
+    };
+    const preview = await call(client, "add_component", { ...args, dry_run: true });
+    expect(preview).toMatchObject({
+      version: 3,
+      dry_run: true,
+      resolved: { component_id: "kinetic-type", component_version: "1.0.0" },
+      layers_added: ["title"],
+      ops: [{ op: "addLayer", id: "title", index: 1, composition: "main" }],
+    });
+    expect(await version()).toBe(3);
+
+    expect(await call(client, "add_component", args)).toMatchObject({
+      version: 4,
+      ops: preview.ops,
+      layers_added: ["title"],
+    });
+    expect(await call(client, "get_layer", { project_id, layer: "title" })).toMatchObject({
+      layer: {
+        type: "component",
+        componentId: "kinetic-type",
+        componentVersion: "1.0.0",
+        inFrame: 12,
+        startFrame: 12,
+        outFrame: 36,
+        props,
+        transform: { position: { value: [0, 0] } },
+      },
+    });
+    expect(await call(client, "add_component", args)).toMatchObject({ version: 4, replayed: true });
+    expect(await call(client, "undo", meta(4, "undo-component"))).toMatchObject({
+      version: 5,
+      layers_removed: ["title"],
+    });
+  });
+
+  it.each([
+    [{ component_id: "missing" }, ["component_id"]],
+    [{ component_version: "99.0.0" }, ["component_version"]],
+    [{ composition: "missing" }, ["composition"]],
+    [{ in_frame: 30, out_frame: 29 }, ["out_frame"]],
+    [{ props: { unknown: "value" } }, ["props", "unknown"]],
+    [{ props: { ["x".repeat(64)]: true } }, ["props", "x".repeat(64)]],
+    [{ props: { ["x".repeat(65)]: true } }, ["props"]],
+    [{ props: { variant: "invalid" } }, ["props", "variant"]],
+    [
+      {
+        props: {
+          scale: {
+            keyframes: [
+              { frame: 0, value: 1, interpolation: { type: "linear" } },
+              { frame: 10, value: 20, interpolation: { type: "linear" } },
+            ],
+          },
+        },
+      },
+      ["props", "scale", "keyframes", 1, "value"],
+    ],
+    [{ component_id: "logo-reveal", props: { logo: "missing" } }, ["props", "logo"]],
+  ])("rejects invalid component placement or props %j without writing", async (input, path) => {
+    const invalid = await callError(client, "add_component", {
+      ...meta(3, "invalid-component"),
+      component_id: "kinetic-type",
+      ...input,
+    });
+    expect(invalid).toMatchObject({ error: "invalid", errors: [{ path }] });
+    expect(await version()).toBe(3);
+  });
+
+  it("bounds the diagnostic for a long unknown component version", async () => {
+    const unknownVersion = `${"9".repeat(1024)}.0.0`;
+    const invalid = await callError(client, "add_component", {
+      ...meta(3, "long-component-version"),
+      component_id: "kinetic-type",
+      component_version: unknownVersion,
+    });
+    expect(invalid).toMatchObject({
+      error: "invalid",
+      errors: [{ path: ["component_version"] }],
+    });
+    expect(invalid.message).toContain(`${"9".repeat(61)}...`);
+    expect(JSON.stringify(invalid)).not.toContain(unknownVersion);
+  });
+
   describe("import_svg", () => {
     const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50" viewBox="0 0 100 50"><title>Logo</title><rect x="0" y="0" width="100" height="50" fill="#ff0000"/></svg>`;
     const NOISY = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><clipPath id="c"><rect width="5" height="5"/></clipPath></defs><text x="1" y="5">Hi</text><rect width="10" height="10" fill="#00f" clip-path="url(#c)"/></svg>`;

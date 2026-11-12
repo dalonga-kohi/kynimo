@@ -53,6 +53,7 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "add_behavior",
+      "add_component",
       "add_effect",
       "add_layer",
       "add_mask",
@@ -74,6 +75,7 @@ describe("MCP server", () => {
       "get_write_outcome",
       "import_svg",
       "list_assets",
+      "list_components",
       "list_presets",
       "list_projects",
       "precompose",
@@ -98,6 +100,7 @@ describe("MCP server", () => {
       "retime",
       "run_script",
       "add_behavior",
+      "add_component",
       "add_effect",
       "import_svg",
       "upload_asset",
@@ -121,10 +124,11 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     // 70_000 after the intent tools (ADR-0040); 75_000 with run_script — shrinking back to 60 KB
     // is an M8 item. Each new write tool lists the write fields and an output schema, ~1.8-2.5 KB.
-    // 77_000 with import_svg (73.5 KB before it, 75.7 KB after): deviation from ADR-0035, last raise before M8 compaction.
+    // 77_000 with import_svg (73.5 KB before it, 75.7 KB after).
     // 78_000 with the setGenerator op and the generator layer type (ADR-0045).
     // 89_000 with the export tools (ADR-0048): 77.4 KB before them, 88.3 KB after.
-    expect(JSON.stringify(tools).length).toBeLessThan(89_000);
+    // 92_000 with component placement and discovery (ADR-0049): 91.7 KB after both.
+    expect(JSON.stringify(tools).length).toBeLessThan(92_000);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -487,6 +491,7 @@ describe("MCP server", () => {
     expect(uris).toEqual(
       expect.arrayContaining([
         "kynimo://capabilities",
+        "kynimo://components",
         "kynimo://presets",
         "kynimo://sdk",
         "kynimo://schema/scene",
