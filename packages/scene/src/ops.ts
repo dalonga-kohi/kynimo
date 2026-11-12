@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type Asset, AssetSchema } from "./asset.js";
+import { type Asset, AssetShapeSchema, checkAudioBeats } from "./asset.js";
 import {
   type Behavior,
   BehaviorAmountSchema,
@@ -292,10 +292,14 @@ const precompose = z.strictObject({
 
 /** An asset without its id: the id is supplied by the op or generated from the seeded counter. */
 export type AssetInput = Asset extends infer A ? (A extends Asset ? Omit<A, "id"> : never) : never;
-const AssetInputSchema = z.discriminatedUnion(
-  "type",
-  (AssetSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
-) as unknown as z.ZodType<AssetInput>;
+const AssetInputSchema = (
+  z.discriminatedUnion(
+    "type",
+    (AssetShapeSchema.options as unknown as Omittable[]).map((o) => o.omit({ id: true })) as never,
+  ) as unknown as z.ZodType<AssetInput>
+).superRefine((a, ctx) => {
+  if (a.type === "audio") checkAudioBeats(a, ctx);
+});
 
 /**
  * Adds an asset entry (appended to the project's list). The bytes live in the asset store; the

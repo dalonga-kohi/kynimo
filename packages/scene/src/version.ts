@@ -30,10 +30,12 @@
  *
  * 9: built-in shader generators and looks (ADR-0045).
  *
+ * 10: beats detected at upload on audio assets (ADR-0049). The field is optional, so the step from 9 changes nothing.
+ *
  * Policy: every format change bumps the version and ships a migration (see migrations.ts;
  * a test fails if a version has no step). Historically, version 1 stayed open until schema v1
  * part 2 (keyframes, precomp cycle validation) merged, so part 2 widened it without a bump.
  */
-export const SCENE_FORMAT_VERSION = 9 as const;
+export const SCENE_FORMAT_VERSION = 10 as const;
 
 export type SceneFormatVersion = typeof SCENE_FORMAT_VERSION;
