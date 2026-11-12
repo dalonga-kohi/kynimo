@@ -2,6 +2,7 @@ import {
   mat4Multiply,
   mat4RotateX,
   mat4RotateY,
+  mat4Scale,
   mat4Translate,
   type Projective,
   projectLayerPlane,
@@ -20,16 +21,20 @@ export function cardProjection(options: {
   anchor: [number, number];
   rotationX?: number;
   rotationY?: number;
+  scale?: number;
   camera?: [number, number, number];
 }): Projective {
-  const { comp, zoom, position, anchor, rotationX = 0, rotationY = 0 } = options;
+  const { comp, zoom, position, anchor, rotationX = 0, rotationY = 0, scale = 1 } = options;
   const [cw, ch] = comp;
   const camera = options.camera ?? [cw / 2, ch / 2, -zoom];
   const world = mat4Multiply(
     mat4Translate(...position),
     mat4Multiply(
       mat4RotateY(rotationY),
-      mat4Multiply(mat4RotateX(rotationX), mat4Translate(-anchor[0], -anchor[1], 0)),
+      mat4Multiply(
+        mat4RotateX(rotationX),
+        mat4Multiply(mat4Scale(scale, scale, 1), mat4Translate(-anchor[0], -anchor[1], 0)),
+      ),
     ),
   );
   const view = mat4Translate(-camera[0], -camera[1], -camera[2]);

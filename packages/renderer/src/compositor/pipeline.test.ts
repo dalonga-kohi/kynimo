@@ -40,6 +40,17 @@ describe("projectiveInvert", () => {
     expect(projectiveInvert([1, 2, 3, 2, 4, 6, 0, 0, 1])).toBeNull();
     expect(projectiveInvert([1, 0, 0, 0, 1, 0, 0, 0, Number.NaN])).toBeNull();
   });
+
+  it("returns null when the inverse is finite in float64 but overflows float32", () => {
+    const m = cardProjection({
+      comp: [1920, 1080],
+      zoom: 1000,
+      position: [960, 540, 0],
+      anchor: [0, 0],
+      scale: 1e-42,
+    });
+    expect(projectiveInvert(m)).toBeNull();
+  });
 });
 
 describe("projectiveSample", () => {

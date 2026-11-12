@@ -380,7 +380,7 @@ describe("compositeReference: 3D layers", () => {
     id: string,
     raster: RasterImage,
     position: [number, number, number],
-    extra: { rotationX?: number; rotationY?: number; zoom?: number } = {},
+    extra: { rotationX?: number; rotationY?: number; zoom?: number; scale?: number } = {},
     overrides: Partial<PlannedLayer> = {},
   ): PlannedLayer =>
     layerSpace(id, raster, [1, 0, 0, 1, 0, 0], {
@@ -448,6 +448,13 @@ describe("compositeReference: 3D layers", () => {
     expect(alphaAt(out, 40, 24)).toBe(255);
     for (let x = 44; x < W; x++) expect(column(out, x)).toBe(0);
     for (let y = 0; y < H; y++) expect(alphaAt(out, 60, y)).toBe(0);
+  });
+
+  it("a layer whose inverse overflows float32 draws nothing", () => {
+    const out = compositeReference(
+      frame([card("a", flat(40, 30, [255, 255, 255, 255]), [32, 24, 0], { scale: 1e-42 })]),
+    );
+    expect(out.pixels.every((v) => v === 0)).toBe(true);
   });
 
   it("a layer entirely behind the camera draws nothing", () => {

@@ -1137,6 +1137,16 @@ describe("WebGL2 compositor: 3D layers (projective placement)", () => {
     }
   });
 
+  it("draws nothing for a layer whose inverse overflows float32, like the reference", async () => {
+    const p = plan([
+      card("p", gradient(40, 30, 5), { zoom: 60, position: [32, 24, 0], scale: 1e-42 }),
+    ]);
+    const { bad } = await compare(p, p, () => false);
+    expect(bad).toEqual([]);
+    const out = await gpu.composite(p);
+    expect(out.pixels.every((v) => v === 0)).toBe(true);
+  });
+
   it("matches a 3D layer with a luma matte, a mask and an effect", async () => {
     const matte = solid("m", gradient(W, H, 4));
     await expectParity(

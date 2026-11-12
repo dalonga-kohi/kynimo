@@ -95,7 +95,10 @@ export function projectivePlacement(
   ];
 }
 
-/** The true inverse (adjugate over determinant, not normalized); `null` when singular or not finite. */
+/** The largest finite float32; the GPU receives the inverse as float32, so anything beyond overflows to Infinity. */
+export const MAX_GPU_FLOAT = 3.4028234e38;
+
+/** The true inverse (adjugate over determinant, not normalized); `null` when singular, not finite, or beyond float32 range. */
 export function projectiveInvert(m: Projective): Projective | null {
   const [a, b, c, d, e, f, g, h, i] = m;
   const A = e * i - f * h;
@@ -114,7 +117,9 @@ export function projectiveInvert(m: Projective): Projective | null {
     (b * g - a * h) / det,
     (a * e - b * d) / det,
   ];
-  return out.every(Number.isFinite) ? (out as unknown as Projective) : null;
+  return out.every((v) => Number.isFinite(v) && Math.abs(v) <= MAX_GPU_FLOAT)
+    ? (out as unknown as Projective)
+    : null;
 }
 
 const matteTarget = (layer: PlannedFrameLayer): PlannedLayer | null =>
