@@ -400,6 +400,133 @@ describe("MCP server", () => {
     expect((await call(client, "get_scene", { project_id })).version).toBe(2);
   });
 
+  it("adds a camera with defaults, switches a solid to 3D and keyframes rotationY", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+      width: 360,
+      height: 200,
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "cam",
+      layer: { type: "camera", name: "Camera" },
+    });
+    expect((await call(client, "get_layer", { project_id, layer: "cam" })).layer).toMatchObject({
+      zoom: { value: 500 },
+      pointOfInterest: { value: [180, 100, 0] },
+      transform: { position: { value: [180, 100] }, positionZ: { value: -500 } },
+    });
+
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      composition: "main",
+      id: "s",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    expect((await call(client, "get_layer", { project_id, layer: "s" })).layer).toMatchObject({
+      threeD: false,
+      transform: { positionZ: { value: 0 }, rotationX: { value: 0 }, rotationY: { value: 0 } },
+    });
+    await call(client, "update_layer", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "w3",
+      layer: "s",
+      set: { threeD: true },
+    });
+    await call(client, "set_keyframes", {
+      project_id,
+      base_version: 4,
+      idempotency_key: "w4",
+      layer: "s",
+      property: "rotationY",
+      track: {
+        keyframes: [
+          { frame: 0, value: 0, interpolation: { type: "linear" } },
+          { frame: 20, value: 60, interpolation: { type: "linear" } },
+        ],
+      },
+    });
+    const solid = (await call(client, "get_layer", { project_id, layer: "s" })).layer;
+    expect(solid).toMatchObject({ threeD: true });
+    expect(JSON.stringify(solid)).toContain('"rotationY":{"keyframes":[');
+
+    // Camera fields flow through updateLayer; a wrong type names its path.
+    await call(client, "update_layer", {
+      project_id,
+      base_version: 5,
+      idempotency_key: "w5",
+      layer: "cam",
+      set: { zoom: { value: 800 }, pointOfInterest: null },
+    });
+    expect((await call(client, "get_layer", { project_id, layer: "cam" })).layer).toMatchObject({
+      zoom: { value: 800 },
+      pointOfInterest: null,
+    });
+    const bad = await callError(client, "update_layer", {
+      project_id,
+      base_version: 6,
+      idempotency_key: "w6",
+      layer: "cam",
+      set: { zoom: { value: "far" } },
+    });
+    expect(bad).toMatchObject({ error: "invalid" });
+    expect(JSON.stringify(bad.errors)).toContain('"set","zoom"');
+  });
+
+  it("rejects threeD on audio, camera and adjustment layers and zoom on a solid, leaving the version unchanged", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "P",
+      idempotency_key: "c",
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "w1",
+      composition: "main",
+      id: "cam",
+      layer: { type: "camera", name: "Camera" },
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "w2",
+      composition: "main",
+      id: "adj",
+      layer: { type: "adjustment", name: "Adj" },
+    });
+    await call(client, "add_layer", {
+      project_id,
+      base_version: 3,
+      idempotency_key: "w3",
+      composition: "main",
+      id: "sol",
+      layer: { type: "solid", name: "s", width: 10, height: 10, color: "#ffffff" },
+    });
+    const version = 4;
+    let key = 0;
+    const reject = async (layer: string, set: Structured) => {
+      const result = await callError(client, "apply_ops", {
+        project_id,
+        base_version: version,
+        idempotency_key: `r${key++}`,
+        ops: [{ op: "updateLayer", layer, set }],
+      });
+      expect(result).toMatchObject({ error: "invalid" });
+      expect(JSON.stringify(result.errors)).toContain('"ops",0,"set"');
+      expect((await call(client, "get_scene", { project_id })).version).toBe(version);
+    };
+    await reject("cam", { threeD: true });
+    await reject("adj", { threeD: true });
+    await reject("sol", { zoom: { value: 100 } });
+  });
+
   it("validates layer selectors in apply_ops on the server, though the listing declares them loosely", async () => {
     const { id: project_id } = await call(client, "create_project", {
       name: "P",

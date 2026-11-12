@@ -232,6 +232,74 @@ describe("render tools with the capture renderer", () => {
     expect(await render()).toBe(sharp);
   }, 60_000);
 
+  it("draws a 3D solid rotated about Y as a trapezoid through the default camera", async () => {
+    const created = await call("create_project", {
+      name: "Camera",
+      idempotency_key: "camera",
+      width: 192,
+      height: 108,
+      duration_frames: 30,
+      background: "#000000",
+    });
+    const project_id = created.structuredContent?.id as string;
+    const meta = (base_version: number, idempotency_key: string) => ({
+      project_id,
+      base_version,
+      idempotency_key,
+    });
+    await call("add_layer", {
+      ...meta(1, "camera"),
+      id: "camera",
+      composition: "main",
+      layer: { type: "camera", name: "Camera" },
+    });
+    await call("add_layer", {
+      ...meta(2, "card"),
+      id: "card",
+      composition: "main",
+      layer: { type: "solid", name: "Card", width: 100, height: 80, color: "#ff0000" },
+    });
+    await call("set_keyframes", {
+      ...meta(3, "anchor"),
+      layer: "card",
+      property: "anchorPoint",
+      track: { value: [50, 40] },
+    });
+    await call("update_layer", { ...meta(4, "3d"), layer: "card", set: { threeD: true } });
+    const render = async () => {
+      const result = await call("render_frames", { project_id, frames: [0] });
+      expect(result.structuredContent?.skipped).toEqual([]);
+      return decodePng(images(result)[0]?.data ?? "");
+    };
+    /** The red extent of a column and of a row, in pixels. */
+    const red = (f: ReturnType<typeof decodePng>, x: number, y: number) =>
+      (f.at(x, y)[0] ?? 0) > 128;
+    const columnHeight = (f: ReturnType<typeof decodePng>, x: number) =>
+      Array.from({ length: f.height }, (_, y) => y).filter((y) => red(f, x, y)).length;
+    const rowWidth = (f: ReturnType<typeof decodePng>, y: number) =>
+      Array.from({ length: f.width }, (_, x) => x).filter((x) => red(f, x, y)).length;
+
+    // Flat to the screen at z 0 and a 50 mm camera: the card keeps its 100 x 80 size.
+    const flat = await render();
+    expect(rowWidth(flat, 54)).toBeGreaterThanOrEqual(98);
+    expect(columnHeight(flat, 96)).toBeGreaterThanOrEqual(78);
+    expect(columnHeight(flat, 50)).toBe(columnHeight(flat, 142));
+
+    await call("set_keyframes", {
+      ...meta(5, "rot"),
+      layer: "card",
+      property: "rotationY",
+      track: { value: 50 },
+    });
+    const turned = await render();
+    // One side is nearer the camera, so the card is taller there: a trapezoid, narrower than flat.
+    const nearHeight = Math.max(columnHeight(turned, 60), columnHeight(turned, 132));
+    const farHeight = Math.min(columnHeight(turned, 60), columnHeight(turned, 132));
+    expect(nearHeight).toBeGreaterThan(farHeight + 6);
+    expect(rowWidth(turned, 54)).toBeLessThan(rowWidth(flat, 54) - 10);
+    expect(rowWidth(turned, 54)).toBeGreaterThan(40);
+  }, 60_000);
+
   it("renders a generator layer and a vignette look end to end", async () => {
     const created = await call("create_project", {
       name: "Generators",
