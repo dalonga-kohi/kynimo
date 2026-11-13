@@ -123,6 +123,7 @@ describe("uploaded assets in rendered frames", () => {
       project_id: plain,
       base_version: 1,
       idempotency_key: "solid",
+      composition: "main",
       layer: { type: "solid", name: "Green", width: 40, height: 20, color: "#00ff00" },
     });
     const actual = await frame0(project_id);
