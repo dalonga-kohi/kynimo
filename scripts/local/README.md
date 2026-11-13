@@ -1,5 +1,7 @@
 # Kynimo local server
 
+On Windows, testers can use the installer instead: see [apps/desktop](../../apps/desktop/README.md).
+
 Extract the entire archive to a folder you can access. The archive includes Node.js, pinned
 Chromium, FFmpeg, FFprobe and the Kynimo engine.
 
