@@ -742,6 +742,8 @@ export const DefineShaderOutput = z.looseObject({
 export const DefineComponentInput = ComponentDefinitionInputSchema.extend({
   project_id: ProjectIdSchema,
   idempotency_key: IdempotencyKeySchema,
+  // Canonical segments are checked by the full authoring schema in the handler.
+  version: SemverSchema.max(64),
   // Preserve the original map for full validation, including keys Zod record parsing drops.
   props: z.unknown().meta({
     type: "object",
@@ -753,10 +755,10 @@ export const DefineComponentInput = ComponentDefinitionInputSchema.extend({
 const ComponentSummaryOutput = z.object({
   ...ComponentDefinitionInputSchema.pick({
     id: true,
-    version: true,
     title: true,
     description: true,
   }).shape,
+  version: SemverSchema.max(64),
   kind: z.literal("component"),
   hash: DefinitionHashSchema,
   props: z.record(z.string(), z.looseObject({ type: z.string(), description: z.string() })),
