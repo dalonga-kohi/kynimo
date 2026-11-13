@@ -39,6 +39,7 @@ import {
   COPY,
   DEFORM,
   DEFORM_VERTEX,
+  DIRECT,
   DOWNSAMPLE,
   type EffectMode,
   effectShader,
@@ -99,13 +100,31 @@ type Program = { program: WebGLProgram; uniforms: Map<string, WebGLUniformLocati
  * SwiftShader worker setup; on other GPUs it is visually equivalent (ADR-0016).
  */
 export interface Compositor {
-  /** Composites a frame plan into premultiplied sRGB RGBA8, rows top to bottom. */
-  composite(plan: FramePlan): RasterImage;
+  /**
+   * Composites a frame plan into premultiplied sRGB RGBA8, rows top to bottom. With `prefix`, the
+   * composited bottom layers of the root plan are kept, or taken from an earlier call
+   * ({@link CompositePrefix}); the pixels are the same either way.
+   */
+  composite(plan: FramePlan, prefix?: CompositePrefix): RasterImage;
+  /** Whether the bottom layers saved under `token` are still held. */
+  hasPrefix(token: number): boolean;
   /** The `UNMASKED_RENDERER_WEBGL` string, for workers to check they run on SwiftShader. */
   readonly renderer: string;
   /** Frees the programs. The context itself belongs to the caller. */
   dispose(): void;
 }
+
+/**
+ * Reuse of the root plan's bottom layers across frames, for callers that know those layers did not
+ * change (an export, whose frames mostly differ in a few layers). One result is held at a time:
+ *
+ * - `save`: the plan is whole; the frame composited from its bottom `layers` layers is kept under
+ *   the token `save`, replacing any earlier one.
+ * - `use`: the plan holds only the layers above the ones saved under this token, at the same size.
+ *
+ * A call without `use` drops what was saved, as does a frame that fails.
+ */
+export type CompositePrefix = { save: number; layers: number } | { use: number };
 
 /** Most bytes of released render targets the compositor keeps for reuse. */
 const POOL_IDLE_BYTES = 64 * 1024 * 1024;
@@ -160,6 +179,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     downsample: () => program("downsample", () => DOWNSAMPLE),
     final: () => program("final", () => FINAL),
     copy: () => program("copy", () => COPY),
+    direct: () => program("direct", () => DIRECT),
   };
   let deformGeometry: { array: WebGLVertexArrayObject; buffer: WebGLBuffer } | undefined;
 
@@ -288,10 +308,23 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     trimBytes();
   };
   const empty = makeTexture(gl, 1, 1, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null);
+  /** The saved bottom layers ({@link CompositePrefix}); the target is outside the pool's lists. */
+  let saved: { token: number; target: Target } | undefined;
+  const dropSaved = () => {
+    if (saved !== undefined) deleteTarget(saved.target);
+    saved = undefined;
+  };
 
-  const composite = (plan: FramePlan): RasterImage => {
+  const composite = (plan: FramePlan, prefix?: CompositePrefix): RasterImage => {
     gl.disable(gl.BLEND); // a previous frame may have failed with blending on
     frameNumber++;
+    if (prefix === undefined || !("use" in prefix)) dropSaved();
+    else if (
+      saved?.token !== prefix.use ||
+      saved.target.width !== plan.width ||
+      saved.target.height !== plan.height
+    )
+      throw new CompositorError("the saved bottom layers of this frame are gone");
     const live = new Set<Target>();
     const fits = (width: number, height: number) => {
       if (width > maxSize || height > maxSize)
@@ -641,27 +674,78 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return out;
     };
 
-    /** The masked and optionally deformed source, with room for effects before placement. */
-    const prepare = (layer: PlannedLayer, padding: [number, number]): Target => {
-      const warp = layer.space === "layer" ? layer.deform : undefined;
-      if (warp !== undefined) deformWork.charge(layer.id, warp.drawWork);
-      let src: Target;
-      let owned = false;
+    /** The layer's own pixels as a texture; the caller frees it after reading when `owned`. */
+    const source = (layer: PlannedLayer): { src: Target; owned: boolean } => {
       if (layer.type === "precomp") {
-        src = nested.get(layer.frame) ?? compositeFloat(layer.frame);
+        const src = nested.get(layer.frame) ?? compositeFloat(layer.frame);
         nested.set(layer.frame, src);
         // Freed after its last read, so memory does not grow with the number of distinct precomps.
         const left = (uses.get(layer.frame) ?? 1) - 1;
         uses.set(layer.frame, left);
-        owned = left <= 0;
+        const owned = left <= 0;
         if (owned) nested.delete(layer.frame);
-      } else if (layer.type === "generator") {
-        src = generate(layer.id, layer.width, layer.height, layer.generator);
-        owned = true;
-      } else {
-        src = upload(layer.raster);
-        owned = true;
+        return { src, owned };
       }
+      if (layer.type === "generator")
+        return {
+          src: generate(layer.id, layer.width, layer.height, layer.generator),
+          owned: true,
+        };
+      return { src: upload(layer.raster), owned: true };
+    };
+
+    /**
+     * Composites a layer onto `acc` in one pass when all it needs is its mask, a whole-pixel offset
+     * and opacity under the normal blend mode: most layers of most frames. Returns false, having
+     * done nothing, for any other layer. The result is the same bits as the general path's.
+     */
+    const direct = (layer: PlannedLayer, acc: Target): boolean => {
+      if (layer.blendMode !== "normal" || layer.matte !== null) return false;
+      if ((layer.effects ?? []).length > 0 || (layer.motion ?? null) !== null) return false;
+      if (layer.space === "layer" && layer.deform !== undefined) return false;
+      if (layerProjection(layer) !== null) return false;
+      const inv = invert(placement(layer));
+      const shift = inv === null ? null : wholePixelShift(inv);
+      if (shift === null) return false;
+      const { src, owned } = source(layer);
+      // Source texel (0, 0) sits on composition pixel −shift; draw where the two overlap.
+      const x = Math.max(0, -shift[0]);
+      const y = Math.max(0, -shift[1]);
+      const width = Math.min(acc.width, src.width - shift[0]) - x;
+      const height = Math.min(acc.height, src.height - shift[1]) - y;
+      if (width > 0 && height > 0) {
+        const mask = uploadMask(layer.mask);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        try {
+          pass(
+            fixed.direct(),
+            acc,
+            [
+              ["u_src", src.texture],
+              ["u_mask", mask?.texture ?? empty],
+            ],
+            (u) => {
+              gl.uniform1i(u("u_hasMask"), mask === null ? 0 : 1);
+              gl.uniform2i(u("u_shift"), shift[0], shift[1]);
+              gl.uniform1f(u("u_opacity"), layer.opacity);
+            },
+            { x, y, width, height },
+          );
+        } finally {
+          gl.disable(gl.BLEND);
+        }
+        if (mask !== null) free(mask);
+      }
+      if (owned) free(src);
+      return true;
+    };
+
+    /** The masked and optionally deformed source, with room for effects before placement. */
+    const prepare = (layer: PlannedLayer, padding: [number, number]): Target => {
+      const warp = layer.space === "layer" ? layer.deform : undefined;
+      if (warp !== undefined) deformWork.charge(layer.id, warp.drawWork);
+      const { src, owned } = source(layer);
       const [x, y] = padding;
       const width = (warp?.width ?? src.width) + 2 * x;
       const height = (warp?.height ?? src.height) + 2 * y;
@@ -941,10 +1025,25 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     };
 
     /** Composites a plan into a fresh RGBA16F target of its size (no background). */
-    const compositeFloat = (frame: FramePlan): Target => {
+    const compositeFloat = (frame: FramePlan, reuse?: CompositePrefix): Target => {
       let acc = target(frame.width, frame.height);
-      clear(gl, acc);
+      if (reuse !== undefined && "use" in reuse && saved !== undefined)
+        copyInto(acc, { target: saved.target, x: 0, y: 0 });
+      else clear(gl, acc);
+      // Layers are drawn from the last index down; the bottom `layers` are done once `i` gets here.
+      const saveAt =
+        reuse !== undefined && "save" in reuse
+          ? Math.max(0, frame.layers.length - reuse.layers) - 1
+          : Number.NaN;
+      const save = () => {
+        if (reuse === undefined || !("save" in reuse)) return;
+        const kept = target(acc.width, acc.height);
+        copyInto(kept, { target: acc, x: 0, y: 0 });
+        live.delete(kept); // outlives the frame
+        saved = { token: reuse.save, target: kept };
+      };
       for (let i = frame.layers.length - 1; i >= 0; i--) {
+        if (i === saveAt) save();
         const layer = frame.layers[i];
         if (layer === undefined) continue;
         if (layer.type === "adjustment") {
@@ -964,6 +1063,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
             frame.width * frame.height * transitionSamples(drawn.kind),
             "composition size or number of transitions",
           );
+        if (transition === null && direct(layer, acc)) continue;
         const src = placed(layer, frame.width, frame.height);
         if (transition !== null && drawn === null) {
           free(src.target);
@@ -1002,6 +1102,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         free(next);
         acc = out;
       }
+      if (saveAt === -1) save();
       return acc;
     };
 
@@ -1009,7 +1110,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     for (let i = 0; i < 16 && gl.getError() !== gl.NO_ERROR; i++);
     let ok = false;
     try {
-      const acc = compositeFloat(plan);
+      const acc = compositeFloat(plan, prefix);
       const out = target(plan.width, plan.height, true);
       const bg = plan.background;
       pass(fixed.final(), out, [["u_acc", acc.texture]], (u) =>
@@ -1036,6 +1137,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           deleteTarget(t);
         } else free(t);
       }
+      if (!ok) dropSaved();
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       trimPool();
     }
@@ -1043,8 +1145,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
 
   return {
     composite,
+    hasPrefix: (token) => saved?.token === token,
     renderer,
     dispose: () => {
+      saved = undefined; // its target is deleted with the pooled ones below
       for (const p of programs.values()) gl.deleteProgram(p.program);
       programs.clear();
       for (const p of shaderPrograms.values()) gl.deleteProgram(p.program);

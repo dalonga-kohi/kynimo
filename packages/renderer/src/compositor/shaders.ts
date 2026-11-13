@@ -965,6 +965,28 @@ void main() {
   outColor = texelFetch(u_src, ivec2(gl_FragCoord.xy) - u_origin, 0);
 }`;
 
+/**
+ * PREPARE, the texel-copy placement and COPY in one pass, for a layer that needs nothing else: the
+ * source texel times mask coverage, then times opacity. The two-pass path stores each of those
+ * products in an RGBA16F target, so `half` rounds them as that store does and the result is the
+ * same bits. Drawn with `ONE, ONE_MINUS_SRC_ALPHA` blending; the viewport stays inside the source.
+ */
+export const DIRECT = `${HEADER}
+uniform sampler2D u_src;
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+uniform ivec2 u_shift; // composition pixel + u_shift = source texel
+uniform float u_opacity;
+vec4 half16(vec4 v) {
+  return vec4(unpackHalf2x16(packHalf2x16(v.rg)), unpackHalf2x16(packHalf2x16(v.ba)));
+}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy) + u_shift;
+  vec4 c = texelFetch(u_src, p, 0);
+  if (u_hasMask) c *= texelFetch(u_mask, p, 0).r;
+  outColor = half16(half16(c) * u_opacity);
+}`;
+
 /** The root background under the result, quantized to RGBA8 by the framebuffer. */
 export const FINAL = `${HEADER}
 uniform sampler2D u_acc;

@@ -43,6 +43,7 @@ try {
       size: `${comp.width}x${comp.height}`,
       frames,
       repeated: t.repeated,
+      reused: t.reused,
       "ms/frame": per(wallMs),
       evaluate: per(t.evaluateMs),
       raster: per(t.rasterMs),

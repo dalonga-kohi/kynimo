@@ -69,6 +69,7 @@ export class FakeSession implements ExportSession {
       compositeMs: 0,
       downscaleMs: 0,
       transferMs: 0,
+      reused: 0,
     };
   }
   async close() {

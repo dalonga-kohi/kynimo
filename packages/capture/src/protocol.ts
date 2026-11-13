@@ -96,6 +96,8 @@ export interface PageTimings {
   downscaleMs: number;
   /** Preparing the pixels to cross to the host. */
   transferMs: number;
+  /** Frames that reused the kept result of their unchanged bottom layers. */
+  reused: number;
 }
 
 type PageError = { ok: false; name: string; message: string };
