@@ -1,12 +1,12 @@
 /** Site-wide facts. Everything a crawler, an LLM or a section needs to agree on lives here. */
 
-const DEFAULT_SITE_URL = "https://web-casio3.vercel.app";
+const DEFAULT_SITE_URL = "https://www.kynimo.site";
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** Canonical origin. Set NEXT_PUBLIC_SITE_URL when the real domain exists. */
+/** Canonical origin. Override with NEXT_PUBLIC_SITE_URL. */
 export const SITE_URL = trimSlash(process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SITE_URL);
 
 /**
