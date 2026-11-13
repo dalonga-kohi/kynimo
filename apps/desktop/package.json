@@ -1,0 +1,31 @@
+{
+  "name": "@kynimo/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kynimo for Windows: an Electron app that runs the local MCP server and shows what agents make.",
+  "type": "module",
+  "main": "./out/main/index.mjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kynimo/mcp": "workspace:*"
+  },
+  "devDependencies": {
+    "@kynimo/scene": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "45.3.2",
+    "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.5"
+  }
+}
