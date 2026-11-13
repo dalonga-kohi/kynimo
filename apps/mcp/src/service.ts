@@ -76,7 +76,6 @@ import {
   verifiedComponents,
 } from "./components.js";
 import {
-  type CachedExport,
   clipLabel,
   durationError,
   EXPORT_LIMITS,
@@ -401,6 +400,8 @@ export interface ServiceOptions {
   exportsUnavailable?: string;
   /** The download link of an export token; without it results carry no `url`. */
   downloadUrl?: (token: string) => string;
+  /** The inline playback link of an MP4 export token, available on HTTP. */
+  previewUrl?: (token: string) => string;
   /** True on a server one local user runs: results carry the file's absolute `path`. */
   localExportPaths?: boolean;
   /** The job queue, for tests that inject a clock. */
@@ -726,10 +727,11 @@ export class ServiceRuntime {
   readonly exportFiles: ExportFiles | undefined;
   readonly exportsUnavailable: string;
   readonly downloadUrl: ((token: string) => string) | undefined;
+  readonly previewUrl: ((token: string) => string) | undefined;
   readonly localExportPaths: boolean;
   readonly jobs: JobQueue<ExportResult>;
   /** Finished exports by content, so the same export again is not rendered again. */
-  readonly exportCache = new Map<string, CachedExport>();
+  readonly exportCache = new Map<string, ExportResult>();
 
   constructor(options: ServiceOptions = {}) {
     this.makeId = options.makeId ?? newProjectId;
@@ -746,6 +748,7 @@ export class ServiceRuntime {
     this.exportFiles = options.exportFiles;
     this.exportsUnavailable = options.exportsUnavailable ?? "this server has no export storage";
     this.downloadUrl = options.downloadUrl;
+    this.previewUrl = options.previewUrl;
     this.localExportPaths = options.localExportPaths ?? false;
     this.jobs = options.jobs ?? new JobQueue({ describeError: describeJobError });
   }
@@ -2439,6 +2442,28 @@ export class KynimoService {
     return { result: jobReply(job), images: sheet === undefined ? [] : [sheet] };
   }
 
+  /** Resolves an owned, finished MP4 job to its existing file's playback URL. */
+  async getPreviewLink(jobId: string): Promise<{ url: string; expires_at: string }> {
+    const job = this.rt.jobs.get(this.actor, jobId);
+    if (job === undefined) throw jobNotFound(jobId);
+    const { previewUrl, exportFiles } = this.rt;
+    if (previewUrl === undefined || exportFiles === undefined)
+      throw new ToolError(
+        "unavailable",
+        "preview links require an HTTP server with export storage",
+      );
+    if (job.state === "queued" || job.state === "running")
+      throw new ToolError("conflict", `job is ${job.state}; wait with get_export_status`);
+    if (job.state !== "succeeded" || job.result === null)
+      throw new ToolError("invalid", `job ${job.state}; submit a new MP4 export or preview clip`);
+    if (job.result.format !== "mp4")
+      throw new ToolError("invalid", "preview links require an MP4 export or preview clip");
+    const saved = await exportFiles.available(job.result.fileToken);
+    if (saved === undefined)
+      throw new ToolError("not_found", "the MP4 is no longer available; submit a new job");
+    return { url: previewUrl(saved.token), expires_at: new Date(saved.expiresAt).toISOString() };
+  }
+
   /** Cancels a queued or running job; a finished one is returned unchanged. */
   cancelExport(jobId: string): JobReply & { cancelled: boolean } {
     const before = this.rt.jobs.get(this.actor, jobId);
@@ -2549,9 +2574,9 @@ const jobNotFound = (id: string) =>
 
 const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
 
-/** A job record as the tools answer it; the preview sheet is image content, never structured output. */
+/** A job record as the tools answer it, with the internal token and image content removed. */
 function jobReply(job: JobRecord<ExportResult>, replayed?: boolean): JobReply {
-  const { sheet: _sheet, ...result } = job.result ?? ({} as Partial<ExportResult>);
+  const { sheet: _sheet, fileToken: _fileToken, ...result } = job.result ?? {};
   return {
     job_id: job.id,
     kind: job.kind as ExportKind,
@@ -2562,7 +2587,7 @@ function jobReply(job: JobRecord<ExportResult>, replayed?: boolean): JobReply {
     started_at: iso(job.startedAt),
     finished_at: iso(job.finishedAt),
     ...(replayed === undefined ? {} : { replayed }),
-    ...(job.result === null ? {} : { result: result as Omit<ExportResult, "sheet"> }),
+    ...("format" in result ? { result } : {}),
     ...(job.error === null ? {} : { error: job.error }),
   };
 }

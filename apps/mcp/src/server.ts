@@ -70,6 +70,8 @@ import {
   GetExportStatusInput,
   GetLayerOutput,
   GetLayerSchemaOutput,
+  GetPreviewLinkInput,
+  GetPreviewLinkOutput,
   GetProjectOutput,
   GetSceneOutput,
   GetScriptInput,
@@ -136,6 +138,7 @@ Set puppet pins on drawn source layers with updateLayer set.deform. Pin rest and
 Backgrounds and textures are generator layers (gradient, noise, pattern, aurora): add one with add_layer and edit it with the setGenerator operation. Looks (vignette, grain, chromatic-aberration, posterize, scanlines) are effects: use add_effect, usually on an adjustment layer.
 For a reveal or cut between shots use add_transition (wipe, dissolve, push, iris, ...; edge in or out on one layer); the transition component is the cover-style alternative.
 When the user is happy with the frames, export (mp4 default; webm keeps transparency) and poll get_export_status with wait_seconds; render_preview_clip makes a quick low-res clip first.
+Use get_preview_link on a completed MP4 job over HTTP for an expiring browser playback URL.
 Use import_svg for vector logos and icons: it makes one shape layer and reports what the SVG had that shapes cannot carry.`;
 
 const reply = (structured: Record<string, unknown>): CallToolResult => ({
@@ -473,6 +476,18 @@ export function createServer(service: KynimoService): McpServer {
       annotations: { ...WRITE, idempotentHint: true },
     },
     guard(async (a) => ({ ...service.cancelExport(a.job_id) })),
+  );
+
+  server.registerTool(
+    "get_preview_link",
+    {
+      title: "Get preview link",
+      description: "Share a completed MP4 job via an expiring browser playback URL. HTTP only.",
+      inputSchema: GetPreviewLinkInput,
+      outputSchema: GetPreviewLinkOutput,
+      annotations: READ,
+    },
+    guard(async (a) => service.getPreviewLink(a.job_id)),
   );
 
   // Precise

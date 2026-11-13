@@ -73,6 +73,7 @@ describe("MCP server", () => {
       "get_export_status",
       "get_layer",
       "get_layer_schema",
+      "get_preview_link",
       "get_project",
       "get_scene",
       "get_script",
@@ -146,7 +147,8 @@ describe("MCP server", () => {
     // 116_000 with add_transition: ~112 KB before, 114.7 KB after.
     // 116_500 with puppet pins (ADR-0056), at 116_108 measured characters.
     // 120_500 with project component publication, discovery and write outcome (120_141 measured).
-    expect(JSON.stringify(tools).length).toBeLessThan(120_500);
+    // 121_500 with get_preview_link (ADR-0059).
+    expect(JSON.stringify(tools).length).toBeLessThan(121_500);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {

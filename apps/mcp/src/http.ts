@@ -37,7 +37,7 @@ export interface HttpOptions {
    * refused (DNS rebinding); requests without one (server-side clients) are unaffected.
    */
   allowedOrigins: readonly string[];
-  /** Finished exports; when set, `GET /exports/<token>` downloads one. */
+  /** Finished exports, served as downloads or inline MP4 previews. */
   exports?: ExportFiles;
   /** Largest request body. Default MAX_BODY_BYTES. */
   maxBodyBytes?: number;
@@ -104,28 +104,61 @@ const rpcError = (code: number, message: string) => ({
   id: null,
 });
 
-const EXPORT_PATH = /^\/exports\/([A-Za-z0-9_-]{43})$/;
+const EXPORT_PATH = /^\/(exports|previews)\/([A-Za-z0-9_-]{43})$/;
+
+/** Ignore malformed or multi-range requests and distinguish an unsatisfiable single range. */
+function byteRange(header: string | undefined, bytes: number) {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header ?? "");
+  if (!match) return undefined;
+  const [, first, last] = match;
+  if (first === "" && last === "") return undefined;
+  const start = first === "" ? Math.max(0, bytes - Number(last)) : Number(first);
+  const end = first === "" || last === "" ? bytes - 1 : Math.min(bytes - 1, Number(last));
+  return start > end ? null : { start, end };
+}
 
 /**
  * Serves a finished export. No auth: the 256-bit random token in the path is the capability
  * (like a signed URL), and it expires with the file. A file removed underneath answers 404.
  */
-function serveExport(files: ExportFiles, token: string, req: IncomingMessage, res: ServerResponse) {
+function serveExport(
+  files: ExportFiles,
+  token: string,
+  preview: boolean,
+  req: IncomingMessage,
+  res: ServerResponse,
+) {
   if (req.method !== "GET" && req.method !== "HEAD")
     return send(res, 405, { error: "method not allowed" }, { allow: "GET, HEAD" });
   const saved = files.lookup(token);
-  if (saved === undefined) return send(res, 404, { error: "not found" });
-  const stream = createReadStream(saved.file);
+  const cache = { "cache-control": preview ? "private, no-store" : "private, max-age=3600" };
+  const notFound = () => send(res, 404, { error: "not found" }, preview ? cache : {});
+  if (saved === undefined || (preview && saved.format !== "mp4")) return notFound();
+  // Range applies to GET. With no validators, an If-Range request falls back to the full file.
+  const range =
+    preview && req.method === "GET" && req.headers["if-range"] === undefined
+      ? byteRange(req.headers.range, saved.bytes)
+      : undefined;
+  const stream = createReadStream(saved.file, range ?? undefined);
+  res.once("close", () => stream.destroy());
   stream.once("error", () => {
-    if (!res.headersSent) send(res, 404, { error: "not found" });
+    if (res.destroyed) return;
+    if (!res.headersSent) notFound();
     else res.destroy();
   });
   stream.once("open", () => {
-    res.writeHead(200, {
+    if (range === null) {
+      stream.destroy();
+      res.writeHead(416, { ...cache, "content-range": `bytes */${saved.bytes}` });
+      return void res.end();
+    }
+    res.writeHead(range ? 206 : 200, {
       "content-type": EXPORT_CONTENT_TYPES[saved.format],
-      "content-length": String(saved.bytes),
-      "content-disposition": `attachment; filename="kynimo-${basename(saved.file)}"`,
-      "cache-control": "private, max-age=3600",
+      "content-length": String(range ? range.end - range.start + 1 : saved.bytes),
+      "content-disposition": `${preview ? "inline" : "attachment"}; filename="kynimo-${basename(saved.file)}"`,
+      ...cache,
+      ...(preview ? { "accept-ranges": "bytes", "referrer-policy": "no-referrer" } : {}),
+      ...(range ? { "content-range": `bytes ${range.start}-${range.end}/${saved.bytes}` } : {}),
       "x-content-type-options": "nosniff",
     });
     if (req.method === "HEAD") {
@@ -133,7 +166,6 @@ function serveExport(files: ExportFiles, token: string, req: IncomingMessage, re
       return void res.end();
     }
     stream.pipe(res);
-    res.once("close", () => stream.destroy());
   });
 }
 
@@ -168,9 +200,9 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
         "cache-control": "public, max-age=3600",
       });
     }
-    const download = options.exports && EXPORT_PATH.exec(url.pathname);
-    if (options.exports && download?.[1] !== undefined)
-      return serveExport(options.exports, download[1], req, res);
+    const media = options.exports && EXPORT_PATH.exec(url.pathname);
+    if (options.exports && media?.[2] !== undefined)
+      return serveExport(options.exports, media[2], media[1] === "previews", req, res);
     if (url.pathname !== options.path) return send(res, 404, { error: "not found" });
 
     const origin = req.headers.origin;

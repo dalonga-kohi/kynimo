@@ -87,7 +87,7 @@ Measured on a shared 4-vCPU box with SwiftShader.
 - Follow-ups:
   - Pixel-changing compositor speedups (scissor to layer bounds, fixed-function normal blend, a static-prefix cache) change output bytes and need their own ADR and golden review.
   - Parallel range rendering on bigger hosts (stitching ranges), once workers exist.
-  - HTTP range requests on `/exports/<token>`.
+  - HTTP range requests on `/exports/<token>`. ADR-0059 adds range requests on `/previews/<token>` for browser playback.
   - Audio inside precomps.
   - Clean up the temp exports directory on exit when `--dir` is not set.
   - Texture upload pooling; asynchronous read-back (`fenceSync`) instead of a blocking read.

@@ -1557,12 +1557,11 @@ describe("WebGL2 compositor: built-in transitions", () => {
     expect((await gpu.composite(explicit)).pixels).toEqual(plain);
   });
 
-  it("renders the same plan to the same bytes, every kind", async () => {
-    for (const [name, make] of cases) {
+  for (const [name, make] of cases)
+    it(`renders ${name} to the same bytes twice`, async () => {
       const p = scene(make(0.5));
-      expect((await gpu.composite(p)).pixels, name).toEqual((await gpu.composite(p)).pixels);
-    }
-  });
+      expect((await gpu.composite(p)).pixels).toEqual((await gpu.composite(p)).pixels);
+    });
 
   it("matches the reference for a transparent stand-in layer carrying push and zoom", async () => {
     const standIn = (transition: ResolvedTransition): PlannedLayer =>

@@ -268,9 +268,13 @@ describe("export downloads", () => {
     dir = undefined;
   });
 
-  async function saved(format: "mp4" | "gif" = "mp4", body = "not really a video") {
+  async function saved(
+    format: "mp4" | "gif" = "mp4",
+    body = "not really a video",
+    now?: () => number,
+  ) {
     dir = await mkdtemp(join(tmpdir(), "kynimo-test-http-exports-"));
-    const exports = await ExportFiles.open(join(dir, "exports"));
+    const exports = await ExportFiles.open(join(dir, "exports"), now ? { now } : {});
     const source = join(dir, "out.tmp");
     await writeFile(source, body);
     const file = await exports.save(source, `j-${"ab".repeat(16)}`, format);
@@ -335,5 +339,86 @@ describe("export downloads", () => {
     const { base } = await start({ auth: false });
     expect((await fetch(`${base}/exports/${file.token}`)).status).toBe(404);
     expect(exports.lookup(file.token)).toBeDefined();
+  });
+
+  it("serves an MP4 inline without sign-in and expires playback with its file", async () => {
+    let now = 0;
+    const { exports, file } = await saved("mp4", "0123456789", () => now);
+    const { base } = await start({ exports });
+    const url = `${base}/previews/${file.token}`;
+    const res = await fetch(url);
+    expect(res.status).toBe(200);
+    expect(Object.fromEntries(res.headers)).toMatchObject({
+      "content-type": "video/mp4",
+      "content-length": "10",
+      "content-disposition": `inline; filename="kynimo-j-${"ab".repeat(16)}.mp4"`,
+      "accept-ranges": "bytes",
+      "cache-control": "private, no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    });
+    expect(await res.text()).toBe("0123456789");
+    const head = await fetch(url, { method: "HEAD", headers: { range: "bytes=0-0" } });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("content-length")).toBe("10");
+    expect(await head.text()).toBe("");
+    const post = await fetch(url, { method: "POST" });
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, HEAD");
+    await post.text();
+    now = file.expiresAt;
+    await exports.sweep();
+    expect((await fetch(url)).status).toBe(404);
+  });
+
+  it("handles single ranges for playback and keeps the download response intact", async () => {
+    const { exports, file } = await saved("mp4", "0123456789");
+    const { base } = await start({ exports });
+    const url = `${base}/previews/${file.token}`;
+    for (const [range, served, body] of [
+      ["bytes=0-0", "0-0", "0"],
+      ["bytes=2-4", "2-4", "234"],
+      ["bytes=8-", "8-9", "89"],
+      ["bytes=-3", "7-9", "789"],
+      ["bytes=9-1000", "9-9", "9"],
+    ] as const) {
+      const res = await fetch(url, { headers: { range } });
+      expect(res.status, range).toBe(206);
+      expect(res.headers.get("content-range")).toBe(`bytes ${served}/10`);
+      expect(res.headers.get("content-length")).toBe(String(body.length));
+      expect(await res.text()).toBe(body);
+    }
+    const unsatisfiable = await fetch(url, { headers: { range: "bytes=10-" } });
+    expect(unsatisfiable.status).toBe(416);
+    expect(unsatisfiable.headers.get("content-range")).toBe("bytes */10");
+    expect(await unsatisfiable.text()).toBe("");
+    for (const headers of [
+      { range: "bytes=0-1,3-4" },
+      { range: "bytes=word" },
+      { range: "bytes=1-2", "if-range": '"unknown"' },
+    ] satisfies Record<string, string>[]) {
+      const res = await fetch(url, { headers });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("0123456789");
+    }
+    const download = await fetch(`${base}/exports/${file.token}`, {
+      headers: { range: "bytes=1-2" },
+    });
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-disposition")).toMatch(/^attachment/);
+    expect(await download.text()).toBe("0123456789");
+
+    await unlink(file.file);
+    expect((await fetch(url, { headers: { range: "bytes=20-" } })).status).toBe(404);
+  });
+
+  it("answers 404 for unknown tokens and exports in other formats", async () => {
+    const { exports, file } = await saved("gif");
+    const { base } = await start({ exports });
+    for (const token of [file.token, "A".repeat(43), "short"]) {
+      const res = await fetch(`${base}/previews/${token}`);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not found" });
+    }
   });
 });

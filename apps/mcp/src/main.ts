@@ -55,7 +55,8 @@ Environment:
 
 Exports (MP4, WebM, GIF; tools export and render_preview_clip) are kept for 24 hours in
 <dir>/exports with --dir, otherwise in a temporary folder. Over HTTP, results carry a
-download link (GET /exports/<token>); over stdio, the file's path. Exports need FFmpeg.`;
+download link (GET /exports/<token>). get_preview_link returns an inline playback URL
+for a completed MP4 job. Over stdio, results carry the file's path. Exports need FFmpeg.`;
 
 const { values } = parseArgs({
   options: {
@@ -161,14 +162,17 @@ if (values.help) {
     ? resolve(values.dir, "exports")
     : await mkdtemp(join(tmpdir(), "kynimo-exports-")).catch(fail);
   const exportFiles = await ExportFiles.open(exportDir).catch(fail);
-  // The download links' origin: set once the server is listening (--no-auth) or from the public URL.
-  let downloadOrigin: string | undefined;
+  // The media links' origin: set once the server is listening (--no-auth) or from the public URL.
+  let mediaOrigin: string | undefined;
   const runtime = new ServiceRuntime({
     renderer,
     exportFiles,
     localExportPaths: !values.http,
     ...(values.http
-      ? { downloadUrl: (token: string) => `${downloadOrigin}/exports/${token}` }
+      ? {
+          downloadUrl: (token: string) => `${mediaOrigin}/exports/${token}`,
+          previewUrl: (token: string) => `${mediaOrigin}/previews/${token}`,
+        }
       : {}),
     ...(hasMedia ? { media } : {}),
     ...(blobs === undefined
@@ -240,7 +244,7 @@ if (values.help) {
     }).catch(fail);
     const address = http.address();
     // OAuth: links are on the public origin; otherwise on the address the server bound.
-    downloadOrigin = remote
+    mediaOrigin = remote
       ? remote.resource.origin
       : `http://${values.host.includes(":") ? `[${values.host}]` : values.host}:${typeof address === "object" && address ? address.port : port}`;
     const at = typeof address === "object" && address ? `${values.host}:${address.port}` : "";

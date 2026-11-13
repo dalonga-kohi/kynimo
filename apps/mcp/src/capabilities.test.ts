@@ -112,6 +112,7 @@ describe("capability manifest", () => {
       "render_preview_clip",
       "get_export_status",
       "cancel_export",
+      "get_preview_link",
     ]);
     expect(Object.keys(manifest.export.formats)).toEqual(["mp4", "webm", "gif"]);
     expect(manifest.export.formats.webm.transparency).toBe(true);
