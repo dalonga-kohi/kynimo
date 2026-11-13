@@ -22,6 +22,8 @@ export interface ComponentContext {
  * components, packs or props (ADR-0012). Must be pure and deterministic in its arguments.
  */
 export interface ComponentHost {
+  /** Statically bounded program work charged to the frame before evaluation. */
+  work?(layer: ComponentLayer): number;
   /**
    * Returns the instance's subtree for `ctx.frame` as a composition that already passed validation.
    * Throws RangeError with a clear message on an unknown component or invalid props.

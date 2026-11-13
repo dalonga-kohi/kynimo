@@ -167,21 +167,23 @@ Adjustment layers filter the composite below them in the same composition. Their
 
 `define_shader` publishes a bounded GLSL ES 3.00 body as an immutable, content-hashed project definition. Scene format 13 adds pinned generator and single-input effect instances with animatable uniforms. The shader sees layer-local frame, fps, pixel position, resolution, a document-derived seed, and the effect's source texture through a bounded sampling function. Use `list_definitions` to discover the project's versions and `kynimo://shaders` for the authoring interface. [ADR-0055](decisions/0055-project-shaders.md)
 
-Five built-in components use typed props and resolve an editable instance to a layer subtree every frame. `list_components` lists `kinetic-type`, `lower-third`, `logo-reveal`, `transition`, and `background`. `add_component` validates and places a version-pinned instance. Drawn layers also take a built-in shader transition (dissolve, noise dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch) from what is beneath them to the layer, added with `add_transition` and kept as the layer's `transition` property; custom two-input transition shaders are not available yet. [ADR-0057](decisions/0057-shader-transitions.md) Project-defined components need a per-frame evaluator that meets the performance and isolation gate. [ADR-0049](decisions/0049-component-placement.md) · [ADR-0051](decisions/0051-component-sandbox-spike.md)
+Components use typed props and resolve an editable instance to a layer subtree every frame. `list_components` lists `kinetic-type`, `lower-third`, `logo-reveal`, `transition`, and `background`. `define_component` publishes immutable, project-local versions written in bounded TypeScript. `add_component` validates and places a version-pinned built-in or project instance. Discover project versions with `list_definitions` or `kynimo://components/{project_id}`. [ADR-0049](decisions/0049-component-placement.md) · [ADR-0058](decisions/0058-project-components.md)
 
-| Capability                                                                                       | Status  |
-| ------------------------------------------------------------------------------------------------ | ------- |
-| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree            | beta    |
-| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds (ADR-0047)    | beta    |
-| Built-in library: charts, device mockups                                                         | v1.x    |
-| Custom components in sandboxed TypeScript (`define_component`, ADR-0051 evaluator pending)       | planned |
-| Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`)        | beta    |
-| Built-in shader library: backgrounds, textures, looks (ADR-0045), transitions (ADR-0057)         | beta    |
-| Shaders on 3D layers and models (materials)                                                      | v1.x    |
-| Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`, ADR-0041) | beta    |
-| Code panel in the web editor; local CLI / dev mode                                               | later   |
-| Guideline packs: visual + motion tokens, choreography rules                                      | beta    |
-| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op           | beta    |
+Drawn layers also take a built-in shader transition (dissolve, noise dissolve, wipe, clock, iris, blinds, pixelate, push, zoom, glitch) from what is beneath them to the layer. Add it with `add_transition` to set the layer's `transition` property. [ADR-0057](decisions/0057-shader-transitions.md)
+
+| Capability                                                                                       | Status |
+| ------------------------------------------------------------------------------------------------ | ------ |
+| Components: typed props schema, style-aware, deterministic `evaluate` → layer subtree            | beta   |
+| Built-in library: kinetic type, logo reveal, lower third, transitions, backgrounds (ADR-0047)    | beta   |
+| Built-in library: charts, device mockups                                                         | v1.x   |
+| Custom components in bounded TypeScript (`define_component`, ADR-0058)                           | beta   |
+| Custom 2D shaders in GLSL (effect or generator layer), defined over MCP (`define_shader`)        | beta   |
+| Built-in shader library: backgrounds, textures, looks (ADR-0045), transitions (ADR-0057)         | beta   |
+| Shaders on 3D layers and models (materials)                                                      | v1.x   |
+| Scripts: TypeScript run once in a sandbox, compiled to scene operations (`run_script`, ADR-0041) | beta   |
+| Code panel in the web editor; local CLI / dev mode                                               | later  |
+| Guideline packs: visual + motion tokens, choreography rules                                      | beta   |
+| Quality report: rule id, severity, scene-graph location, frame range, suggested fix op           | beta   |
 
 ## 9. Output
 
@@ -236,7 +238,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Code     | `run_script` (TypeScript → one validated batch of at most 500 operations, `dry_run`; ADR-0036, ADR-0041), `get_script` (its source and seed per version; ADR-0044)   | M4         |
 | Intent   | `add_component`, `list_components`                                                                                                                                   | shipped    |
 | Intent   | `build_from_brief` (ordered headline, logo, image and video shots → one editable storyboard write with a dry run, ADR-0050)                                          | shipped    |
-| Code     | `define_shader`, `list_definitions`; `define_component` awaits the ADR-0051 evaluator                                                                                | M6         |
+| Code     | `define_component`, `define_shader`, `list_definitions`                                                                                                              | shipped    |
 | Intent   | `mark_beats` (beat markers on an audio layer from the asset's detected beats or a bpm grid), `sync_to_beats` (snap keyframes and cuts to them; `dry_run`; ADR-0052)  | shipped    |
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3         |

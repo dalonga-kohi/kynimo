@@ -1,4 +1,5 @@
 import {
+  compileComponentProgram,
   createComponentHost,
   createComponentRegistry,
   defineComponent,
@@ -85,6 +86,34 @@ function evaluate(props, ctx) {
 
 export const source = evaluate.toString();
 
+export const boundedSource = `export function evaluate(props, ctx) {
+  const layers = [];
+  const gap = ctx.style.spacing("m");
+  const title = ctx.style.type("title");
+  const foreground = ctx.style.color("text");
+  if (props.kind === "label") {
+    layers.push(solid("plate", gap, 0, 380, 106, props.tone));
+    layers.push(text("title", gap * 2, title.size, props.label, title.size, foreground));
+    layers.push(text("subtitle", gap * 2, title.size * 1.65, "Quarterly report", title.size / 2, foreground));
+  } else if (props.kind === "chart") {
+    layers.push(text("title", gap, title.size, props.label, title.size, foreground));
+    layers.push(solid("axis", gap, 260, 360, 2, foreground));
+    for (let i = 0; i < 7; i++) {
+      const height = 8 + Math.floor((50 + ctx.random() * 180) * props.progress);
+      layers.push(solid("bar-" + i, gap + i * 48, 260 - height, 32, height, props.tone));
+    }
+  } else {
+    for (let i = 0; i < 16; i++) {
+      const angle = i * 0.3926990817 + ctx.frame * 0.025;
+      const radius = (70 + ctx.random() * 180) * props.progress;
+      const x = Math.round(ctx.width / 2 + Math.cos(angle) * radius);
+      const y = Math.round(ctx.height / 2 + Math.sin(angle) * radius);
+      layers.push(solid("particle-" + i, x, y, 8, 8, props.tone));
+    }
+  }
+  return { width: ctx.width, height: ctx.height, layers };
+}`;
+
 function componentContext(ctx) {
   return {
     frame: ctx.frame,
@@ -104,12 +133,12 @@ function componentContext(ctx) {
 
 const native = (props, ctx) => evaluate(props, { ...ctx, random: mulberryUnit(ctx.seed) });
 
-function makeProject(count) {
+function makeProject(count, width, height) {
   const composition = {
     id: "main",
     name: "Main",
-    width: 1920,
-    height: 1080,
+    width,
+    height,
     fps: { num: 60, den: 1 },
     durationFrames: FRAME_COUNT,
     background: null,
@@ -149,7 +178,10 @@ function makeProject(count) {
   });
 }
 
-export function createFrameEvaluator(run = native) {
+export function createFrameEvaluator(
+  run = native,
+  { bounded = false, width = 1920, height = 1080 } = {},
+) {
   const definition = defineComponent({
     id: "fixture",
     version: "1.0.0",
@@ -175,10 +207,14 @@ export function createFrameEvaluator(run = native) {
     },
     evaluate: (props, ctx) => run(props, componentContext(ctx)),
   });
-  const registry = createComponentRegistry([definition]);
+  const registry = createComponentRegistry([
+    bounded
+      ? { ...definition, evaluate: compileComponentProgram(boundedSource, definition.props) }
+      : definition,
+  ]);
   const scenes = Object.fromEntries(
     Object.entries(SCENES).map(([name, count]) => {
-      const project = makeProject(count);
+      const project = makeProject(count, width, height);
       return [name, { project, components: createComponentHost(project, registry) }];
     }),
   );

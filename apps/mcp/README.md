@@ -44,6 +44,22 @@ Backgrounds and textures are generator layers (`gradient`, `noise`, `pattern`, `
 
 Use `list_components` or `kynimo://components` for built-in versions and prop descriptors. `add_component` validates props and writes a component layer pinned to `component_version` (latest if omitted). Missing props take their defaults. The layer starts at `in_frame` (default 0), with an exclusive `out_frame` (default composition duration). Use `dry_run: true` to preview the operation.
 
+### Custom components
+
+Call `define_component` with `project_id`, `idempotency_key`, a `custom-` id, a version such as `1.0.0`, `title`, `description`, `props`, and the TypeScript `source`. Publishing leaves the scene version unchanged. Each project keeps up to 64 immutable component versions. Publish a new version to change the source or prop descriptors.
+
+```ts
+export function evaluate(props: { label: string }, ctx) {
+  const layers = [];
+  const fill = ctx.style.color("text");
+  const size = ctx.style.type("title").size;
+  layers.push(text("title", 32 + ctx.frame, 64, props.label, size, fill));
+  return { width: ctx.width, height: ctx.height, layers };
+}
+```
+
+Declare the example's prop as `props: { label: { type: "string", description: "Title text", default: "Hello", maxLength: 80 } }`. Read `kynimo://components` for the supported expressions, drawing helpers, descriptors, and limits. `list_definitions` returns component summaries under `component_definitions`, and `kynimo://components/{project_id}` includes them with the authoring guide. Place the component with `add_component`, then use `render_frames` or `render_contact_sheet` to check its output. Instances remain editable through their props. Render-time errors identify the instance and invalid output.
+
 ### Build a storyboard
 
 The MCP client turns the user's brief into the structured `shots` passed to `build_from_brief`. The server assembles them deterministically into one editable, undoable write. Create a project with enough frames, upload media, and call the tool with the write metadata and storyboard.

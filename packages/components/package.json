@@ -22,6 +22,7 @@
     "@kynimo/engine": "workspace:*",
     "@kynimo/guidelines": "workspace:*",
     "@kynimo/scene": "workspace:*",
+    "acorn": "8.19.0",
     "zod": "^4.6.7"
   }
 }

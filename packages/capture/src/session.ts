@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import type { RenderComponentDefinition } from "@kynimo/components";
 import {
   BUNDLED_FONTS,
   type RenderWarning,
@@ -63,6 +64,8 @@ export interface CaptureOptions {
   composition?: string;
   /** Project definitions pinned by shader layers and effects in this document. */
   shaders?: readonly ShaderDefinition[];
+  /** Project definitions needed to evaluate the document's component instances. */
+  components?: readonly RenderComponentDefinition[];
   /**
    * The longest output edge in pixels. Larger frames are composited at full size, then
    * downscaled on the CPU with the pinned CanvasKit (trilinear), keeping the aspect ratio
@@ -107,6 +110,8 @@ export interface ExportOptions {
   composition?: string;
   /** Project definitions pinned by shader layers and effects in this document. */
   shaders?: readonly ShaderDefinition[];
+  /** Project definitions needed to evaluate the document's component instances. */
+  components?: readonly RenderComponentDefinition[];
   /** As {@link CaptureOptions.maxSize}. */
   maxSize?: number;
   /** Image and font bytes by asset id, as for captureFrames; checked against pins. */
@@ -217,6 +222,30 @@ interface StaticFile {
   body: string | Buffer;
 }
 
+const COMPONENT_FRAME_DEADLINE_MS = 30_000;
+
+/** Bounds browser work even when a native rendering call cannot be interrupted inside the page. */
+async function componentDeadline<T>(
+  pending: Promise<T>,
+  frames: number,
+  stop: () => Promise<void>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          void stop().catch(() => undefined);
+          reject(new CaptureError("the component render worker exceeded its deadline"));
+        }, frames * COMPONENT_FRAME_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Launches the pinned Chromium (Playwright's) on SwiftShader with the capture page loaded, and
  * refuses to run on any other GPU (ADR-0016). One session renders any number of documents; close
@@ -229,21 +258,33 @@ export async function launchCapture(options: LaunchOptions = {}): Promise<Captur
     build.update(`${path}\0`).update(createHash("sha256").update(file.body).digest("hex"));
   build.update(`\0${browser.version()}\0${gpu}`);
   const open = () => newCapturePage(browser, files);
+  let active: Pick<Awaited<ReturnType<typeof open>>, "page" | "serve"> | undefined = {
+    page,
+    serve,
+  };
   return session(browser, gpu, build.digest("hex"), open, async (request, assets) => {
-    serve(assets);
+    active ??= await open();
+    const current = active;
+    current.serve(assets);
     try {
       // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
-      return await page.evaluate(
+      const pending = current.page.evaluate(
         (json) =>
           (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.render(
             JSON.parse(json),
           ),
         JSON.stringify(request),
       );
+      return await (request.components.length === 0
+        ? pending
+        : componentDeadline(pending, request.frames.length, () => {
+            active = undefined;
+            return current.page.context().close();
+          }));
     } catch (error) {
       throw new CaptureError(`the capture page failed: ${message(error)}`);
     } finally {
-      serve(new Map());
+      current.serve(new Map());
     }
   });
 }
@@ -402,6 +443,7 @@ function session(
       videoFrames = new Map(),
       maxSize,
       shaders = [],
+      components = [],
     }: CaptureOptions,
     sheet: PageRequest["sheet"],
   ) =>
@@ -425,6 +467,7 @@ function session(
         {
           project,
           shaders,
+          components,
           compositionId: composition ?? project.mainCompositionId,
           frames: [...frames],
           assets: [...assets.keys()],
@@ -461,7 +504,10 @@ function session(
       const { sheet } = response;
       return { ...sheet, ...png(sheet.png), columns: Math.min(columns, frames.length) };
     },
-    async openExport(document, { composition, maxSize, assets = new Map(), alpha, shaders = [] }) {
+    async openExport(
+      document,
+      { composition, maxSize, assets = new Map(), alpha, shaders = [], components = [] },
+    ) {
       if (closed) throw new CaptureError("the capture session is closed");
       const project = checkDocument(document);
       checkMaxSize(maxSize);
@@ -478,6 +524,7 @@ function session(
         {
           project,
           shaders,
+          components,
           compositionId,
           assets: [...assets.keys()],
           maxSize: maxSize ?? null,
@@ -511,13 +558,6 @@ async function openExportPage(
 ): Promise<ExportHandle> {
   const comp = project.compositions.find((c) => c.id === request.compositionId);
   const size = fitSize(comp?.width ?? 1, comp?.height ?? 1, request.maxSize);
-  const call = async <T>(fn: () => Promise<T>): Promise<T> => {
-    try {
-      return await fn();
-    } catch (error) {
-      throw new CaptureError(`the capture page failed: ${message(error)}`);
-    }
-  };
   let opened: Awaited<ReturnType<typeof openPage>>;
   try {
     opened = await openPage();
@@ -527,6 +567,16 @@ async function openExportPage(
       : new CaptureError(`could not start the capture page: ${message(error)}`);
   }
   const { page } = opened;
+  const call = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      const pending = fn();
+      return await (request.components.length === 0
+        ? pending
+        : componentDeadline(pending, 1, () => page.context().close()));
+    } catch (error) {
+      throw new CaptureError(`the capture page failed: ${message(error)}`);
+    }
+  };
   // The asset route reads this map: provided assets for good, video frames per call.
   const served = new Map<string, Uint8Array>(assets);
   opened.serve(served);

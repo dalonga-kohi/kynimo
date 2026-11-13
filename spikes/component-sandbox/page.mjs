@@ -25,7 +25,7 @@ function receive(worker, timeoutMs, send = () => {}) {
   });
 }
 
-globalThis.runComponentSpike = async () => {
+globalThis.runComponentSpike = async ({ boundedOnly = false } = {}) => {
   const start = performance.now();
   const worker = new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" });
   try {
@@ -38,9 +38,18 @@ globalThis.runComponentSpike = async () => {
       );
       return { ...message, totalMs: performance.now() - sent };
     };
-    const first = await frame("quickjs", "representative", 0);
+    const first = await frame(boundedOnly ? "bounded" : "quickjs", "representative", 0);
     const sampledFrames = [0, 29, 88, 157, 239];
-    const results = { quickjs: {}, reused: {}, minimal: {}, cached: {}, native: {}, scrub: {} };
+    const results = {
+      quickjs: {},
+      reused: {},
+      minimal: {},
+      cached: {},
+      native: {},
+      scrub: {},
+      bounded: {},
+      boundedScrub: {},
+    };
     const timings = {};
     for (const [name, mode, scene, scrub] of [
       ["quickjs", "quickjs", "representative", false],
@@ -48,9 +57,12 @@ globalThis.runComponentSpike = async () => {
       ["minimal", "minimal", "representative", false],
       ["cached", "cached", "representative", false],
       ["native", "native", "representative", false],
+      ["bounded", "bounded", "representative", false],
+      ["boundedScrub", "bounded", "representative", true],
       ["scrub", "quickjs", "representative", true],
       ["stress", "quickjs", "stress", false],
     ]) {
+      if (boundedOnly && !["native", "bounded", "boundedScrub"].includes(name)) continue;
       for (let i = 0; i < WARMUP_FRAMES; i++) await frame(mode, scene, i);
       timings[name] = [];
       for (let i = 0; i < FRAME_COUNT; i++) {

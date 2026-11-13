@@ -1,5 +1,11 @@
 import { SHADER_COMPILE_TIMEOUT_MS } from "@kynimo/capture";
-import { builtInRegistry } from "@kynimo/components";
+import {
+  builtInRegistry,
+  COMPONENT_PROGRAM_LIMITS,
+  MAX_PROJECT_COMPONENT_DEFINITIONS,
+  MAX_PROPS_PER_COMPONENT,
+  PropDescriptorSchema,
+} from "@kynimo/components";
 import {
   BEHAVIOR_LIMITS,
   BEHAVIOR_SUPPORT,
@@ -71,6 +77,7 @@ import {
   TRANSITION_KINDS,
 } from "@kynimo/scene";
 import { SCRIPT_LIMITS } from "@kynimo/script";
+import { z } from "zod";
 import { MAX_BRIEF_SHOTS } from "./build-from-brief.js";
 import { EXPORT_LIMITS } from "./export.js";
 import { JOB_LIMITS } from "./jobs.js";
@@ -90,6 +97,7 @@ export const RESOURCES = {
   ops: "kynimo://schema/ops",
   layer: "kynimo://schema/layer/{type}",
   components: "kynimo://components",
+  projectComponents: "kynimo://components/{project_id}",
   shaders: "kynimo://shaders",
   projectShaders: "kynimo://projects/{project_id}/shaders",
   presets: "kynimo://presets",
@@ -124,9 +132,6 @@ const unavailable = (reason: string): Unavailable => ({ status: "unavailable", r
  */
 const UNAVAILABLE: Readonly<Record<string, Unavailable>> = {
   styles: unavailable("guideline packs, tokens, apply_style and check_quality arrive in M5"),
-  custom_components: unavailable(
-    "define_component awaits an evaluator that meets the browser performance and isolation gate in ADR-0051",
-  ),
   catalogs: unavailable(
     "the token catalog arrives in M5; kynimo://presets, kynimo://components and kynimo://shaders are available",
   ),
@@ -218,6 +223,55 @@ export function shaderCatalog() {
       functions: ["abs", "cos", "floor", "fract", "sin", "min", "max", "mix", "clamp"],
       limits: SHADER_LIMITS,
     },
+  };
+}
+
+const COMPONENT_LIMITS = {
+  ...COMPONENT_PROGRAM_LIMITS,
+  definitionsPerProject: MAX_PROJECT_COMPONENT_DEFINITIONS,
+  propsPerDefinition: MAX_PROPS_PER_COMPONENT,
+} as const;
+
+export function componentAuthoring() {
+  return {
+    language: "Bounded TypeScript with erasable types",
+    tools: ["define_component", "list_definitions", "add_component"],
+    project_catalog: RESOURCES.projectComponents,
+    example: `export function evaluate(props, ctx) {
+  const layers = [];
+  const fill = ctx.style.color("accent");
+  const width = Math.min(ctx.width, 40 + ctx.frame * 2);
+  layers.push(solid("bar", 0, 0, width, 12, fill));
+  return { width: ctx.width, height: ctx.height, layers };
+}`,
+    statements: [
+      "Start with const layers = [];",
+      "Initialized const declarations, if/else and for (let i = 0; i < N; i++) with a literal N",
+      "Append layers with layers.push(layer);",
+      "End with return { width, height, layers }; optional background is a color or null",
+    ],
+    expressions: [
+      "Data literals, arrays, plain objects, local names, named fields and point indices 0 and 1",
+      "Arithmetic, strict equality, numeric comparisons, logical operators, ternaries and template strings",
+    ],
+    fields: {
+      props: "Declared, sampled prop values",
+      ctx: ["frame", "fps", "durationFrames", "width", "height", "seed", "depth"],
+    },
+    functions: [
+      "ctx.random()",
+      "ctx.style.color(role)",
+      "ctx.style.type(role)",
+      "ctx.style.spacing(token)",
+      "ctx.style.frames(token)",
+      "ctx.assetSize(id)",
+      "Math.abs(x), Math.ceil(x), Math.floor(x), Math.round(x), Math.sqrt(x), Math.sin(x), Math.cos(x), Math.min(a, b), Math.max(a, b)",
+      "solid(id, x, y, width, height, color)",
+      "text(id, x, y, content, size, color)",
+      "layer(fields) fills ordinary scene layer defaults; see get_layer_schema",
+    ],
+    prop_descriptor_schema: z.toJSONSchema(PropDescriptorSchema),
+    limits: COMPONENT_LIMITS,
   };
 }
 
@@ -333,9 +387,10 @@ export function capabilityManifest(server: { name: string; version: string }) {
       },
     },
     components: {
-      tools: ["add_component", "list_components"],
+      tools: ["add_component", "list_components", "define_component", "list_definitions"],
       resource: RESOURCES.components,
       built_ins: [...new Set(builtInRegistry.list().map(({ id }) => id))],
+      limits: COMPONENT_LIMITS,
     },
     brief: {
       tool: "build_from_brief",

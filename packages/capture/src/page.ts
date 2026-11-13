@@ -3,7 +3,7 @@
  * loads into the pinned Chromium. The whole pipeline runs here, on the path ADR-0016 guarantees:
  * evaluate → CanvasKit raster → WebGL2 compositor → PNG.
  */
-import { createComponentHost } from "@kynimo/components";
+import { createComponentHost, createProjectComponentRegistry } from "@kynimo/components";
 import { type EvaluateOptions, evaluateFrame, indexShaderDefinitions } from "@kynimo/engine";
 import {
   BUNDLED_FONTS,
@@ -89,6 +89,7 @@ interface Pixels {
 async function renderFrames({
   project,
   shaders,
+  components,
   compositionId,
   frames,
   assets,
@@ -121,7 +122,7 @@ async function renderFrames({
       );
     }
     const out: Pixels[] = [];
-    const options = evaluationOptions(project, shaders);
+    const options = evaluationOptions({ project, shaders, components });
     for (const frame of frames)
       out.push(
         drawFrame(ck, compositor, project, compositionId, frame, maxSize, options, {
@@ -136,11 +137,12 @@ async function renderFrames({
   }
 }
 
-const evaluationOptions = (
-  project: PageRequest["project"],
-  shaders: PageRequest["shaders"],
-): EvaluateOptions => ({
-  components: createComponentHost(project),
+const evaluationOptions = ({
+  project,
+  shaders,
+  components,
+}: Pick<PageRequest, "project" | "shaders" | "components">): EvaluateOptions => ({
+  components: createComponentHost(project, createProjectComponentRegistry(components)),
   ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
 });
 
@@ -194,6 +196,7 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
     closeExport();
     const { ck, bundled } = state;
     const { project } = request;
+    const options = evaluationOptions(request);
     const provided = new Set(request.assets);
     const images = new ImageLibrary(ck);
     const fonts = new FontLibrary(ck);
@@ -216,7 +219,7 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
       compositionId: request.compositionId,
       maxSize: request.maxSize,
       alpha: request.alpha,
-      options: evaluationOptions(project, request.shaders),
+      options,
       shaderKeys: new Map(
         request.shaders.map((definition) => [
           definition,

@@ -64,6 +64,7 @@ describe("MCP server", () => {
       "build_from_brief",
       "cancel_export",
       "create_project",
+      "define_component",
       "define_shader",
       "describe_motion",
       "export",
@@ -144,7 +145,8 @@ describe("MCP server", () => {
     // 112_000 with shader authoring and discovery (ADR-0055).
     // 116_000 with add_transition: ~112 KB before, 114.7 KB after.
     // 116_500 with puppet pins (ADR-0056), at 116_108 measured characters.
-    expect(JSON.stringify(tools).length).toBeLessThan(116_500);
+    // 120_500 with project component publication, discovery and write outcome (120_141 measured).
+    expect(JSON.stringify(tools).length).toBeLessThan(120_500);
   });
 
   it("keeps the descriptions of op bodies and selectors in the apply_ops listing", async () => {
@@ -870,9 +872,123 @@ describe("MCP server", () => {
     );
     const { resourceTemplates } = await client.listResourceTemplates();
     expect(resourceTemplates.map((t) => t.uriTemplate).sort()).toEqual([
+      "kynimo://components/{project_id}",
       "kynimo://projects/{project_id}/shaders",
       "kynimo://schema/layer/{type}",
     ]);
+  });
+
+  it("validates component descriptors at publication and discovers immutable versions", async () => {
+    const { id: project_id } = await call(client, "create_project", {
+      name: "Components",
+      idempotency_key: "create",
+    });
+    const input = {
+      project_id,
+      id: "custom-bar",
+      version: "1.0.0",
+      title: "Bar",
+      description: "An animated bar",
+      props: { color: { type: "color", description: "Bar fill", default: { role: "accent" } } },
+      source: `export function evaluate(props: { color: string }, ctx: { width: number; height: number; frame: number }) {
+        const layers = [];
+        layers.push(solid("bar", 0, 0, 20 + ctx.frame, 10, props.color));
+        return { width: ctx.width, height: ctx.height, layers };
+      }`,
+    };
+    const bad = await callError(client, "define_component", {
+      ...input,
+      idempotency_key: "invalid",
+      props: { ["__proto__"]: input.props.color },
+    });
+    expect(bad).toMatchObject({
+      error: "invalid",
+      errors: [{ path: ["props", "__proto__"], message: "reserved prop name" }],
+    });
+    const published = await call(client, "define_component", { ...input, idempotency_key: "def" });
+    expect(published).toMatchObject({
+      created: true,
+      replayed: false,
+      definition: {
+        kind: "component",
+        id: input.id,
+        version: input.version,
+        props: input.props,
+        hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+    expect(published.definition).not.toHaveProperty("source");
+    expect(await call(client, "define_component", { ...input, idempotency_key: "def" })).toEqual({
+      ...published,
+      replayed: true,
+    });
+    expect(
+      await call(client, "get_write_outcome", { project_id, idempotency_key: "def" }),
+    ).toMatchObject({
+      status: "applied",
+      version: 1,
+      result: { component_definition: published.definition, definition_created: true },
+    });
+    expect(
+      await callError(client, "define_component", {
+        ...input,
+        idempotency_key: "conflict",
+        source: input.source.replace("20 +", "30 +"),
+      }),
+    ).toMatchObject({ error: "conflict", errors: [{ path: ["version"] }] });
+    expect(
+      await callError(client, "define_component", {
+        ...input,
+        version: "2.0.0",
+        idempotency_key: "bad-source",
+        source: input.source.replace("20 + ctx.frame", "Date.now()"),
+      }),
+    ).toMatchObject({ error: "invalid", errors: [{ path: ["source"] }] });
+    expect(await call(client, "list_definitions", { project_id })).toEqual({
+      definitions: [],
+      component_definitions: [published.definition],
+    });
+    const placed = await call(client, "add_component", {
+      project_id,
+      component_id: input.id,
+      layer_id: "bar-instance",
+      base_version: 1,
+      idempotency_key: "place",
+    });
+    expect(placed).toMatchObject({ version: 2, resolved: { component_version: input.version } });
+    const second = await call(client, "define_component", {
+      ...input,
+      idempotency_key: "def-2",
+      version: "2.0.0",
+    });
+    const dryRun = await call(client, "add_component", {
+      project_id,
+      component_id: input.id,
+      base_version: 2,
+      idempotency_key: "preview-placement",
+      dry_run: true,
+    });
+    expect(dryRun).toMatchObject({
+      version: 2,
+      dry_run: true,
+      resolved: { component_version: "2.0.0" },
+    });
+    const original = await call(client, "get_layer", { project_id, layer: "bar-instance" });
+    expect(original.layer).toMatchObject({ componentVersion: input.version });
+
+    const [component] = (await client.readResource({ uri: `kynimo://components/${project_id}` }))
+      .contents;
+    const [shader] = (await client.readResource({ uri: `kynimo://projects/${project_id}/shaders` }))
+      .contents;
+    if (!component || !("text" in component) || !shader || !("text" in shader))
+      throw new Error("expected catalog text");
+    expect(JSON.parse(component.text)).toMatchObject({
+      component_definitions: [published.definition, second.definition],
+    });
+    expect(JSON.parse(shader.text)).not.toHaveProperty("component_definitions");
+    await expect(
+      client.readResource({ uri: `kynimo://components/p-${"0".repeat(32)}` }),
+    ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
   });
 
   it("serves the scene, op and layer schemas as JSON Schema", async () => {

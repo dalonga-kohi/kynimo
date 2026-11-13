@@ -4,17 +4,21 @@ import {
   type Asset,
   type ComponentLayer,
   type Composition,
+  CompositionSchema,
   type Layer,
   type Project,
   ProjectSchema,
   SCENE_FORMAT_VERSION,
 } from "@kynimo/scene";
+import { componentProgramWork } from "./custom/compile.js";
+import { hasGeneratedLayers } from "./custom/runtime.js";
 import type { ComponentEvalContext, ComponentOutput } from "./define.js";
 import { builtInRegistry, type ComponentRegistry } from "./registry.js";
 import { resolveProps } from "./resolve-props.js";
 import { createComponentStyle } from "./style.js";
 
 const OUTPUT_COMPOSITION_ID = "component";
+const CompositionHeader = CompositionSchema.omit({ layers: true });
 const MAX_VERSIONS_LISTED = 5;
 const MAX_IDS_LISTED = 10;
 const MAX_FAILURE_MESSAGE = 200;
@@ -57,7 +61,14 @@ export function createComponentHost(
   project: Project,
   registry: ComponentRegistry = builtInRegistry,
 ): ComponentHost {
+  const selectedPack = project.style === null ? keynote : findPack(project.style);
+  const styleBySize = new Map<string, ReturnType<typeof createComponentStyle>>();
+  const assetById = new Map<string, Asset>(project.assets.map((asset) => [asset.id, asset]));
   return {
+    work(layer) {
+      const definition = registry.get(layer.componentId, layer.componentVersion);
+      return definition === undefined ? 0 : componentProgramWork(definition.evaluate);
+    },
     evaluate(layer: ComponentLayer, ctx: ComponentContext): Composition {
       const ref = `${layer.componentId}@${layer.componentVersion}`;
       const who = `component '${ref}' on layer '${layer.id}'`;
@@ -78,7 +89,7 @@ export function createComponentHost(
         );
       }
 
-      const pack = packFor(project, who);
+      const pack = selectedPack ?? packFor(project, who);
       const props = resolveProps(def.props, layer.props, {
         who,
         assets: project.assets,
@@ -88,12 +99,18 @@ export function createComponentHost(
       });
 
       const next = mulberry32(ctx.seed);
+      const styleKey = `${ctx.width}/${ctx.height}/${ctx.fps.num}/${ctx.fps.den}`;
+      let style = styleBySize.get(styleKey);
+      if (style === undefined) {
+        style = createComponentStyle(pack, ctx, ctx.fps);
+        if (styleBySize.size < 64) styleBySize.set(styleKey, style);
+      }
       const evalCtx: ComponentEvalContext = {
         ...ctx,
         random: () => next() / 4294967296,
-        style: createComponentStyle(pack, ctx, ctx.fps),
+        style,
         assetSize: (id) => {
-          const asset = project.assets.find((a) => a.id === id);
+          const asset = assetById.get(id);
           return asset !== undefined && (asset.type === "image" || asset.type === "video")
             ? { width: asset.width, height: asset.height }
             : null;
@@ -124,24 +141,38 @@ export function createComponentHost(
           invalid(`layers[${precomp}].type`, "components cannot output precomp layers");
       }
 
+      const header = {
+        id: OUTPUT_COMPOSITION_ID,
+        name: truncate(def.title, 200),
+        width: output.width,
+        height: output.height,
+        fps: ctx.fps,
+        durationFrames: Math.max(ctx.durationFrames, ctx.frame + 1),
+        background: output.background ?? null,
+        markers: [],
+      };
+      if (hasGeneratedLayers(output)) {
+        const parsed = CompositionHeader.safeParse(header);
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          return invalid(formatPath(issue?.path ?? []) || "output", issue?.message ?? "is invalid");
+        }
+        const ids = new Set<string>();
+        for (const [index, child] of output.layers.entries()) {
+          if (ids.has(child.id))
+            return invalid(`layers[${index}].id`, `duplicate layer id '${child.id}'`);
+          if (child.inFrame >= child.outFrame)
+            return invalid(`layers[${index}].outFrame`, "must be after inFrame");
+          ids.add(child.id);
+        }
+        return { ...parsed.data, layers: output.layers };
+      }
       const parsed = ProjectSchema.safeParse({
         formatVersion: SCENE_FORMAT_VERSION,
         name: project.name,
         mainCompositionId: OUTPUT_COMPOSITION_ID,
         style: project.style,
-        compositions: [
-          {
-            id: OUTPUT_COMPOSITION_ID,
-            name: truncate(def.title, 200),
-            width: output.width,
-            height: output.height,
-            fps: ctx.fps,
-            durationFrames: Math.max(ctx.durationFrames, ctx.frame + 1),
-            background: output.background ?? null,
-            layers: output.layers,
-            markers: [],
-          },
-        ],
+        compositions: [{ ...header, layers: output.layers }],
         assets: Array.isArray(output.layers) ? neededAssets(project, output.layers) : [],
       });
       if (!parsed.success) {

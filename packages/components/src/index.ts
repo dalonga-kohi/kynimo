@@ -1,4 +1,20 @@
 export { background, kineticType, logoReveal, lowerThird, transition } from "./built-in/index.js";
+export { compileComponentProgram } from "./custom/compile.js";
+export {
+  type ComponentDefinitionInput,
+  ComponentDefinitionInputSchema,
+  type ComponentDefinitionSummary,
+  ComponentDefinitionSummarySchema,
+  type ComponentProjectDefinition,
+  ComponentProjectDefinitionSchema,
+  MAX_PROJECT_COMPONENT_DEFINITIONS,
+  ProjectComponentIdSchema,
+} from "./custom/definition.js";
+export {
+  createProjectComponentRegistry,
+  type RenderComponentDefinition,
+} from "./custom/registry.js";
+export { COMPONENT_PROGRAM_LIMITS } from "./custom/runtime.js";
 export {
   type ComponentDefinition,
   type ComponentEvalContext,

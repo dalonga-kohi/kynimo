@@ -75,8 +75,9 @@ const inRange = (n: number, r: { min: number; max: number }) => n >= r.min && n 
  * Springs whose parameters are out of range are left to their own range issue.
  */
 function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): void {
-  const settleCache = new Map<string, number>();
+  let settleCache: Map<string, number> | undefined;
   const settleFrames = (s: { damping: number; response: number }) => {
+    settleCache ??= new Map();
     const key = `${s.damping}/${s.response}`;
     let frames = settleCache.get(key);
     if (frames === undefined) {
@@ -86,10 +87,12 @@ function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): v
     return frames;
   };
 
-  const stack: { node: unknown; path: Path }[] = [{ node: layer, path: base }];
+  type Entry = { node: object; key: string | number; parent: Entry | undefined };
+  const root: Entry = { node: layer, key: "", parent: undefined };
+  const stack: Entry[] = [root];
   while (stack.length > 0) {
     const item = stack.pop();
-    if (item === undefined || typeof item.node !== "object" || item.node === null) continue;
+    if (item === undefined) break;
     const node = item.node as Record<string, unknown>;
     if (Array.isArray(node.keyframes)) {
       const keyframes = node.keyframes as unknown[];
@@ -106,17 +109,23 @@ function checkSprings(layer: Layer, fps: FrameRate, base: Path, issue: Issue): v
         )
           return;
         const settle = kf.frame + settleFrames(spring);
-        if (next.frame < settle)
+        if (next.frame < settle) {
+          const path: Path = [];
+          for (let entry = item; entry.parent !== undefined; entry = entry.parent)
+            path.push(entry.key);
           issue(
-            [...item.path, "keyframes", i + 1, "frame"],
+            [...base, ...path.reverse(), "keyframes", i + 1, "frame"],
             `keyframe at frame ${next.frame} follows a spring that settles at frame ${settle}; move it to frame ${settle} or later, or change the previous keyframe's interpolation to bezier`,
           );
+        }
       });
       continue; // keyframe values hold no further tracks
     }
-    for (const [key, child] of Object.entries(node)) {
-      if (item.path.length === base.length && FREE_FORM_LAYER_KEYS.has(key)) continue;
-      stack.push({ node: child, path: [...item.path, Array.isArray(node) ? Number(key) : key] });
+    for (const key of Object.keys(node)) {
+      const child = node[key];
+      if (typeof child !== "object" || child === null) continue;
+      if (item === root && FREE_FORM_LAYER_KEYS.has(key)) continue;
+      stack.push({ node: child, key: Array.isArray(node) ? Number(key) : key, parent: item });
     }
   }
 }
@@ -190,6 +199,7 @@ function checkChainCycles(
   next: (layer: Layer) => string | null,
   report: (layerIndex: number, loop: string[]) => void,
 ): void {
+  if (!layers.some((layer) => next(layer) !== null)) return;
   const byId = new Map(layers.map((l) => [l.id as string, l]));
   const indexOf = new Map(layers.map((l, i) => [l.id as string, i]));
   const state = new Map<string, 1 | 2>(); // 1 = on the current walk, 2 = finished
@@ -340,6 +350,10 @@ function checkLinkCycles(
   at: (layerIndex: number, ...rest: (string | number)[]) => Path,
   issue: Issue,
 ): void {
+  if (
+    !layers.some((layer) => hasTransform(layer) && layer.behaviors.some((b) => b.type === "link"))
+  )
+    return;
   type Edge = { to: string; path: Path };
   const rank = new Map<string, number>(); // layer order, then property order
   const edges = new Map<string, Edge[]>();
@@ -522,7 +536,8 @@ function checkIntegrity(project: Project, ctx: z.RefinementCtx): void {
       if (layer.type === "adjustment" && layer.threeD)
         issue(at("threeD"), "adjustment layers cannot be 3D; set threeD to false");
 
-      if (hasTransform(layer)) checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
+      if (hasTransform(layer) && layer.behaviors.length > 0)
+        checkBehaviors(layer, layerById, compOf, comp.id, at, issue);
 
       if (isDrawn(layer)) {
         if (layer.type === "adjustment" && layer.motionBlur !== null)

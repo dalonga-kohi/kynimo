@@ -1,3 +1,4 @@
+import { ComponentDefinitionInputSchema } from "@kynimo/components";
 import {
   AddEffectInputSchema,
   AddTransitionInputSchema,
@@ -29,7 +30,12 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { type CallToolResult, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { buildFromBriefExpansion } from "./build-from-brief.js";
-import { capabilityManifest, RESOURCES, shaderCatalog } from "./capabilities.js";
+import {
+  capabilityManifest,
+  componentAuthoring,
+  RESOURCES,
+  shaderCatalog,
+} from "./capabilities.js";
 import { addComponentExpansion, componentCatalog } from "./components.js";
 import { importSvgExpansion } from "./import-svg.js";
 import { layerJsonSchema, opJsonSchema, sceneJsonSchema } from "./json-schemas.js";
@@ -52,6 +58,8 @@ import {
   CancelExportOutput,
   CreateProjectInput,
   CreateProjectOutput,
+  DefineComponentInput,
+  DefineComponentOutput,
   DefineShaderInput,
   DefineShaderOutput,
   DescribeMotionInput,
@@ -113,6 +121,7 @@ Workflow: create_project or list_projects → get_scene (summary) → add layers
 Animate with intent first: animate (one property over a window; durations and easings are tokens of the project's pinned style, Keynote's when none), apply_preset (enter and exit animations, see list_presets), stagger and retime (shift or scale existing keyframes). They return the operations they wrote; dry_run previews without writing. For anything else use the precise tools (set_keyframes, add_mask, add_behavior, ...) and apply_ops.
 Audio uploads come with detected beats: mark_beats puts them on an audio layer as markers, sync_to_beats snaps keyframes and cuts to them.
 Use list_components or kynimo://components to discover built-ins and their props. add_component places a version-pinned instance; use dry_run to validate placement and props first.
+Use define_component to publish bounded TypeScript that evaluates to editable scene layers each frame. Read the authoring interface at kynimo://components, discover project versions with list_definitions and place a pin with add_component.
 Use build_from_brief to assemble a storyboard of headline, logo, image and video shots in one write. Translate the user's brief into the shot fields first. Use dry_run to check timing and assets, then render a contact sheet.
 Use define_shader to publish a project GLSL generator or effect, then pin its id and version in add_layer, setGenerator or add_effect. Read the shader interface at kynimo://shaders and find versions with list_definitions.
 Scene edits need base_version (the version you last read). Every write needs a fresh idempotency_key. If a call fails without a reply, retry it with the same key, or ask get_write_outcome whether it landed.
@@ -616,7 +625,11 @@ export function createServer(service: KynimoService): McpServer {
     description: string,
     inputSchema: z.ZodObject,
     schema: z.ZodType<I>,
-    run: (doc: Project, input: I) => { ops: Op[]; resolved?: object },
+    run: (
+      doc: Project,
+      input: I,
+      projectId: string,
+    ) => { ops: Op[]; resolved?: object } | Promise<{ ops: Op[]; resolved?: object }>,
     options?: { echoOps?: boolean },
   ) =>
     server.registerTool(
@@ -624,14 +637,15 @@ export function createServer(service: KynimoService): McpServer {
       { title, description, inputSchema, outputSchema: IntentWriteOutput, annotations: WRITE },
       guard(async (a: Record<string, unknown>) => {
         const { project_id, base_version, idempotency_key, dry_run, ...body } = a;
+        const writeMeta = meta(a as unknown as WriteMeta);
         return {
           ...(await service.intent(
-            meta(a as unknown as WriteMeta),
+            writeMeta,
             name,
             schema,
             body,
             dry_run === true,
-            run,
+            (doc, input) => run(doc, input, writeMeta.project_id),
             undefined,
             options,
           )),
@@ -698,10 +712,15 @@ export function createServer(service: KynimoService): McpServer {
   intentTool(
     "add_component",
     "Add component",
-    "Places a built-in component with validated props as a component layer. Local frame 0 is in_frame. Omit component_version to pin the latest; see list_components for versions and props.",
+    "Places a built-in or project component with validated props. Local frame 0 is in_frame. Omit component_version to pin the latest.",
     AddComponentInput,
     AddComponentRequest,
-    addComponentExpansion,
+    async (doc, input, projectId) =>
+      addComponentExpansion(
+        doc,
+        input,
+        await service.componentDefinitionsForPlacement(projectId, input.component_id),
+      ),
   );
 
   intentTool(
@@ -817,11 +836,35 @@ export function createServer(service: KynimoService): McpServer {
     ),
   );
   server.registerTool(
+    "define_component",
+    {
+      title: "Define component",
+      description:
+        "Publishes an immutable project component version. Use a custom- id, semver, prop descriptors and bounded TypeScript. See kynimo://components for the authoring interface.",
+      inputSchema: DefineComponentInput,
+      outputSchema: DefineComponentOutput,
+      annotations: WRITE,
+    },
+    guard(async ({ project_id, idempotency_key, ...definition }) => {
+      const parsed = ComponentDefinitionInputSchema.safeParse(definition);
+      if (!parsed.success)
+        throw new ToolError(
+          "invalid",
+          `define_component: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
+          parsed.error.issues.slice(0, 5).map(({ path, message }) => ({
+            path: path.map((part) => (typeof part === "number" ? part : String(part))),
+            message,
+          })),
+        );
+      return service.defineComponent(project_id, idempotency_key, parsed.data);
+    }),
+  );
+  server.registerTool(
     "list_definitions",
     {
       title: "List project definitions",
       description:
-        "Lists immutable shader versions in one project, including their content hashes and uniform descriptors.",
+        "Lists immutable project shader and component versions, with content hashes and their uniform or prop descriptors.",
       inputSchema: z.object({ project_id: ProjectIdSchema }),
       outputSchema: ListDefinitionsOutput,
       annotations: READ,
@@ -833,7 +876,7 @@ export function createServer(service: KynimoService): McpServer {
     "list_components",
     {
       title: "List components",
-      description: "Built-in component versions and prop descriptors. Same as kynimo://components.",
+      description: "Built-in component versions and prop descriptors.",
       inputSchema: z.object({}),
       outputSchema: ListComponentsOutput,
       annotations: READ,
@@ -905,11 +948,34 @@ function registerResources(server: McpServer, service: KynimoService): void {
     "components",
     RESOURCES.components,
     {
-      title: "Built-in components",
-      description: "Component versions and prop descriptors. Same as list_components.",
+      title: "Component catalog",
+      description: "Built-in component versions and the project component authoring interface.",
       mimeType: "application/json",
     },
-    (uri) => json(uri, componentCatalog()),
+    (uri) => json(uri, { ...componentCatalog(), custom: componentAuthoring() }),
+  );
+  server.registerResource(
+    "project-components",
+    new ResourceTemplate(RESOURCES.projectComponents, { list: undefined }),
+    {
+      title: "Project component catalog",
+      description: "Built-in and project-defined component versions and their props.",
+      mimeType: "application/json",
+    },
+    async (uri, { project_id }) => {
+      const project = ProjectIdSchema.safeParse(project_id);
+      if (!project.success) throw new McpError(ErrorCode.InvalidParams, "invalid project id");
+      try {
+        return json(uri, {
+          ...componentCatalog(),
+          custom: componentAuthoring(),
+          ...(await service.listComponentDefinitions(project.data)),
+        });
+      } catch (error) {
+        if (error instanceof ToolError) throw new McpError(ErrorCode.InvalidParams, error.message);
+        throw error;
+      }
+    },
   );
   server.registerResource(
     "shaders",
@@ -933,7 +999,10 @@ function registerResources(server: McpServer, service: KynimoService): void {
       const project = ProjectIdSchema.safeParse(project_id);
       if (!project.success) throw new McpError(ErrorCode.InvalidParams, "invalid project id");
       try {
-        return json(uri, { ...shaderCatalog(), ...(await service.listDefinitions(project.data)) });
+        return json(uri, {
+          ...shaderCatalog(),
+          ...(await service.listShaderDefinitions(project.data)),
+        });
       } catch (error) {
         if (error instanceof ToolError) throw new McpError(ErrorCode.InvalidParams, error.message);
         throw error;

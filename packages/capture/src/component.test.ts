@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -6,6 +7,7 @@ import {
   createComponentHost,
   createComponentRegistry,
   defineComponent,
+  type RenderComponentDefinition,
 } from "@kynimo/components";
 import { evaluateFrame } from "@kynimo/engine";
 import {
@@ -228,6 +230,59 @@ describe("the capture page", () => {
     const err = await capture.captureFrames(project, [10]).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CaptureError);
     expect((err as CaptureError).message).toContain("no component 'nothing'");
+  }, 60_000);
+
+  it("renders the pinned project component in capture and export", async () => {
+    const definition: RenderComponentDefinition = {
+      id: "custom-plate",
+      version: "1.0.0",
+      title: "Project plate",
+      description: "A rectangle with editable width",
+      props: plate.props,
+      program: `export function evaluate(props, ctx) {
+        const layers = [];
+        layers.push(solid("plate", 10, 10, props.width + ctx.frame, 40, "#336699"));
+        return { width: ctx.width, height: ctx.height, layers };
+      }`,
+    };
+    const newer: RenderComponentDefinition = {
+      ...definition,
+      version: "2.0.0",
+      program: definition.program.replace("#336699", "#993366"),
+    };
+    const components = [definition, newer];
+    const project = document([instance({ componentId: definition.id })]);
+    const [frame15, frame5, replay15] = await capture.captureFrames(project, [15, 5, 15], {
+      components,
+    });
+    expect(frame15?.skipped).toEqual([]);
+    expect(frame15?.warnings).toEqual([]);
+    expect(frame15?.pixelsSha256).not.toBe(frame5?.pixelsSha256);
+    expect(frame15?.pixelsSha256).toBe(replay15?.pixelsSha256);
+
+    // Frame 15 is local frame 10. The sampled width is 70, and the program adds 10.
+    const byHand = document([
+      layer("plate", "solid", {
+        width: 80,
+        height: 40,
+        color: "#336699",
+        transform: transform({ position: prop([10, 10]) }),
+      }),
+    ]);
+    const [expected] = await capture.captureFrames(byHand, [15]);
+    expect(frame15?.pixelsSha256).toBe(expected?.pixelsSha256);
+
+    const exported = await capture.openExport(project, { alpha: "premultiplied", components });
+    try {
+      for (const expected of [frame5, frame15, replay15]) {
+        if (!expected) throw new Error("capture omitted a requested frame");
+        const result = await exported.frame(expected.frame);
+        expect(result.skipped).toEqual([]);
+        expect(createHash("sha256").update(result.rgba).digest("hex")).toBe(expected.pixelsSha256);
+      }
+    } finally {
+      await exported.close();
+    }
   }, 60_000);
 
   it("draws every built-in component with default props, with no fallbacks", async () => {

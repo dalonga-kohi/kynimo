@@ -85,6 +85,52 @@ afterAll(async () => {
 });
 
 describe("uploaded assets in rendered frames", () => {
+  it("loads images emitted by a version-pinned project component", async () => {
+    const project_id = await project("component-image");
+    const uploaded = await call("upload_asset", {
+      project_id,
+      base_version: 1,
+      idempotency_key: "upload",
+      name: "green.png",
+      data: base64(solidPng(40, 20, [0, 255, 0, 255])),
+    });
+    const asset = uploaded.asset as { id: string };
+    await call("define_component", {
+      project_id,
+      idempotency_key: "define",
+      id: "custom-image",
+      version: "1.0.0",
+      title: "Image",
+      description: "Draw the uploaded image",
+      props: {
+        image: { type: "asset", assetType: "image", description: "Image to draw", default: null },
+      },
+      source: `export function evaluate(props, ctx) {
+        const layers = [];
+        layers.push(layer({ id: "image", type: "image", name: "Image", assetId: props.image }));
+        return { width: ctx.width, height: ctx.height, layers };
+      }`,
+    });
+    await call("add_component", {
+      project_id,
+      base_version: 2,
+      idempotency_key: "place",
+      component_id: "custom-image",
+      props: { image: asset.id },
+    });
+    const plain = await project("component-image-control");
+    await call("add_layer", {
+      project_id: plain,
+      base_version: 1,
+      idempotency_key: "solid",
+      composition: "main",
+      layer: { type: "solid", name: "Green", width: 40, height: 20, color: "#00ff00" },
+    });
+    const actual = await frame0(project_id);
+    expect(actual.skipped).toEqual([]);
+    expect(actual.pixels).toBe((await frame0(plain)).pixels);
+  }, 60_000);
+
   it("draws an uploaded PNG exactly like a solid of its color and size", async () => {
     const withImage = await project("img");
     const up = await call("upload_asset", {

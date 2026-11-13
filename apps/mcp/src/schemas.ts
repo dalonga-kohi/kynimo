@@ -1,4 +1,4 @@
-import { MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
+import { ComponentDefinitionInputSchema, MAX_PROPS_PER_COMPONENT } from "@kynimo/components";
 import {
   AnimateInputSchema,
   DurationInput,
@@ -12,6 +12,7 @@ import {
   AssetIdSchema,
   ColorSchema,
   CompositionIdSchema,
+  DefinitionHashSchema,
   DeformPinIdSchema,
   DeformSchema,
   EffectIdSchema,
@@ -604,8 +605,8 @@ const ComponentIdSchema = z.string().regex(ID_PATTERN);
 const ComponentFrameSchema = z.number().int().min(0).max(MAX_DURATION_FRAMES);
 
 export const AddComponentRequest = z.strictObject({
-  component_id: ComponentIdSchema.describe("Built-in component id from list_components."),
-  component_version: SemverSchema.optional().describe("Default: latest built-in version."),
+  component_id: ComponentIdSchema.describe("Id from list_components or list_definitions."),
+  component_version: SemverSchema.optional().describe("Default: latest version."),
   composition: CompositionIdSchema.optional().describe("Default: the main composition."),
   layer_id: LayerIdSchema.optional().describe("Generated when omitted."),
   name: NameSchema.optional().describe("Default: the component title."),
@@ -621,7 +622,7 @@ export const AddComponentRequest = z.strictObject({
     .optional()
     .meta({
       type: "object",
-      description: "See list_components for props and defaults.",
+      description: "See list_components or list_definitions for props and defaults.",
     }),
 });
 
@@ -738,8 +739,41 @@ export const DefineShaderOutput = z.looseObject({
   replayed: z.boolean(),
 });
 
+export const DefineComponentInput = ComponentDefinitionInputSchema.extend({
+  project_id: ProjectIdSchema,
+  idempotency_key: IdempotencyKeySchema,
+  // Canonical segments are checked by the full authoring schema in the handler.
+  version: SemverSchema.max(64),
+  // Preserve the original map for full validation, including keys Zod record parsing drops.
+  props: z.unknown().meta({
+    type: "object",
+    description: "Named prop descriptors. See kynimo://components for the descriptor schema.",
+  }),
+});
+
+// Advertise the stable summary fields without inlining the descriptor union into three tool schemas.
+const ComponentSummaryOutput = z.object({
+  ...ComponentDefinitionInputSchema.pick({
+    id: true,
+    title: true,
+    description: true,
+  }).shape,
+  version: SemverSchema.max(64),
+  kind: z.literal("component"),
+  hash: DefinitionHashSchema,
+  props: z.record(z.string(), z.looseObject({ type: z.string(), description: z.string() })),
+});
+
+export const DefineComponentOutput = z.looseObject({
+  project_id: ProjectIdSchema,
+  definition: ComponentSummaryOutput,
+  created: z.boolean(),
+  replayed: z.boolean(),
+});
+
 export const ListDefinitionsOutput = z.looseObject({
   definitions: z.array(ShaderDefinitionSummarySchema),
+  component_definitions: z.array(ComponentSummaryOutput).optional(),
 });
 
 export const WriteOutput = z.looseObject({
@@ -931,6 +965,7 @@ export const WriteOutcomeOutput = z.looseObject({
   result: WriteOutput.omit({ replayed: true })
     .extend({
       definition: ShaderDefinitionSummarySchema.optional(),
+      component_definition: ComponentSummaryOutput.optional(),
       definition_created: z.boolean().optional(),
     })
     .optional(),
