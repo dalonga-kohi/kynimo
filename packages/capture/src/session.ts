@@ -258,11 +258,17 @@ export async function launchCapture(options: LaunchOptions = {}): Promise<Captur
     build.update(`${path}\0`).update(createHash("sha256").update(file.body).digest("hex"));
   build.update(`\0${browser.version()}\0${gpu}`);
   const open = () => newCapturePage(browser, files);
+  let active: Pick<Awaited<ReturnType<typeof open>>, "page" | "serve"> | undefined = {
+    page,
+    serve,
+  };
   return session(browser, gpu, build.digest("hex"), open, async (request, assets) => {
-    serve(assets);
+    active ??= await open();
+    const current = active;
+    current.serve(assets);
     try {
       // As a JSON string: Playwright's own serializer would walk (and type-check) the project.
-      const pending = page.evaluate(
+      const pending = current.page.evaluate(
         (json) =>
           (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.render(
             JSON.parse(json),
@@ -271,11 +277,14 @@ export async function launchCapture(options: LaunchOptions = {}): Promise<Captur
       );
       return await (request.components.length === 0
         ? pending
-        : componentDeadline(pending, request.frames.length, () => browser.close()));
+        : componentDeadline(pending, request.frames.length, () => {
+            active = undefined;
+            return current.page.context().close();
+          }));
     } catch (error) {
       throw new CaptureError(`the capture page failed: ${message(error)}`);
     } finally {
-      serve(new Map());
+      current.serve(new Map());
     }
   });
 }

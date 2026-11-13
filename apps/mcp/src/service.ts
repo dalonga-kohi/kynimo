@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { setImmediate as yieldTurn } from "node:timers/promises";
 import {
   type CapturedFrame,
   type CapturedSheet,
@@ -19,6 +20,7 @@ import {
   type RenderComponentDefinition,
 } from "@kynimo/components";
 import {
+  type EvaluateOptions,
   evaluateFrame,
   indexShaderDefinitions,
   type ResolvedComposition,
@@ -1072,6 +1074,8 @@ export class KynimoService {
     video = true,
     shaders: readonly ShaderDefinition[] = [],
     components: readonly RenderComponentDefinition[] = [],
+    options?: EvaluateOptions,
+    signal?: AbortSignal,
   ): Promise<RenderMedia> {
     const images = new Set<string>();
     const families = new Set<string>();
@@ -1090,10 +1094,23 @@ export class KynimoService {
     }
     // Evaluate the frames once, only when a component's subtree (which only exists once evaluated)
     // or a video's source frames are needed.
-    const evaluated =
-      hasComponents || (video && doc.assets.some((a) => a.type === "video"))
-        ? walkEvaluated(doc, compositionId, frames, shaders, components)
-        : undefined;
+    let evaluated: EvaluatedUsage | undefined;
+    if (hasComponents || (video && doc.assets.some((a) => a.type === "video"))) {
+      const scan = evaluatedUsage(
+        doc,
+        compositionId,
+        options ?? evaluationOptions(doc, shaders, components),
+      );
+      for (const frame of frames) {
+        signal?.throwIfAborted();
+        scan.visitFrame(frame);
+        // A single frame has an engine work cap. Yield between frames so cancellation and
+        // other requests can run even during a long export's asset discovery.
+        if (frames.length > 1 && (signal !== undefined || components.length > 0)) await yieldTurn();
+      }
+      evaluated = scan.usage;
+    }
+    signal?.throwIfAborted();
     for (const id of evaluated?.images ?? []) images.add(id);
     for (const family of evaluated?.families ?? []) families.add(family);
     const used = doc.assets.filter((a) =>
@@ -1102,6 +1119,7 @@ export class KynimoService {
     const out = new Map<string, Uint8Array>();
     const budget = this.assetBudget();
     for (const a of used) {
+      signal?.throwIfAborted();
       const failed = (why: string) =>
         new ToolError("render_failed", `asset '${a.id}' (${a.uri}) ${why}; upload the file again`);
       if (!isBlobKey(a.uri)) throw failed("was not stored by upload_asset");
@@ -2308,12 +2326,17 @@ export class KynimoService {
       (shaders ??= this.shadersFor(plan.project.id, plan.project.doc));
     const componentDefinitions = () =>
       (components ??= this.componentsFor(plan.project.id, plan.project.doc));
+    let evaluation: Promise<EvaluateOptions> | undefined;
+    const options = () =>
+      (evaluation ??= Promise.all([shaderDefinitions(), componentDefinitions()]).then(
+        ([shaders, components]) => evaluationOptions(plan.project.doc, shaders, components),
+      ));
     return {
       renderer,
       media,
       files,
       draw: (fn) => this.draw(fn),
-      stillAssets: async (doc, composition, frames) =>
+      stillAssets: async (doc, composition, frames, signal) =>
         this.assetsFor(
           doc,
           composition,
@@ -2321,20 +2344,16 @@ export class KynimoService {
           false,
           await shaderDefinitions(),
           await componentDefinitions(),
+          await options(),
+          signal,
         ),
-      videoFrames: async (doc, composition, frame) =>
-        this.loadVideoFrames(
-          doc,
-          shownVideoFrames(
-            doc,
-            composition,
-            [frame],
-            await shaderDefinitions(),
-            await componentDefinitions(),
-          ),
-          this.assetBudget(),
-        ),
-      allAssets: async (doc, composition, frames) =>
+      videoFrames: async (doc, composition, frame) => {
+        if (!doc.assets.some((a) => a.type === "video")) return new Map();
+        const scan = evaluatedUsage(doc, composition, await options());
+        scan.visitFrame(frame);
+        return this.loadVideoFrames(doc, scan.usage.videoFrames, this.assetBudget());
+      },
+      allAssets: async (doc, composition, frames, signal) =>
         this.assetsFor(
           doc,
           composition,
@@ -2342,6 +2361,8 @@ export class KynimoService {
           true,
           await shaderDefinitions(),
           await componentDefinitions(),
+          await options(),
+          signal,
         ),
       audioBytes: (asset) => {
         const failed = (why: string) =>
@@ -2458,13 +2479,18 @@ interface EvaluatedUsage {
  * Evaluates `frames` once and collects what every layer of the evaluated trees uses, precomps,
  * component subtrees and matte sources included. Evaluation errors are left for the renderer to report.
  */
-function walkEvaluated(
+function evaluationOptions(
   doc: Project,
-  compositionId: string,
-  frames: readonly number[],
   shaders: readonly ShaderDefinition[],
   definitions: readonly RenderComponentDefinition[],
-): EvaluatedUsage {
+): EvaluateOptions {
+  return {
+    components: createComponentHost(doc, createProjectComponentRegistry(definitions)),
+    ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
+  };
+}
+
+function evaluatedUsage(doc: Project, compositionId: string, options: EvaluateOptions) {
   const usage: EvaluatedUsage = { images: new Set(), families: new Set(), videoFrames: new Map() };
   const onLayer = (l: ResolvedLayer) => {
     if (l.type === "image") usage.images.add(l.assetId);
@@ -2474,11 +2500,6 @@ function walkEvaluated(
       set.add(l.sourceFrame);
       usage.videoFrames.set(l.assetId, set);
     }
-  };
-  const components = createComponentHost(doc, createProjectComponentRegistry(definitions));
-  const options = {
-    components,
-    ...(shaders.length === 0 ? {} : { shaders: indexShaderDefinitions(shaders) }),
   };
   const visit = (comp: ResolvedComposition, seen: Set<ResolvedComposition>) => {
     if (seen.has(comp)) return;
@@ -2491,14 +2512,16 @@ function walkEvaluated(
         visit(l.composition, seen);
     }
   };
-  for (const f of frames) {
-    try {
-      visit(evaluateFrame(doc, f, compositionId, options), new Set());
-    } catch {
-      // The renderer evaluates again and reports the same error with its own message.
-    }
-  }
-  return usage;
+  return {
+    usage,
+    visitFrame(frame: number) {
+      try {
+        visit(evaluateFrame(doc, frame, compositionId, options), new Set());
+      } catch {
+        // The renderer evaluates again and reports the same error with its own message.
+      }
+    },
+  };
 }
 
 /**
@@ -2513,7 +2536,9 @@ export function shownVideoFrames(
   components: readonly RenderComponentDefinition[] = [],
 ): Map<string, Set<number>> {
   if (!doc.assets.some((a) => a.type === "video")) return new Map();
-  return walkEvaluated(doc, compositionId, frames, shaders, components).videoFrames;
+  const scan = evaluatedUsage(doc, compositionId, evaluationOptions(doc, shaders, components));
+  for (const frame of frames) scan.visitFrame(frame);
+  return scan.usage.videoFrames;
 }
 
 const jobNotFound = (id: string) =>

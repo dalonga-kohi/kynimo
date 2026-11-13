@@ -375,13 +375,11 @@ class Compiler {
       invalid(last, "return width, height, layers and optional background");
     const scope = new Map<string, number>();
     const statements = body.slice(1, -1).map((node) => this.statement(node, scope, 1));
-    const background = result.get("background");
-    const evaluate = compileEvaluation(
-      statements,
-      this.expression(width, scope, 1),
-      this.expression(height, scope, 1),
-      background === undefined ? undefined : this.expression(background, scope, 1),
-    );
+    const resultFields: ["width" | "height" | "background", Expression][] = [];
+    for (const [name, value] of result)
+      if (name === "width" || name === "height" || name === "background")
+        resultFields.push([name, this.expression(value, scope, 1)]);
+    const evaluate = compileEvaluation(statements, resultFields);
     programWork.set(evaluate, this.work);
     return evaluate;
   }

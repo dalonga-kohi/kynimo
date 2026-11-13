@@ -37,7 +37,10 @@ const source = z.string().min(1).max(COMPONENT_PROGRAM_LIMITS.sourceBytes);
 
 export const ComponentDefinitionInputSchema = z.strictObject({
   id: ProjectComponentIdSchema,
-  version: SemverSchema.max(64),
+  version: SemverSchema.max(64).regex(
+    /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/,
+    "version segments must not have leading zeroes",
+  ),
   title: NameSchema,
   description: z.string().min(1).max(1000),
   props,

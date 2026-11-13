@@ -297,7 +297,12 @@ export interface ExportDeps {
   /** Runs the renderer, turning its failures into tool errors. */
   draw<T>(fn: () => Promise<T>): Promise<T>;
   /** Image and font bytes the frames draw; no video frames (those load per frame). */
-  stillAssets(doc: Project, composition: string, frames: readonly number[]): Promise<RenderMedia>;
+  stillAssets(
+    doc: Project,
+    composition: string,
+    frames: readonly number[],
+    signal: AbortSignal,
+  ): Promise<RenderMedia>;
   /** The video frames one frame shows. */
   videoFrames(
     doc: Project,
@@ -305,7 +310,12 @@ export interface ExportDeps {
     frame: number,
   ): Promise<ReadonlyMap<string, Uint8Array>>;
   /** Everything the frames draw, video frames included (for the preview's contact sheet). */
-  allAssets(doc: Project, composition: string, frames: readonly number[]): Promise<RenderMedia>;
+  allAssets(
+    doc: Project,
+    composition: string,
+    frames: readonly number[],
+    signal: AbortSignal,
+  ): Promise<RenderMedia>;
   /** The stored bytes of an audio asset. */
   audioBytes(asset: Extract<Asset, { type: "audio" }>): Promise<Uint8Array>;
   /** The download link and local path of a saved file. */
@@ -403,7 +413,8 @@ export async function runExport(
     }
 
     const frames = Array.from({ length: frameCount }, (_, i) => from + i);
-    const still = await deps.stillAssets(doc, comp.id, frames);
+    const still = await deps.stillAssets(doc, comp.id, frames, stop.signal);
+    stop.signal.throwIfAborted();
     session = await deps.draw(() =>
       deps.renderer.openExport(
         doc,
@@ -461,7 +472,8 @@ export async function runExport(
     let sheet: Uint8Array | undefined;
     if (kind === "preview" && frameCount >= 2) {
       const cells = sampleFrames(from, to, Math.min(EXPORT_LIMITS.previewSheetCells, frameCount));
-      const media = await deps.allAssets(doc, comp.id, cells);
+      const media = await deps.allAssets(doc, comp.id, cells, stop.signal);
+      stop.signal.throwIfAborted();
       const captured = await deps.draw(() =>
         deps.renderer.sheet(
           doc,

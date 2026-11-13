@@ -235,9 +235,7 @@ function checkOutput({ layers, generated }: State): void {
 
 export function compileEvaluation(
   statements: readonly Statement[],
-  width: Expression,
-  height: Expression,
-  background: Expression | undefined,
+  fields: readonly (readonly ["width" | "height" | "background", Expression])[],
 ): ComponentDefinition["evaluate"] {
   return (props, ctx) => {
     const state: State = { props, ctx, slots: [], layers: [], generated: new WeakMap() };
@@ -260,10 +258,12 @@ export function compileEvaluation(
       )
         fail("project shader effects must be pinned in the scene");
     }
-    const fill = background === undefined ? null : background(state);
+    const result: Partial<Record<"width" | "height" | "background", Value>> = {};
+    for (const [name, expression] of fields) result[name] = expression(state);
+    const fill = result.background ?? null;
     const output: ComponentOutput = {
-      width: number(width(state)),
-      height: number(height(state)),
+      width: number(result.width),
+      height: number(result.height),
       background: fill === null ? null : (string(fill) as `#${string}`),
       // The component host validates general output against the project schema before evaluation.
       layers: state.layers as ReturnType<ComponentDefinition["evaluate"]>["layers"],

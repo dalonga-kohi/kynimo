@@ -17,9 +17,9 @@ M6 needs editable components authored over MCP, with exact version pins and repe
 
 ## Evidence
 
-The ADR-0051 fixture runs eight components and 68 child layers with animated props, Unicode text, style tokens, and seeded random motion. Three fresh launches of pinned Chromium 153.0.8010.12 on Windows 11 and Ryzen 5 3600 measured 240 warmed frames each. Sequential round-trip p95 was 3.30, 2.40 and 3.30 ms. Shuffled p95 was 2.70, 2.80 and 2.20 ms. Sampled output matched cold evaluation, scrub order, Node, and all three launches. Capture and raw export matched pixel hashes for a version-pinned component and the equivalent ordinary layer.
+The ADR-0051 fixture runs eight components and 68 child layers with animated props, Unicode text, style tokens, and seeded random motion. Three fresh launches of pinned Chromium 153.0.8010.12 on Windows 11 and Ryzen 5 3600 measured 240 warmed frames each. Sequential round-trip p95 was 2.50, 2.50 and 2.60 ms. Shuffled p95 was 2.50, 2.40 and 2.50 ms. Sampled output matched cold evaluation, scrub order, Node, and all three launches. Capture and raw export matched pixel hashes for a version-pinned component and the equivalent ordinary layer.
 
-The drawing benchmark also includes CanvasKit rasterization, WebGL compositing, and synchronous pixel readback. On the RTX 2060, evaluation round-trip p95 was 3.80 ms at 640×360 and 5.90 ms at 1920×1080. Combined frame-work p95 was 44.00 ms and 76.80 ms, respectively. This measures the current capture renderer under a 60 Hz clock. Live preview throughput needs a separate baseline when a presentation path is available. [Benchmark commands](../../spikes/component-sandbox/README.md)
+The drawing benchmark also includes CanvasKit rasterization, WebGL compositing, and synchronous pixel readback. On the RTX 2060, evaluation round-trip p95 was 3.80 ms at 640×360 and 5.90 ms at 1920×1080. Combined frame-work p95 was 44.00 ms and 76.80 ms, respectively. This measures the current capture renderer under a 60 Hz clock. For MCP capture and export, the isolated browser round-trip benchmark is the release gate. ADR-0051's supported preview device and live drawing requirements apply when a real-time presentation path ships. [Benchmark commands](../../spikes/component-sandbox/README.md)
 
 ## Alternatives considered
 

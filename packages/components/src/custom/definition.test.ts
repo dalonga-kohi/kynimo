@@ -40,4 +40,13 @@ describe("project component definitions", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts only canonical project version segments", () => {
+    expect(
+      ComponentDefinitionInputSchema.safeParse({ ...input, version: "0.10.2", props: {} }).success,
+    ).toBe(true);
+    expect(
+      ComponentDefinitionInputSchema.safeParse({ ...input, version: "01.0.0", props: {} }).success,
+    ).toBe(false);
+  });
 });

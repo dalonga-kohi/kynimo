@@ -159,4 +159,19 @@ describe("bounded custom component source", () => {
     );
     expect(() => hiddenPin(0)).toThrow("must be pinned in the scene");
   });
+
+  it("evaluates result fields in their authored order", () => {
+    const evaluate = compileComponentProgram(
+      `export function evaluate(props, ctx) {
+      const layers = [];
+      return { height: ctx.random() * 100, background: ctx.random() === 0.2 ? "#000000" : "#ffffff",
+        layers, width: ctx.random() * 100 };
+    }`,
+      props,
+    );
+    const draws = [0.1, 0.2, 0.3];
+    expect(
+      evaluate({}, { random: () => draws.shift() ?? 0 } as Parameters<typeof evaluate>[1]),
+    ).toEqual({ width: 30, height: 10, layers: [], background: "#000000" });
+  });
 });
