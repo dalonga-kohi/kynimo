@@ -158,6 +158,8 @@ export class Host {
         if (format === undefined) throw new Error("invalid export format");
         return studio.exportVideo(id(), format);
       }
+      case "exportProgress":
+        return studio.exportProgress(id()) ?? null;
       case "exportResult":
         if (typeof p.jobId !== "string" || p.jobId.length > 200) throw new Error("invalid job id");
         return studio.exportResult(p.jobId);

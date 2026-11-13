@@ -46,6 +46,8 @@ export interface AnimationLayerRow {
 }
 
 export interface AnimationDetail extends AnimationSummary {
+  /** The id of the main composition. */
+  compositionId: string;
   layers: AnimationLayerRow[];
 }
 
@@ -75,7 +77,11 @@ export interface KynimoApi {
     previewUrl(id: string, version: number): string;
     /** Renders, asks where to save, copies. */
     exportVideo(id: string, format: ExportFormat): Promise<ExportOutcome>;
+    /** Progress (0 to 1) of an export this app started for the animation; undefined when none runs. */
+    exportProgress(id: string): Promise<{ progress: number } | undefined>;
     openProjectsFolder(): Promise<void>;
+    /** What a stdio MCP client launches: the bridge in this app. */
+    stdioConfig(): Promise<StdioServerConfig>;
     markWelcomeSeen(): Promise<void>;
     welcomeSeen(): Promise<boolean>;
     /** Returns an unsubscribe. */
@@ -84,6 +90,13 @@ export interface KynimoApi {
   clipboard: { writeText(text: string): void };
   openFeedback(): Promise<void>;
   openStdioHelp(): Promise<void>;
+}
+
+/** The `kynimo` entry of an MCP client config that starts the stdio bridge. */
+export interface StdioServerConfig {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 
 /** IPC channel names shared by preload and main. */
@@ -97,6 +110,8 @@ export const CHANNELS = {
   listAnimations: "studio:list-animations",
   animation: "studio:animation",
   exportVideo: "studio:export-video",
+  exportProgress: "studio:export-progress",
+  stdioConfig: "studio:stdio-config",
   openProjectsFolder: "studio:open-projects-folder",
   markWelcomeSeen: "studio:mark-welcome-seen",
   welcomeSeen: "studio:welcome-seen",

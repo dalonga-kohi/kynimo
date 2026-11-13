@@ -23,10 +23,7 @@ export interface StudioServer {
   runtime: Pick<RunningServer["runtime"], "exportFiles">;
   service(
     actor: string,
-  ): Pick<
-    KynimoService,
-    "renderFrames" | "renderPreviewClip" | "exportComposition" | "getExportStatus"
-  >;
+  ): Pick<KynimoService, "renderFrames" | "exportComposition" | "getExportStatus">;
   activeJobs: RunningServer["activeJobs"];
 }
 
@@ -61,8 +58,8 @@ export const MAX_KEY_TIMES = 24;
 /** Render limits of the server: longest edge of a still frame. */
 const MIN_EDGE = 32;
 const MAX_EDGE = 1920;
-/** The longest preview clip the server makes, in seconds. */
-const PREVIEW_SECONDS = 10;
+/** Longest edge of the Player preview (the whole animation, as mp4). */
+const PREVIEW_MAX_EDGE = 960;
 const GIF_MAX_EDGE = 960;
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -133,6 +130,10 @@ export class Studio {
   private readonly thumbnails = new Map<string, Promise<FileResult>>();
   private readonly previews = new Map<string, Promise<FileResult>>();
   private closed = false;
+  /** Jobs the desktop started itself (previews, exports): not an agent's activity. */
+  private readonly ownJobs = new Set<string>();
+  /** The export job per animation that the desktop started and has not yet seen finish. */
+  private readonly exports = new Map<string, string>();
 
   constructor(private readonly options: StudioOptions) {
     this.startedAt = options.now();
@@ -181,9 +182,9 @@ export class Studio {
       const projects = await this.options.server.store.list();
       this.options.activity.observeProjects(projects);
       const now = this.options.now();
-      const jobs = this.options.server
-        .activeJobs()
-        .map((j) => `${j.jobId}:${j.state}:${j.framesDone}/${j.framesTotal}`);
+      const jobs = this.agentJobs().map(
+        (j) => `${j.jobId}:${j.state}:${j.framesDone}/${j.framesTotal}`,
+      );
       const checking = projects.filter((p) => this.isChecking(p.id, now)).map((p) => p.id);
       const signature = JSON.stringify([
         projects.map((p) => `${p.id}:${p.version}`),
@@ -258,7 +259,11 @@ export class Studio {
         keyTimes: times.slice(0, MAX_KEY_TIMES),
       };
     });
-    return { ...this.summary(id, core, this.options.now()), layers };
+    return {
+      ...this.summary(id, core, this.options.now()),
+      compositionId: comp.id,
+      layers,
+    };
   }
 
   /** The PNG of the current version, rendered at most one at a time. */
@@ -304,6 +309,8 @@ export class Studio {
         max_size: maxSize,
         idempotency_key: `desktop-export-${randomUUID()}`,
       });
+      this.ownJobs.add(reply.job_id);
+      this.exports.set(id, reply.job_id);
       this.notify();
       return { jobId: reply.job_id };
     } catch (e) {
@@ -311,9 +318,20 @@ export class Studio {
     }
   }
 
+  /** Progress (0 to 1) of the export the desktop started for `id`, while there is one. */
+  exportProgress(id: string): { progress: number } | undefined {
+    const jobId = this.exports.get(id);
+    if (jobId === undefined) return undefined;
+    const job = this.options.server.activeJobs().find((j) => j.jobId === jobId);
+    if (job === undefined || job.framesTotal <= 0) return { progress: 0 };
+    return { progress: Math.min(1, Math.max(0, round3(job.framesDone / job.framesTotal))) };
+  }
+
   async exportResult(jobId: string): Promise<ExportResultReply> {
     try {
       const { result } = await this.options.server.service(STUDIO_ACTOR).getExportStatus(jobId, 0);
+      if (result.state === "succeeded" || result.state === "failed" || result.state === "cancelled")
+        this.forgetExport(jobId);
       if (result.state === "succeeded") {
         const file = this.fileOf(result.result);
         return file === undefined
@@ -409,13 +427,23 @@ export class Studio {
     };
   }
 
+  private forgetExport(jobId: string): void {
+    this.ownJobs.delete(jobId);
+    for (const [id, job] of this.exports) if (job === jobId) this.exports.delete(id);
+  }
+
+  /** Active jobs an agent started: the desktop's own previews and exports are left out. */
+  private agentJobs() {
+    return this.options.server.activeJobs().filter((j) => !this.ownJobs.has(j.jobId));
+  }
+
   private isChecking(id: string, now: number): boolean {
     const at = this.options.activity.project(id)?.lastCheckAt;
     return at !== undefined && now - at <= CHECKING_MS && now - at >= -CHECKING_MS;
   }
 
   private activityOf(id: string, now: number): AnimationActivity | undefined {
-    const jobs = this.options.server.activeJobs().filter((j) => j.projectId === id);
+    const jobs = this.agentJobs().filter((j) => j.projectId === id);
     const job = jobs.find((j) => j.state === "running") ?? jobs[0];
     if (job !== undefined) {
       const progress = job.framesTotal > 0 ? job.framesDone / job.framesTotal : 0;
@@ -462,23 +490,30 @@ export class Studio {
 
   private async renderPreview(id: string, core: Core): Promise<FileResult> {
     const svc = this.options.server.service(STUDIO_ACTOR);
-    const mostFrames = Math.floor((PREVIEW_SECONDS * core.fpsNum) / core.fpsDen);
-    const reply = await svc.renderPreviewClip(id, {
-      to_frame: Math.min(core.durationFrames, mostFrames) - 1,
+    const longest = Math.max(core.width, core.height);
+    const reply = await svc.exportComposition(id, {
+      format: "mp4",
+      max_size: Math.max(MIN_EDGE, Math.min(longest, PREVIEW_MAX_EDGE)),
+      idempotency_key: `desktop-preview-${randomUUID()}`,
     });
-    for (;;) {
-      const { result } = await svc.getExportStatus(reply.job_id, 2);
-      if (result.state === "queued" || result.state === "running") continue;
-      if (result.state !== "succeeded")
-        return { error: result.error?.message ?? `the preview ${result.state}` };
-      const source = this.fileOf(result.result);
-      if (source === undefined) return { error: "the preview file is no longer available" };
-      const dir = join(this.options.cacheDir, "previews");
-      const file = join(dir, `${id}-v${result.result?.version ?? core.version}.mp4`);
-      // Exports expire; the cached copy does not.
-      await atomicCopy(source, file);
-      await this.dropOldVersions(dir, id, file);
-      return { path: file };
+    this.ownJobs.add(reply.job_id);
+    try {
+      for (;;) {
+        const { result } = await svc.getExportStatus(reply.job_id, 2);
+        if (result.state === "queued" || result.state === "running") continue;
+        if (result.state !== "succeeded")
+          return { error: result.error?.message ?? `the preview ${result.state}` };
+        const source = this.fileOf(result.result);
+        if (source === undefined) return { error: "the preview file is no longer available" };
+        const dir = join(this.options.cacheDir, "previews");
+        const file = join(dir, `${id}-v${result.result?.version ?? core.version}.mp4`);
+        // Exports expire; the cached copy does not.
+        await atomicCopy(source, file);
+        await this.dropOldVersions(dir, id, file);
+        return { path: file };
+      }
+    } finally {
+      this.ownJobs.delete(reply.job_id);
     }
   }
 

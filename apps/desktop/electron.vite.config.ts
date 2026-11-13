@@ -37,6 +37,8 @@ export default defineConfig({
   },
   renderer: {
     root: src("renderer"),
+    // The browser mock is only in the web build (vite.web.config.ts): here it is dead code.
+    define: { __KYNIMO_MOCK__: false },
     plugins: [
       react(),
       {

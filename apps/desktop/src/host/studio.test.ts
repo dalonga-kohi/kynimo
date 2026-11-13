@@ -284,6 +284,7 @@ describe("Studio.animation", () => {
       },
     ]);
     const detail = await studioFor().animation(id);
+    expect(detail?.compositionId).toBe("main");
     expect(detail?.layers).toEqual([
       { id: expect.any(String), name: "bg", start: 0, end: 3, keyTimes: [0, 0.5, 1, 1.5] },
     ]);
@@ -346,10 +347,6 @@ function fakeServer(overrides: Partial<ReturnType<StudioServer["service"]>>): {
     };
   const service = {
     renderFrames: note("renderFrames", overrides.renderFrames ?? (async () => fail())),
-    renderPreviewClip: note(
-      "renderPreviewClip",
-      overrides.renderPreviewClip ?? (async () => fail()),
-    ),
     exportComposition: note(
       "exportComposition",
       overrides.exportComposition ?? (async () => fail()),
@@ -464,12 +461,12 @@ describe("Studio.preview", () => {
     return file;
   }
 
-  it("polls the job, copies the clip into the cache and reuses it", async () => {
+  it("exports the whole animation as mp4, copies it into the cache and reuses it", async () => {
     const id = await createProject("Clip", { frames: 90 });
     const source = await exportedFile("mp4 bytes");
     const polls: string[] = [];
     const { server: fake, calls } = fakeServer({
-      renderPreviewClip: (async () => ({ job_id: "job-1" })) as never,
+      exportComposition: (async () => ({ job_id: "job-1" })) as never,
       getExportStatus: (async (jobId: string) => {
         polls.push(jobId);
         const state = polls.length < 3 ? "running" : "succeeded";
@@ -483,36 +480,44 @@ describe("Studio.preview", () => {
     const result = await studio.preview(id);
     expect(result).toEqual({ path: join(dir, "cache", "previews", `${id}-v1.mp4`) });
     expect(polls).toEqual(["job-1", "job-1", "job-1"]);
+    // The full length, not a clip: no frame range is passed.
+    const [, options] = calls.exportComposition?.[0] ?? [];
+    expect(options).toMatchObject({ format: "mp4", max_size: 960 });
+    expect(options).not.toHaveProperty("to_frame");
     // Exports expire: the cache holds its own copy.
     await rm(source);
     expect(await stat((result as { path: string }).path).then((s) => s.size)).toBe(9);
     expect(await studio.preview(id)).toEqual(result);
-    expect(calls.renderPreviewClip).toHaveLength(1);
+    expect(calls.exportComposition).toHaveLength(1);
   });
 
-  it("limits the clip to what the server allows", async () => {
-    const short = await createProject("Short", { frames: 90 });
-    const long = await createProject("Long", { frames: 600 });
+  it("sizes the preview to at most 960 px on the longest edge", async () => {
+    const big = await createProject("Big", { width: 3840, height: 2160 });
+    const tall = await createProject("Tall", { width: 540, height: 1080 });
+    const small = await createProject("Small", { width: 320, height: 180 });
     const source = await exportedFile("x");
     const { server: fake, calls } = fakeServer({
-      renderPreviewClip: (async () => ({ job_id: "j" })) as never,
+      exportComposition: (async () => ({ job_id: "j" })) as never,
       getExportStatus: (async () => ({
         result: { state: "succeeded", result: { path: source, version: 1 } },
         images: [],
       })) as never,
     });
     const studio = studioFor(fake);
-    await studio.preview(short);
-    await studio.preview(long);
-    expect(calls.renderPreviewClip?.[0]).toEqual([short, { to_frame: 89 }]);
-    expect(calls.renderPreviewClip?.[1]).toEqual([long, { to_frame: 299 }]);
+    await studio.preview(big);
+    await studio.preview(tall);
+    await studio.preview(small);
+    const sizes = (calls.exportComposition ?? []).map(
+      ([, o]) => (o as { max_size: number }).max_size,
+    );
+    expect(sizes).toEqual([960, 960, 320]);
   });
 
   it("runs one job per animation for concurrent calls", async () => {
     const id = await createProject("Once");
     const source = await exportedFile("x");
     const { server: fake, calls } = fakeServer({
-      renderPreviewClip: (async () => {
+      exportComposition: (async () => {
         await new Promise((r) => setTimeout(r, 20));
         return { job_id: "j" };
       }) as never,
@@ -524,13 +529,13 @@ describe("Studio.preview", () => {
     const studio = studioFor(fake);
     const [x, y] = await Promise.all([studio.preview(id), studio.preview(id)]);
     expect(x).toEqual(y);
-    expect(calls.renderPreviewClip).toHaveLength(1);
+    expect(calls.exportComposition).toHaveLength(1);
   });
 
   it("answers a failed job and a refused request as error results", async () => {
     const id = await createProject("Fails");
     const failing = fakeServer({
-      renderPreviewClip: (async () => ({ job_id: "j" })) as never,
+      exportComposition: (async () => ({ job_id: "j" })) as never,
       getExportStatus: (async () => ({
         result: { state: "failed", error: { code: "render_failed", message: "frame 3 broke" } },
         images: [],
@@ -539,7 +544,7 @@ describe("Studio.preview", () => {
     expect(await studioFor(failing.server).preview(id)).toEqual({ error: "frame 3 broke" });
 
     const refused = fakeServer({
-      renderPreviewClip: (async () => {
+      exportComposition: (async () => {
         throw new Error("export is unavailable: no FFmpeg");
       }) as never,
     });
@@ -547,8 +552,42 @@ describe("Studio.preview", () => {
       error: "export is unavailable: no FFmpeg",
     });
   });
-});
 
+  it("does not show its own job as an agent's rendering activity", async () => {
+    const id = await createProject("Quiet");
+    const source = await exportedFile("x");
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { server: fake } = fakeServer({
+      exportComposition: (async () => ({ job_id: "own-preview" })) as never,
+      getExportStatus: (async () => {
+        await gate;
+        return { result: { state: "succeeded", result: { path: source, version: 1 } }, images: [] };
+      }) as never,
+    });
+    const studio = studioFor({
+      ...fake,
+      activeJobs: () => [
+        {
+          jobId: "own-preview",
+          projectId: id,
+          kind: "export",
+          state: "running",
+          phase: "rendering",
+          framesDone: 10,
+          framesTotal: 90,
+        },
+      ],
+    });
+    const preview = studio.preview(id);
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await studio.listAnimations())[0]?.activity).toBeUndefined();
+    release();
+    await preview;
+  });
+});
 describe("Studio.exportVideo", () => {
   it("starts a full-quality export of the chosen format", async () => {
     const id = await createProject("Export", { width: 3840, height: 2160 });
@@ -603,6 +642,62 @@ describe("Studio.exportVideo", () => {
       state: "failed",
       error: "job 'gone' does not exist",
     });
+  });
+});
+
+describe("Studio export jobs of the desktop", () => {
+  const job = (jobId: string, projectId: string, done: number) => ({
+    jobId,
+    projectId,
+    kind: "export" as const,
+    state: "running" as const,
+    phase: "rendering" as const,
+    framesDone: done,
+    framesTotal: 100,
+  });
+
+  it("keeps its export out of the activity and reports its progress", async () => {
+    const id = await createProject("Exporting");
+    const other = await createProject("Agent's");
+    const { server: fake } = fakeServer({
+      exportComposition: (async () => ({ job_id: "mine" })) as never,
+      getExportStatus: (async () => ({ result: { state: "running" }, images: [] })) as never,
+    });
+    let done = 25;
+    const studio = studioFor({
+      ...fake,
+      activeJobs: () => [job("mine", id, done), job("theirs", other, 50)],
+    });
+    expect(studio.exportProgress(id)).toBeUndefined();
+    await studio.exportVideo(id, "mp4");
+
+    const list = await studio.listAnimations();
+    expect(list.find((a) => a.id === id)?.activity).toBeUndefined();
+    expect(list.find((a) => a.id === other)?.activity).toEqual({
+      kind: "rendering",
+      progress: 0.5,
+    });
+    expect(studio.exportProgress(id)).toEqual({ progress: 0.25 });
+    expect(studio.exportProgress(other)).toBeUndefined();
+    done = 80;
+    expect(studio.exportProgress(id)).toEqual({ progress: 0.8 });
+  });
+
+  it("forgets the export once its job has finished", async () => {
+    const id = await createProject("Done");
+    const { server: fake } = fakeServer({
+      exportComposition: (async () => ({ job_id: "mine" })) as never,
+      getExportStatus: (async () => ({
+        result: { state: "failed", error: { code: "x", message: "nope" } },
+        images: [],
+      })) as never,
+    });
+    const studio = studioFor({ ...fake, activeJobs: () => [job("mine", id, 10)] });
+    await studio.exportVideo(id, "mp4");
+    expect(studio.exportProgress(id)).toEqual({ progress: 0.1 });
+    await studio.exportResult("mine");
+    expect(studio.exportProgress(id)).toBeUndefined();
+    expect((await studio.listAnimations())[0]?.activity).toMatchObject({ kind: "rendering" });
   });
 });
 

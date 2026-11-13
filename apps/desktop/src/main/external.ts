@@ -1,4 +1,4 @@
-import type { StudioStatus } from "../shared/api.js";
+import type { StdioServerConfig, StudioStatus } from "../shared/api.js";
 
 const REPO = "https://github.com/dalonga-kohi/kynimo";
 /** The only URL prefix the app ever opens in the browser. */
@@ -37,17 +37,14 @@ export function feedbackUrl(info: FeedbackInfo): string {
 
 export const isFeedbackUrl = (url: string): boolean => url.startsWith(FEEDBACK_PREFIX);
 
+/** The `kynimo` server entry for a client that only starts stdio servers. */
+export function stdioServer(execPath: string, bridgePath: string): StdioServerConfig {
+  return { command: execPath, args: [bridgePath], env: { ELECTRON_RUN_AS_NODE: "1" } };
+}
+
 /** The MCP client config for a client that only starts stdio servers. */
 export function stdioConfig(execPath: string, bridgePath: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        kynimo: { command: execPath, args: [bridgePath], env: { ELECTRON_RUN_AS_NODE: "1" } },
-      },
-    },
-    null,
-    2,
-  );
+  return JSON.stringify({ mcpServers: { kynimo: stdioServer(execPath, bridgePath) } }, null, 2);
 }
 
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;

@@ -21,7 +21,13 @@ import { CHANNELS, type ExportFormat, type ExportOutcome } from "../shared/api.j
 import { MEDIA_SCHEME, parseMediaUrl } from "../shared/media-url.js";
 import { dataDir, desktopDir } from "../shared/paths.js";
 import type { HostInit } from "../shared/protocol.js";
-import { feedbackUrl, isFeedbackUrl, sanitizeFileName, stdioConfig } from "./external.js";
+import {
+  feedbackUrl,
+  isFeedbackUrl,
+  sanitizeFileName,
+  stdioConfig,
+  stdioServer,
+} from "./external.js";
 import { HostClient } from "./host-client.js";
 import { mediaPaths } from "./media-paths.js";
 import { type AppLocation, isAppUrl } from "./security.js";
@@ -137,6 +143,12 @@ function requireHost(): HostClient {
   return host;
 }
 
+/** The stdio bridge entry point: next to the app when packaged, in the build output in development. */
+const bridgePath = (): string =>
+  app.isPackaged
+    ? join(process.resourcesPath, "bridge.mjs")
+    : join(import.meta.dirname, "bridge.mjs");
+
 /** Renders the animation, asks where to put it, copies it there. */
 async function exportVideo(win: BrowserWindow, id: string, format: ExportFormat) {
   const client = requireHost();
@@ -215,6 +227,14 @@ function registerIpc(): void {
     }),
   );
   ipcMain.handle(
+    CHANNELS.exportProgress,
+    trusted((_win, id: unknown) => requireHost().request("exportProgress", { id: String(id) })),
+  );
+  ipcMain.handle(
+    CHANNELS.stdioConfig,
+    trusted(() => stdioServer(process.execPath, bridgePath())),
+  );
+  ipcMain.handle(
     CHANNELS.openProjectsFolder,
     trusted(async () => {
       await shell.openPath(DATA_DIR);
@@ -249,10 +269,7 @@ function registerIpc(): void {
   ipcMain.handle(
     CHANNELS.openStdioHelp,
     trusted(async (win) => {
-      const bridge = app.isPackaged
-        ? join(process.resourcesPath, "bridge.mjs")
-        : join(import.meta.dirname, "bridge.mjs");
-      const config = stdioConfig(process.execPath, bridge);
+      const config = stdioConfig(process.execPath, bridgePath());
       const { response } = await dialog.showMessageBox(win, {
         type: "info",
         title: "Use stdio instead",

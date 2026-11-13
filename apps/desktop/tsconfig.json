@@ -12,5 +12,5 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "include": ["src", "electron.vite.config.ts"]
+  "include": ["src", "electron.vite.config.ts", "vite.web.config.ts"]
 }

@@ -1,0 +1,28 @@
+:root {
+  --color-ground: #0c0b0a;
+  --color-surface: #171513;
+  --color-raised: #221f1c;
+  --color-line: #2e2a26;
+  --color-line-strong: #3d3832;
+  --color-text: #ede8df;
+  --color-text-muted: #a39c90;
+  --color-text-faint: #6e675d;
+  --color-text-faint-2: #8a8276;
+  --color-accent: #f5c842;
+  --color-on-accent: #14110a;
+  --color-accent-dim: #6b5824;
+  --color-success: #8dc48a;
+  --color-danger: #ef6a4c;
+  --color-info: #8ec1ff;
+  --color-close-hover: #c42b1c;
+
+  --font-sans: "Mona Sans Variable", "Mona Sans", system-ui, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}

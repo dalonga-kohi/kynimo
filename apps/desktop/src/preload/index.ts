@@ -28,6 +28,10 @@ const api: KynimoApi = {
     thumbnailUrl: (id, v) => mediaUrl("thumb", id, v),
     previewUrl: (id, v) => mediaUrl("preview", id, v),
     exportVideo: (id, format) => ipcRenderer.invoke(CHANNELS.exportVideo, id, format),
+    exportProgress: async (id) =>
+      ((await ipcRenderer.invoke(CHANNELS.exportProgress, id)) as { progress: number } | null) ??
+      undefined,
+    stdioConfig: () => ipcRenderer.invoke(CHANNELS.stdioConfig),
     openProjectsFolder: () => ipcRenderer.invoke(CHANNELS.openProjectsFolder),
     markWelcomeSeen: () => ipcRenderer.invoke(CHANNELS.markWelcomeSeen),
     welcomeSeen: () => ipcRenderer.invoke(CHANNELS.welcomeSeen),

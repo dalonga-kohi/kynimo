@@ -155,4 +155,19 @@ describe("Host", { timeout: 30_000 }, () => {
       welcomeSeen: true,
     });
   });
+
+  it("answers the export progress of an animation as null when none runs, and rejects a bad id", async () => {
+    const { host } = start();
+    await host.ready;
+    expect(
+      await host.dispatch({
+        id: 1,
+        method: "exportProgress",
+        params: { id: `p-${"0".repeat(32)}` },
+      }),
+    ).toEqual({ id: 1, result: null });
+    expect(
+      await host.dispatch({ id: 2, method: "exportProgress", params: { id: "nope" } }),
+    ).toEqual({ id: 2, error: "invalid animation id" });
+  });
 });

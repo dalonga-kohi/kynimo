@@ -5,6 +5,7 @@ import {
   isFeedbackUrl,
   sanitizeFileName,
   stdioConfig,
+  stdioServer,
 } from "./external.js";
 
 describe("feedbackUrl", () => {
@@ -59,6 +60,14 @@ describe("stdioConfig", () => {
         },
       },
     });
+  });
+});
+
+describe("stdioServer", () => {
+  it("is the entry the config nests under mcpServers.kynimo", () => {
+    expect(stdioServer("C:\\Kynimo\\Kynimo.exe", "C:\\Kynimo\\bridge.mjs")).toEqual(
+      JSON.parse(stdioConfig("C:\\Kynimo\\Kynimo.exe", "C:\\Kynimo\\bridge.mjs")).mcpServers.kynimo,
+    );
   });
 });
 

@@ -1,0 +1,90 @@
+.notes__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(12 11 10 / 0.72);
+  animation: notes-fade 160ms ease-out;
+}
+
+.notes {
+  position: relative;
+  width: 560px;
+  max-width: 100%;
+  max-height: 100%;
+  padding: 32px;
+  overflow: auto;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.5);
+}
+
+.notes__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.notes__close:hover {
+  background: var(--color-raised);
+  color: var(--color-text);
+}
+
+.notes__eyebrow {
+  color: var(--color-accent);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+}
+
+.notes__title {
+  margin-top: 12px;
+  color: var(--color-text);
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 30px;
+}
+
+.notes__sub {
+  margin-top: 24px;
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.notes__list {
+  margin: 16px 0 0;
+  padding: 0 0 0 20px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.notes__list li + li {
+  margin-top: 8px;
+}
+
+.notes__list li::marker {
+  color: var(--color-text-faint-2);
+}
+
+@keyframes notes-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

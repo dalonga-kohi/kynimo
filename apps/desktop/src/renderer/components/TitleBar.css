@@ -1,0 +1,151 @@
+.titlebar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.titlebar--slim {
+  height: 40px;
+  padding-left: 16px;
+}
+
+.titlebar--full {
+  height: 52px;
+  padding-left: 20px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.titlebar__lockup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.titlebar__name {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.titlebar__spacer {
+  flex: 1 1 0;
+}
+
+.titlebar__help {
+  margin-left: 4px;
+}
+
+/* The Help text sits 12 px from its neighbour: the lockup gap is 10, the button pads 8 itself. */
+.titlebar__help--full {
+  margin-left: -6px;
+}
+
+.titlebar__side {
+  display: flex;
+  flex: 0 0 260px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.titlebar__side--status {
+  justify-content: flex-end;
+  padding-right: 16px;
+}
+
+.titlebar__wordmark {
+  color: var(--color-text);
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  line-height: 18px;
+}
+
+.titlebar__beta {
+  padding: 3px 7px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.titlebar__center {
+  display: flex;
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+/* The Help item reads like an inactive tab. */
+.help {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+  transition: color 120ms ease-out;
+}
+
+.help:hover,
+.help[aria-expanded="true"] {
+  color: var(--color-text);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status__dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+}
+
+.status__text {
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.status__text--mono {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.winctl {
+  display: flex;
+  align-self: stretch;
+}
+
+.titlebar--full .winctl {
+  border-left: 1px solid var(--color-line);
+}
+
+.winctl__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  color: var(--color-text-muted);
+  transition: background-color 120ms ease-out;
+}
+
+.winctl__btn:hover {
+  background: var(--color-raised);
+}
+
+.winctl__btn--close:hover {
+  background: var(--color-close-hover);
+  color: #fff;
+}
+
+.winctl__btn:focus-visible {
+  outline-offset: -2px;
+}

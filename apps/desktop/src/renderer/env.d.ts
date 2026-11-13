@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import type { KynimoApi } from "../shared/api.js";
 
 declare global {

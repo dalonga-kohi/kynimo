@@ -34,6 +34,7 @@ export interface HostMethods {
   preview: { params: { id: string }; result: FileResult };
   exportVideo: { params: { id: string; format: ExportFormat }; result: ExportStartResult };
   exportResult: { params: { jobId: string }; result: ExportResultReply };
+  exportProgress: { params: { id: string }; result: { progress: number } | null };
   markWelcomeSeen: { params: undefined; result: null };
   welcomeSeen: { params: undefined; result: boolean };
   close: { params: undefined; result: null };
