@@ -110,10 +110,7 @@ export interface PageApi {
   /** Opens the page's one export (replacing any earlier one). */
   openExport(request: ExportRequest): Promise<{ ok: true } | PageError>;
   /** Draws one frame of the open export. `videoFrameKeys` is every video frame it shows. */
-  exportFrame(
-    frame: number,
-    videoFrameKeys: string[],
-  ): Promise<ExportFrameHeader | PageError>;
+  exportFrame(frame: number, videoFrameKeys: string[]): Promise<ExportFrameHeader | PageError>;
   /** Bytes `start` to `end` of the frame drawn last, base64. */
   exportSlice(start: number, end: number): string;
   closeExport(): void;

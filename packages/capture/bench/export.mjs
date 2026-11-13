@@ -3,6 +3,8 @@
 //
 //   node packages/capture/bench/export.mjs [scene ...]
 //
+// KYNIMO_GPU=hardware draws on the host GPU instead of SwiftShader.
+// KYNIMO_BENCH_DUMP=<dir> writes frames 0, 10, 20, … of each scene as raw RGBA.
 // KYNIMO_BENCH_FRAMES caps the frames per scene (default: the whole composition).
 // KYNIMO_BENCH_JSON=<file> also writes the numbers as JSON.
 import { createHash } from "node:crypto";
@@ -14,7 +16,9 @@ const DEFAULT = ["title-card", "product-card", "shader-backgrounds", "components
 const scenes = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT;
 const cap = Number(process.env.KYNIMO_BENCH_FRAMES ?? Number.POSITIVE_INFINITY);
 
-const session = await launchCapture();
+const session = await launchCapture({
+  gpu: process.env.KYNIMO_GPU === "hardware" ? "hardware" : "swiftshader",
+});
 console.log(`chromium ${session.browserVersion} · ${session.gpu}`);
 const rows = [];
 try {
@@ -32,7 +36,12 @@ try {
     // Every frame's bytes go into one hash: equal hashes mean an optimization kept the pixels.
     const hash = createHash("sha256");
     const started = performance.now();
-    for (let n = 0; n < frames; n++) hash.update((await open.frame(n)).rgba);
+    for (let n = 0; n < frames; n++) {
+      const { rgba } = await open.frame(n);
+      hash.update(rgba);
+      if (process.env.KYNIMO_BENCH_DUMP && n % 10 === 0)
+        writeFileSync(`${process.env.KYNIMO_BENCH_DUMP}/${scene}-${n}.rgba`, rgba);
+    }
     const wallMs = performance.now() - started;
     const t = await open.timings();
     await open.close();
@@ -60,4 +69,5 @@ try {
   await session.close();
 }
 console.table(rows);
-if (process.env.KYNIMO_BENCH_JSON) writeFileSync(process.env.KYNIMO_BENCH_JSON, JSON.stringify(rows, null, 2));
+if (process.env.KYNIMO_BENCH_JSON)
+  writeFileSync(process.env.KYNIMO_BENCH_JSON, JSON.stringify(rows, null, 2));

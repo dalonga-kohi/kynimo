@@ -8,6 +8,7 @@ export {
   type ExportFrame,
   type ExportOptions,
   type ExportSession,
+  type GpuBackend,
   type LaunchOptions,
   launchCapture,
   MAX_FRAMES_PER_CALL,

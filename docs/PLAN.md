@@ -10,7 +10,7 @@ Goal: a stranger's Claude or ChatGPT connects to a URL, signs in and rebuilds a 
 2. One Dockerfile for `apps/mcp` with the pinned Chromium and FFmpeg; `/healthz`; graceful shutdown that lets a running render finish.
 3. Observability before users: one structured log line per tool call (tool, account, duration, error kind, bytes returned). The brief suite and pricing both read this later.
 4. Per-account limits: projects, stored bytes, render seconds per day. Rejections say the limit and the current use.
-5. Measure render seconds per frame at 1080p on the host and write it into the ADR. Export pricing and M7 worker sizing depend on that number.
+5. Measure render seconds per frame at 1080p on the host and write it into the ADR. Export pricing and M7 worker sizing depend on that number. `node packages/capture/bench/export.mjs` gives it per stage; run it once as is and once with `KYNIMO_GPU=hardware` if the host has a GPU, and choose the backend by cost per exported frame (ADR-0059).
 6. Connect from Claude and ChatGPT by hand; record each client's quirks (image results, resource support, listing limits) in `apps/mcp/README.md`.
 
 Open: region, and whether renders share the server process until M7 (recommended: yes, with a concurrency cap).

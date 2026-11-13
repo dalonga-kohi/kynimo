@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Page } from "playwright";
 import { build } from "vite";
 import type { FramePlan, RasterImage } from "../raster.js";
+import type { CompositePrefix } from "./webgl.js";
 
 /** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
 export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"];
@@ -30,7 +31,8 @@ export interface GpuSession {
   browser: Browser;
   page: Page;
   renderer: string;
-  composite(plan: FramePlan): Promise<RasterImage>;
+  /** `prefix` saves or reuses the plan's bottom layers, as in the compositor. */
+  composite(plan: FramePlan, prefix?: CompositePrefix): Promise<RasterImage>;
   close(): Promise<void>;
 }
 
@@ -59,27 +61,33 @@ export async function launchGpu(): Promise<GpuSession> {
     browser,
     page,
     renderer,
-    async composite(plan) {
+    async composite(plan, prefix) {
       const json = JSON.stringify(plan, (_key, value) =>
         value instanceof Uint8Array ? { __bytes: Buffer.from(value).toString("base64") } : value,
       );
-      const out = await page.evaluate((input) => {
-        const decode = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const parsed = JSON.parse(input, (_key, value) =>
-          value !== null && typeof value === "object" && "__bytes" in value
-            ? decode(value.__bytes as string)
-            : value,
-        );
-        const g = globalThis as unknown as {
-          compositor: {
-            composite(p: unknown): { width: number; height: number; pixels: Uint8Array };
+      const out = await page.evaluate(
+        ([input, reuse]) => {
+          const decode = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+          const parsed = JSON.parse(input, (_key, value) =>
+            value !== null && typeof value === "object" && "__bytes" in value
+              ? decode(value.__bytes as string)
+              : value,
+          );
+          const g = globalThis as unknown as {
+            compositor: {
+              composite(
+                p: unknown,
+                prefix?: unknown,
+              ): { width: number; height: number; pixels: Uint8Array };
+            };
           };
-        };
-        const r = g.compositor.composite(parsed);
-        let s = "";
-        for (const byte of r.pixels) s += String.fromCharCode(byte);
-        return { width: r.width, height: r.height, pixels: btoa(s) };
-      }, json);
+          const r = g.compositor.composite(parsed, reuse ?? undefined);
+          let s = "";
+          for (const byte of r.pixels) s += String.fromCharCode(byte);
+          return { width: r.width, height: r.height, pixels: btoa(s) };
+        },
+        [json, prefix ?? null] as const,
+      );
       return {
         width: out.width,
         height: out.height,

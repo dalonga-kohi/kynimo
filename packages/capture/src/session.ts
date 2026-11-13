@@ -36,6 +36,20 @@ const EXPORT_SLICE_BYTES = 192 * 1024;
 /** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
 export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
 
+/**
+ * What draws the WebGL2 passes. "swiftshader" is the CPU rasterizer every guarantee is stated on:
+ * same document and frame, same bytes, on any host (ADR-0016). "hardware" is the host's GPU through
+ * ANGLE: many times faster on full-frame shader work, visually equivalent, but the bytes depend on
+ * the GPU and driver, so goldens and byte-for-byte reproducibility across hosts do not hold.
+ */
+export type GpuBackend = "swiftshader" | "hardware";
+
+/** Launch flags for the host GPU. Verified on Windows (Direct3D 11); the others follow ANGLE's defaults. */
+export function hardwareArgs(platform: NodeJS.Platform = process.platform): string[] {
+  const angle = platform === "win32" ? "d3d11" : platform === "darwin" ? "metal" : "vulkan";
+  return [`--use-angle=${angle}`, "--enable-gpu", "--ignore-gpu-blocklist"];
+}
+
 export class CaptureError extends Error {
   override name = "CaptureError";
   /** The page-side error's name (`RenderError`, `FontAssetError`, `RangeError`, …), if it came from there. */
@@ -163,7 +177,7 @@ export interface ExportSession {
 export interface CaptureSession {
   /** The Chromium version, e.g. `153.0.8010.12`. Record it with what the session renders (ADR-0016). */
   readonly browserVersion: string;
-  /** `UNMASKED_RENDERER_WEBGL`; always a SwiftShader renderer. */
+  /** `UNMASKED_RENDERER_WEBGL`: a SwiftShader renderer unless the session was launched on the host GPU. */
   readonly gpu: string;
   /**
    * Identifies everything that decides the pixels: the page bundle, CanvasKit's wasm, the bundled
@@ -199,6 +213,10 @@ export interface CaptureSession {
 export interface LaunchOptions {
   /** The page bundle's source. Defaults to the one built into `dist/page/capture.js`. */
   pageScript?: string;
+  /** Default "swiftshader". */
+  gpu?: GpuBackend;
+  /** Chromium flags that select the GPU, replacing the backend's own (a host that needs others). */
+  gpuArgs?: readonly string[];
 }
 
 const require = createRequire(import.meta.url);
@@ -256,17 +274,18 @@ async function componentDeadline<T>(
 }
 
 /**
- * Launches the pinned Chromium (Playwright's) on SwiftShader with the capture page loaded, and
- * refuses to run on any other GPU (ADR-0016). One session renders any number of documents; close
- * it when done.
+ * Launches the pinned Chromium (Playwright's) with the capture page loaded: on SwiftShader unless
+ * `gpu` says otherwise, and it refuses to run when WebGL2 is not on the backend that was asked for
+ * (ADR-0016). One session renders any number of documents; close it when done.
  */
 export async function launchCapture(options: LaunchOptions = {}): Promise<CaptureSession> {
   const { browser, page, gpu, serve, files } = await openCapturePage(options);
+  const backend = options.gpu ?? "swiftshader";
   const build = createHash("sha256");
   for (const [path, file] of [...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
     build.update(`${path}\0`).update(createHash("sha256").update(file.body).digest("hex"));
   build.update(`\0${browser.version()}\0${gpu}`);
-  const open = () => newCapturePage(browser, files);
+  const open = () => newCapturePage(browser, files, backend);
   let active: Pick<Awaited<ReturnType<typeof open>>, "page" | "serve"> | undefined = {
     page,
     serve,
@@ -303,7 +322,11 @@ export async function launchCapture(options: LaunchOptions = {}): Promise<Captur
  * {@link ORIGIN}, answered from memory: other HTTP(S) requests are aborted, WebSockets closed and
  * service workers blocked. `serve` sets the asset bytes answered at `/assets/<id>`.
  */
-export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promise<{
+export async function openCapturePage({
+  pageScript,
+  gpu: backend = "swiftshader",
+  gpuArgs,
+}: LaunchOptions = {}): Promise<{
   browser: Browser;
   page: Page;
   gpu: string;
@@ -314,13 +337,13 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
   let browser: Browser;
   try {
     browser = await chromium.launch({
-      args: process.env.KYNIMO_BENCH_GPU_ARGS?.split(" ") ?? [...CHROMIUM_ARGS],
+      args: [...(gpuArgs ?? (backend === "hardware" ? hardwareArgs() : CHROMIUM_ARGS))],
     });
   } catch (error) {
     throw new CaptureError(`could not launch the pinned Chromium: ${message(error)}`);
   }
   try {
-    const { page, gpu, serve } = await newCapturePage(browser, files);
+    const { page, gpu, serve } = await newCapturePage(browser, files, backend);
     return { browser, page, gpu, files, serve };
   } catch (error) {
     await browser.close();
@@ -334,6 +357,7 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
 async function newCapturePage(
   browser: Browser,
   files: ReadonlyMap<string, StaticFile>,
+  backend: GpuBackend = "swiftshader",
 ): Promise<{ page: Page; gpu: string; serve(assets: ReadonlyMap<string, Uint8Array>): void }> {
   let assets: ReadonlyMap<string, Uint8Array> = new Map();
 
@@ -365,9 +389,15 @@ async function newCapturePage(
     const gpu = await page.evaluate(() =>
       (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.init(),
     );
-    if (!/swiftshader/i.test(gpu) && process.env.KYNIMO_BENCH_GPU_ARGS === undefined)
+    const software = /swiftshader|llvmpipe|software/i.test(gpu);
+    if (backend === "swiftshader" && !/swiftshader/i.test(gpu))
       throw new CaptureError(
         `capture runs only on SwiftShader (ADR-0016), but WebGL2 reports '${gpu}'`,
+      );
+    // Chromium falls back to software rendering without saying so; a host set up for a GPU should not.
+    if (backend === "hardware" && software)
+      throw new CaptureError(
+        `capture was asked for the host GPU, but WebGL2 reports '${gpu}'; check the GPU, its driver and the launch flags`,
       );
     return {
       page,
@@ -687,7 +717,7 @@ async function openExportPage(
         }
         const short = await call(() => Promise.all(slices));
         if (short.some((n) => n !== 0))
-          throw new CaptureError(`the capture page returned a short frame ${n}`);
+          throw new CaptureError(`the capture page returned fewer bytes than frame ${n} holds`);
         rgba = new Uint8Array(out.buffer, out.byteOffset, bytes);
         previous = rgba;
       }
