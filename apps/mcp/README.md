@@ -164,3 +164,36 @@ node apps/mcp/dist/main.js --http --host 0.0.0.0 --port 8787
 - `--no-auth` serves every request as the local account, on a loopback `--host` only, for trying the HTTP transport (e.g. with the MCP Inspector) without an authorization server.
 
 TLS is the hosting environment's job: run behind a proxy that terminates HTTPS.
+
+## Docker
+
+One image runs the server with the pinned Chromium and FFmpeg, locally and deployed. Build it from the repository root:
+
+```bash
+docker compose up --build
+```
+
+That is the local shape: one account, no sign-in, at `http://127.0.0.1:8787/mcp`. Projects, uploaded assets and exports are kept in the `kynimo-data` volume. The port is published on the host's loopback only, because without OAuth anyone who can reach it is the local account. Export download links name port 8787, so keep that port (or set `KYNIMO_PORT` and rewrite the links yourself).
+
+To connect Claude Code:
+
+```bash
+claude mcp add --transport http kynimo http://127.0.0.1:8787/mcp
+```
+
+To deploy, run the same image with the remote server's settings. Setting `KYNIMO_OAUTH_ISSUER` switches the container to OAuth on every interface:
+
+```bash
+docker run -d --shm-size=1g -p 8787:8787 \
+  -e KYNIMO_PUBLIC_URL=https://mcp.example.com/mcp \
+  -e KYNIMO_OAUTH_ISSUER=https://your-tenant.authkit.app \
+  -e KYNIMO_DATABASE_URL -e KYNIMO_S3_ENDPOINT -e KYNIMO_S3_BUCKET \
+  -e KYNIMO_S3_ACCESS_KEY_ID -e KYNIMO_S3_SECRET_ACCESS_KEY \
+  kynimo-mcp
+```
+
+- **Shared memory:** give the container at least 1 GB of `/dev/shm` (`--shm-size=1g`; `shm_size` in Compose). Chromium keeps its render buffers there and Docker's 64 MB default makes renders fail.
+- **Stopping:** `SIGTERM` closes the server, the renderer and the store; allow about 30 s (`stop_grace_period`).
+- **Health:** the image's health check passes once the server accepts connections on its port.
+- **Exports** are kept in a temporary folder inside the container when a database is set, so they do not survive a restart (ADR-0048).
+- **Port:** the server listens on `PORT` (default 8787).
