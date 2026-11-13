@@ -358,7 +358,13 @@ export function capabilityManifest(server: { name: string; version: string }) {
       note: "requests over a limit are rejected with values that fit, never downscaled silently; every result lists skipped layers and warnings",
     },
     export: {
-      tools: ["export", "render_preview_clip", "get_export_status", "cancel_export"],
+      tools: [
+        "export",
+        "render_preview_clip",
+        "get_export_status",
+        "cancel_export",
+        "get_preview_link",
+      ],
       formats: {
         mp4: { video: "H.264 (yuv420p, CRF 18)", audio: "AAC 192 kb/s", transparency: false },
         webm: { video: "VP9 (CRF 30)", audio: "Opus 128 kb/s", transparency: true },

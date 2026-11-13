@@ -95,6 +95,8 @@ export interface FrameRange {
 export type RangedReport<T> = Omit<T, "frames"> & { ranges: FrameRange[]; more_ranges?: number };
 
 export interface ExportResult {
+  /** Internal capability used to look up the stored file. Never returned in a job reply. */
+  fileToken: string;
   format: ExportFormat;
   composition: string;
   version: number;
@@ -138,7 +140,7 @@ export interface JobReply {
   started_at: string | null;
   finished_at: string | null;
   replayed?: boolean;
-  result?: Omit<ExportResult, "sheet">;
+  result?: Omit<ExportResult, "fileToken" | "sheet">;
   error?: JobError;
 }
 
@@ -284,11 +286,6 @@ export function fidelityReport(o: {
   );
 }
 
-export interface CachedExport {
-  result: ExportResult;
-  token: string;
-}
-
 /** Everything a job needs from the service; the service owns validation, storage and errors. */
 export interface ExportDeps {
   renderer: FrameRenderer;
@@ -321,7 +318,7 @@ export interface ExportDeps {
   /** The download link and local path of a saved file. */
   link(saved: SavedExport): { url?: string; path?: string };
   /** Finished results by content; at most {@link EXPORT_CACHE_ENTRIES}. */
-  cache: Map<string, CachedExport>;
+  cache: Map<string, ExportResult>;
 }
 
 export const EXPORT_CACHE_ENTRIES = 256;
@@ -365,9 +362,9 @@ export async function runExport(
   ]);
   const hit = deps.cache.get(key);
   if (hit !== undefined) {
-    const stillThere = deps.files.lookup(hit.token) !== undefined;
-    if (stillThere && (kind === "export" || frameCount < 2 || hit.result.sheet !== undefined))
-      return { ...hit.result, cached: true, render_seconds: seconds() };
+    const stillThere = deps.files.lookup(hit.fileToken) !== undefined;
+    if (stillThere && (kind === "export" || frameCount < 2 || hit.sheet !== undefined))
+      return { ...hit, cached: true, render_seconds: seconds() };
     deps.cache.delete(key);
   }
 
@@ -492,6 +489,7 @@ export async function runExport(
 
     const aggregated = aggregateReports(reports);
     const result: ExportResult = {
+      fileToken: saved.token,
       format,
       composition: comp.id,
       version: project.version,
@@ -526,7 +524,7 @@ export async function runExport(
       warnings: aggregated.warnings.map(ranged),
       ...(sheet === undefined ? {} : { sheet }),
     };
-    deps.cache.set(key, { result, token: saved.token });
+    deps.cache.set(key, result);
     for (const oldest of deps.cache.keys()) {
       if (deps.cache.size <= EXPORT_CACHE_ENTRIES) break;
       deps.cache.delete(oldest);

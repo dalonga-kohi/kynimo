@@ -109,6 +109,19 @@ export class ExportFiles {
     return { ...saved };
   }
 
+  /** Also checks the bytes are still on disk before giving the caller a link. */
+  async available(token: string): Promise<SavedExport | undefined> {
+    const saved = this.lookup(token);
+    if (saved === undefined) return undefined;
+    try {
+      if (!(await stat(saved.file)).isFile()) return undefined;
+    } catch (e) {
+      if (gone(e)) return undefined;
+      throw e;
+    }
+    return this.lookup(token);
+  }
+
   async sweep(): Promise<void> {
     const now = this.now();
     const drop = async (token: string) => {

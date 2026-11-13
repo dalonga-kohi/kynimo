@@ -187,16 +187,16 @@ Drawn layers also take a built-in shader transition (dissolve, noise dissolve, w
 
 ## 9. Output
 
-| Capability                                 | Status                 |
-| ------------------------------------------ | ---------------------- |
-| Preview frames (PNG), contact sheets       | beta                   |
-| Short preview clips (mp4 ≤ 10 s, 480 px)   | beta                   |
-| Export MP4 (H.264), WebM (VP9, alpha), GIF | beta (built, ADR-0048) |
-| ProRes 4444 / PNG sequence with alpha      | later                  |
-| Lottie export (subset)                     | later                  |
-| Shareable preview links                    | beta                   |
-| Share page: player, frame-pinned comments  | beta                   |
-| In-chat player where the client renders UI | beta                   |
+| Capability                                            | Status                 |
+| ----------------------------------------------------- | ---------------------- |
+| Preview frames (PNG), contact sheets                  | beta                   |
+| Short preview clips (mp4 ≤ 10 s, 480 px)              | beta                   |
+| Export MP4 (H.264), WebM (VP9, alpha), GIF            | beta (built, ADR-0048) |
+| ProRes 4444 / PNG sequence with alpha                 | later                  |
+| Lottie export (subset)                                | later                  |
+| Shareable preview links for completed MP4 jobs (HTTP) | beta                   |
+| Share page: player, frame-pinned comments             | beta                   |
+| In-chat player where the client renders UI            | beta                   |
 
 ## Determinism
 
@@ -243,7 +243,7 @@ The MCP tools are where most users meet Kynimo, so they're designed for how agen
 | Style    | `list_styles`, `apply_style`, `get_tokens`, `check_quality`                                                                                                          | M5         |
 | Feedback | `render_frames`, `render_contact_sheet`                                                                                                                              | M3         |
 | Output   | `render_preview_clip`, `export`, `get_export_status`, `cancel_export` (jobs; ADR-0048)                                                                               | M7 (built) |
-| Output   | `get_preview_link`                                                                                                                                                   | M7         |
+| Output   | `get_preview_link` (completed MP4 job → expiring browser playback URL over HTTP; ADR-0059)                                                                           | M7 (built) |
 | Review   | `list_comments`, `resolve_comment` (frame-pinned comments from the share page)                                                                                       | M8         |
 
 MCP **resources** expose the scene schema, the token list of the pinned style, the preset catalog, the component catalog, the shader catalog (built-in and project definitions) and the capability manifest, so agents can look things up instead of guessing. The scene, operation and layer schemas and the manifest ship in M3 (ADR-0028). Built-in presets are at `kynimo://presets` (`list_presets`, ADR-0040), built-in components at `kynimo://components` (`list_components`, ADR-0049), and script SDK declarations at `kynimo://sdk` (ADR-0041). The shader resources are `kynimo://shaders` and `kynimo://projects/{project_id}/shaders` (ADR-0055).

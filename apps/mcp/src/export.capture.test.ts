@@ -84,6 +84,7 @@ describe.runIf(runMedia)("export end to end", () => {
       exportFiles: await ExportFiles.open(join(dir, "exports")),
       localExportPaths: true,
       downloadUrl: (token) => `${origin}/exports/${token}`,
+      previewUrl: (token) => `${origin}/previews/${token}`,
     });
     const store = new MemoryStore();
     const server = createServer(new KynimoService(store, "agent", runtime));
@@ -199,7 +200,7 @@ describe.runIf(runMedia)("export end to end", () => {
     );
   }, 90_000);
 
-  it("renders a preview clip with a contact sheet", async () => {
+  it("renders a preview clip with a contact sheet and serves the same MP4 for playback", async () => {
     const job = await call("render_preview_clip", { project_id: project, to_frame: 14 });
     const r = (await client.callTool({
       name: "get_export_status",
@@ -207,6 +208,17 @@ describe.runIf(runMedia)("export end to end", () => {
     })) as CallToolResult;
     expect(r.structuredContent).toMatchObject({ state: "succeeded", kind: "preview" });
     expect(r.content.some((c) => c.type === "image")).toBe(true);
+    const result = (r.structuredContent as { result: { path: string; expires_at: string } }).result;
+    const link = await call("get_preview_link", { job_id: job.job_id });
+    expect(link.expires_at).toBe(result.expires_at);
+    const file = readFileSync(result.path);
+    const full = await fetch(link.url as string);
+    expect(full.status).toBe(200);
+    expect(full.headers.get("content-disposition")).toMatch(/^inline/);
+    expect(Buffer.from(await full.arrayBuffer())).toEqual(file);
+    const seek = await fetch(link.url as string, { headers: { range: "bytes=64-127" } });
+    expect(seek.status).toBe(206);
+    expect(Buffer.from(await seek.arrayBuffer())).toEqual(file.subarray(64, 128));
   }, 60_000);
 
   it("exports the components reference scene at 1080p and reports ms per frame", async () => {

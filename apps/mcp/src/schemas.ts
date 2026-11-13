@@ -1271,6 +1271,8 @@ export const GetExportStatusInput = z.object({
 });
 
 export const CancelExportInput = z.object({ job_id: JobIdSchema });
+export const GetPreviewLinkInput = z.object({ job_id: JobIdSchema });
+export const GetPreviewLinkOutput = z.object({ url: z.url(), expires_at: z.iso.datetime() });
 
 /** Declared loosely, like the layer bodies: the listing is sent to the model on every connect. */
 const ExportResultOutput = z.looseObject({
