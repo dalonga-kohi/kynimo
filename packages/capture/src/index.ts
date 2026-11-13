@@ -1,3 +1,4 @@
+export type { PageTimings } from "./protocol.js";
 export {
   type CapturedFrame,
   type CapturedSheet,

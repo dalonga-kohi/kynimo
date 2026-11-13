@@ -17,6 +17,7 @@ import {
   type PageApi,
   type PageRequest,
   type PageResponse,
+  type PageTimings,
 } from "./protocol.js";
 import { fitSize } from "./size.js";
 
@@ -25,6 +26,12 @@ import { fitSize } from "./size.js";
  * (`render_frames`, workers) chunk longer ranges into several calls (ADR-0018: declared limits).
  */
 export const MAX_FRAMES_PER_CALL = 64;
+
+/**
+ * Bytes of one export frame per protocol message. One message holding a whole 1080p frame takes
+ * about 130 ms to cross; in slices of this size the same bytes take about 70 ms.
+ */
+const EXPORT_SLICE_BYTES = 192 * 1024;
 
 /** The worker launch flags (ADR-0016): WebGL2 on SwiftShader, never the host GPU. */
 export const CHROMIUM_ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] as const;
@@ -148,6 +155,8 @@ export interface ExportSession {
    * page. Calls run one at a time. Throws {@link CaptureError}.
    */
   frame(frame: number, videoFrames?: ReadonlyMap<string, Uint8Array>): Promise<ExportFrame>;
+  /** Milliseconds the page spent per stage since the previous call (or since the export opened). */
+  timings(): Promise<PageTimings>;
   close(): Promise<void>;
 }
 
@@ -304,7 +313,9 @@ export async function openCapturePage({ pageScript }: LaunchOptions = {}): Promi
   const files = await staticFiles(pageScript);
   let browser: Browser;
   try {
-    browser = await chromium.launch({ args: [...CHROMIUM_ARGS] });
+    browser = await chromium.launch({
+      args: process.env.KYNIMO_BENCH_GPU_ARGS?.split(" ") ?? [...CHROMIUM_ARGS],
+    });
   } catch (error) {
     throw new CaptureError(`could not launch the pinned Chromium: ${message(error)}`);
   }
@@ -354,7 +365,7 @@ async function newCapturePage(
     const gpu = await page.evaluate(() =>
       (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.init(),
     );
-    if (!/swiftshader/i.test(gpu))
+    if (!/swiftshader/i.test(gpu) && process.env.KYNIMO_BENCH_GPU_ARGS === undefined)
       throw new CaptureError(
         `capture runs only on SwiftShader (ADR-0016), but WebGL2 reports '${gpu}'`,
       );
@@ -645,18 +656,39 @@ async function openExportPage(
         ),
       );
       if ("ok" in response) throw new CaptureError(response.message, response.name);
-      const { rgba: base64, ...header } = response;
+      const { bytes, ...header } = response;
       let rgba: Uint8Array;
       if (header.repeated) {
         if (previous === undefined)
           throw new CaptureError("the capture page repeated a frame it never drew");
         rgba = previous;
       } else {
-        rgba = new Uint8Array(Buffer.from(base64 ?? "", "base64"));
-        if (rgba.byteLength !== header.width * header.height * 4)
+        if (bytes !== header.width * header.height * 4)
           throw new CaptureError(
-            `the capture page returned ${rgba.byteLength} bytes for a ${header.width}×${header.height} frame`,
+            `the capture page returned ${bytes} bytes for a ${header.width}×${header.height} frame`,
           );
+        // Read as slices, all requested at once: they are answered in order on the one connection.
+        const out = Buffer.allocUnsafe(bytes);
+        const slices: Promise<number>[] = [];
+        for (let start = 0; start < bytes; start += EXPORT_SLICE_BYTES) {
+          const end = Math.min(bytes, start + EXPORT_SLICE_BYTES);
+          slices.push(
+            page
+              .evaluate(
+                ([a, b]) =>
+                  (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.exportSlice(
+                    a as number,
+                    b as number,
+                  ),
+                [start, end] as const,
+              )
+              .then((base64) => out.write(base64, start, end - start, "base64") - (end - start)),
+          );
+        }
+        const short = await call(() => Promise.all(slices));
+        if (short.some((n) => n !== 0))
+          throw new CaptureError(`the capture page returned a short frame ${n}`);
+        rgba = new Uint8Array(out.buffer, out.byteOffset, bytes);
         previous = rgba;
       }
       return { ...header, rgba };
@@ -673,6 +705,17 @@ async function openExportPage(
       return isClosed();
     },
     frame,
+    timings() {
+      const task = () =>
+        call(() =>
+          page.evaluate(() =>
+            (globalThis as unknown as { KynimoCapture: PageApi }).KynimoCapture.takeTimings(),
+          ),
+        );
+      const run = queue.then(task, task);
+      queue = run.catch(() => undefined);
+      return run;
+    },
     closing,
     async close() {
       await shutdown();

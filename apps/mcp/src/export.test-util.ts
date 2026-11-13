@@ -60,6 +60,17 @@ export class FakeSession implements ExportSession {
     };
     return out;
   }
+  async timings() {
+    return {
+      frames: this.calls.length,
+      repeated: 0,
+      evaluateMs: 0,
+      rasterMs: 0,
+      compositeMs: 0,
+      downscaleMs: 0,
+      transferMs: 0,
+    };
+  }
   async close() {
     this.closed = true;
   }

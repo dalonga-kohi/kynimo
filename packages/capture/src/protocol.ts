@@ -70,14 +70,32 @@ export interface ExportRequest {
   alpha: "premultiplied" | "straight";
 }
 
-/** One export frame as the page returns it; `rgba` (base64) is null when `repeated`. */
+/** One export frame as the page returns it; the pixels follow through `exportSlice`. */
 export interface ExportFrameHeader {
   frame: number;
   width: number;
   height: number;
   repeated: boolean;
+  /** Bytes of RGBA to read with `exportSlice`; 0 when `repeated`. */
+  bytes: number;
   skipped: SkippedLayer[];
   warnings: RenderWarning[];
+}
+
+/** Milliseconds the page spent per stage, summed over `frames` export frames. */
+export interface PageTimings {
+  frames: number;
+  /** Frames not drawn because they equal the previous one. */
+  repeated: number;
+  /** Evaluation and the repeat check. */
+  evaluateMs: number;
+  /** CanvasKit rasterization of the layers. */
+  rasterMs: number;
+  /** The WebGL2 compositor, including the readback. */
+  compositeMs: number;
+  downscaleMs: number;
+  /** Preparing the pixels to cross to the host. */
+  transferMs: number;
 }
 
 type PageError = { ok: false; name: string; message: string };
@@ -93,6 +111,10 @@ export interface PageApi {
   exportFrame(
     frame: number,
     videoFrameKeys: string[],
-  ): Promise<(ExportFrameHeader & { rgba: string | null }) | PageError>;
+  ): Promise<ExportFrameHeader | PageError>;
+  /** Bytes `start` to `end` of the frame drawn last, base64. */
+  exportSlice(start: number, end: number): string;
   closeExport(): void;
+  /** Stage timings since the previous call. */
+  takeTimings(): PageTimings;
 }

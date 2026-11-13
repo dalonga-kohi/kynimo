@@ -28,6 +28,7 @@ import {
   type PageRequest,
   type PageResponse,
   type PageSheet,
+  type PageTimings,
 } from "./protocol.js";
 import { fitSize, sheetSize } from "./size.js";
 
@@ -158,10 +159,43 @@ function drawFrame(
   libraries: { images: ImageLibrary; fonts: FontLibrary; videos: VideoFrameLibrary },
   evaluated = evaluateFrame(project, frame, compositionId, options),
 ): Pixels {
+  const t0 = now();
   const plan = rasterizeFrame(ck, evaluated, libraries);
+  const t1 = now();
   const full = compositor.composite(plan);
+  const t2 = now();
   const size = fitSize(full.width, full.height, maxSize);
-  return { frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) };
+  const pixels = downscale(ck, full, size);
+  timings.rasterMs += t1 - t0;
+  timings.compositeMs += t2 - t1;
+  timings.downscaleMs += now() - t2;
+  return { frame, ...size, pixels, ...reports(plan) };
+}
+
+/**
+ * Where the page's time went, summed since the last `takeTimings`. Wall-clock, read only to report
+ * how long stages took: nothing here reaches evaluation or the pixels.
+ */
+let timings = emptyTimings();
+const now = () => performance.now();
+
+function emptyTimings(): PageTimings {
+  return {
+    frames: 0,
+    repeated: 0,
+    evaluateMs: 0,
+    rasterMs: 0,
+    compositeMs: 0,
+    downscaleMs: 0,
+    transferMs: 0,
+  };
+}
+
+/** The stage timings since the previous call; resets them. */
+export function takeTimings(): PageTimings {
+  const out = timings;
+  timings = emptyTimings();
+  return out;
 }
 
 const videoAssetOf = (project: PageRequest["project"], key: string) => {
@@ -183,6 +217,8 @@ interface ExportState {
   videos: VideoFrameLibrary;
   loaded: Set<string>;
   previousKey: string | undefined;
+  /** The output pixels of the frame drawn last, kept for `exportSlice`. */
+  pixels: Uint8Array | undefined;
   previous: { width: number; height: number; skipped: SkippedLayer[]; warnings: RenderWarning[] };
 }
 
@@ -231,6 +267,7 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
       videos,
       loaded: new Set(),
       previousKey: undefined,
+      pixels: undefined,
       previous: { width: 0, height: 0, skipped: [], warnings: [] },
     };
     return { ok: true };
@@ -262,7 +299,7 @@ function frameIndependent(key: string, value: unknown): unknown {
 export async function exportFrame(
   frame: number,
   videoFrameKeys: string[],
-): Promise<(ExportFrameHeader & { rgba: string | null }) | ErrorResponse> {
+): Promise<ExportFrameHeader | ErrorResponse> {
   try {
     const e = exporting;
     if (e === undefined || state === undefined) throw new Error("capture page: no export is open");
@@ -280,6 +317,8 @@ export async function exportFrame(
       e.videos.add(asset, n, await fetchBytes(`assets/${encodeURIComponent(key)}`));
       e.loaded.add(key);
     }
+    const started = now();
+    timings.frames++;
     const evaluated = evaluateFrame(e.project, frame, e.compositionId, e.options);
     // Sound because the evaluated frame carries everything that decides the pixels: effects,
     // grain, generators and video source frames are all resolved into it, and rendering reads
@@ -295,8 +334,11 @@ export async function exportFrame(
         return e.shaderKeys.get(value) ?? value;
       return frameIndependent(key, value);
     });
-    if (e.previousKey !== undefined && key === e.previousKey)
-      return { frame, repeated: true, rgba: null, ...e.previous };
+    timings.evaluateMs += now() - started;
+    if (e.previousKey !== undefined && key === e.previousKey) {
+      timings.repeated++;
+      return { frame, repeated: true, bytes: 0, ...e.previous };
+    }
     const drawn = drawFrame(
       ck,
       compositor,
@@ -319,10 +361,24 @@ export async function exportFrame(
       skipped: drawn.skipped,
       warnings: drawn.warnings,
     };
-    return { frame, repeated: false, rgba: toBase64(pixels), ...e.previous };
+    e.pixels = pixels;
+    return { frame, repeated: false, bytes: pixels.byteLength, ...e.previous };
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+/**
+ * Bytes `start` to `end` of the frame `exportFrame` drew last, base64. The host reads a frame as
+ * many small slices: one protocol message holding a whole 1080p frame costs about twice as much.
+ */
+export function exportSlice(start: number, end: number): string {
+  const pixels = exporting?.pixels;
+  if (pixels === undefined) throw new Error("capture page: no export frame to read");
+  const started = now();
+  const out = toBase64(pixels.subarray(start, end));
+  timings.transferMs += now() - started;
+  return out;
 }
 
 type ErrorResponse = { ok: false; name: string; message: string };
