@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -186,6 +186,18 @@ describe("MCP server: export tools", () => {
     now = saved.expiresAt;
     await files.sweep();
     expect(await previewLinkError(first.job_id)).toMatchObject({ error: "not_found" });
+
+    const replacement = await render("after-expiry");
+    const replacementToken = new URL(replacement.result.url).pathname.split("/").at(-1) as string;
+    const replacementFile = files.lookup(replacementToken) as SavedExport;
+    await unlink(replacementFile.file);
+    expect(await previewLinkError(replacement.job_id)).toMatchObject({ error: "not_found" });
+    const rerendered = await render("after-file-loss");
+    expect(rerendered.result.cached).toBe(false);
+    expect(await ok("get_preview_link", { job_id: rerendered.job_id })).toEqual({
+      url: rerendered.result.url.replace("/exports/", "/previews/"),
+      expires_at: rerendered.result.expires_at,
+    });
   });
 
   it("returns a finished preview's contact sheet as image content", async () => {

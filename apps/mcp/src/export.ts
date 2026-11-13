@@ -362,7 +362,7 @@ export async function runExport(
   ]);
   const hit = deps.cache.get(key);
   if (hit !== undefined) {
-    const stillThere = deps.files.lookup(hit.fileToken) !== undefined;
+    const stillThere = (await deps.files.available(hit.fileToken)) !== undefined;
     if (stillThere && (kind === "export" || frameCount < 2 || hit.sheet !== undefined))
       return { ...hit, cached: true, render_seconds: seconds() };
     deps.cache.delete(key);

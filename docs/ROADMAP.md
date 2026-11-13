@@ -2,7 +2,7 @@
 
 Feature by feature. Each item is one branch + PR unless noted. Check items off as their PRs merge. Scope per item comes from [CAPABILITIES.md](CAPABILITIES.md): this roadmap covers everything marked `beta`; `v1.x` items follow after the private beta (ADR-0008).
 
-**Where we are as of 2026-11-12**
+**Where we are as of 2026-11-13**
 
 M0–M2 are done. M3 is done except deployment. M4 is done except the brief suite and the MCP-only kinetic-type reference scene (shape operators, text animators, behaviors, intent tools, `run_script` with its source kept per version, effects, SVG import and built-in shaders done). M5's pack format and four draft packs exist (ADR-0037), with rules and tools still open. M6 is complete with the component model, five built-ins, a structured storyboard tool, project shaders, built-in shader transitions and bounded TypeScript component authoring over MCP (ADR-0058). Transform motion blur (ADR-0053), 2.5D layers with cameras (ADR-0054), and puppet pin deformation (ADR-0056) were pulled forward from v1.x. M7 has export, beat markers (`mark_beats`, `sync_to_beats`, ADR-0052), and shareable MP4 playback links (`get_preview_link`, ADR-0059). An agent can build a document and see frames. It can animate with intent tools and presets, or build a scene with a script. It can export MP4, WebM and GIF with jobs, progress, cancel and a fidelity report (ADR-0048). Style application and quality reports are still open. The milestone order below was confirmed on 2026-11-09 with its risk recorded in PRODUCT.md ("Risks we carry knowingly", ADR-0035).
 
