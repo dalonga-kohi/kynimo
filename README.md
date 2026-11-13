@@ -2,9 +2,9 @@
 
 **Motion graphics that agents create and humans finish.**
 
-Kynimo is an agent-first, cloud-hosted motion engine. Any MCP-compatible assistant (Claude, ChatGPT, coding agents) connects to Kynimo, builds motion videos from components, keyframes or code (custom components and GLSL shaders) on top of style guidelines, using your own photos, video, vectors and fonts, checks its own work against rendered frames and an automatic quality report, and exports a finished, still-editable video.
+Kynimo is an agent-first motion engine that runs on your machine. An assistant connects over MCP to build editable motion videos from components, keyframes, TypeScript or GLSL, check rendered frames, and export a finished video.
 
-**Status (November 2026):** pre-beta. The scene format, engine, renderer and MCP server work: an agent can build a document and see rendered frames. Video export, style packs, quality checks and the web player are not built yet. See the [roadmap](docs/ROADMAP.md).
+**Status (November 2026):** pre-beta. The engine, MCP server, frame rendering and video export are built. The automated quality rules and interactive player are on the [roadmap](docs/ROADMAP.md).
 
 - Product: [PRODUCT.md](PRODUCT.md)
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -12,6 +12,15 @@ Kynimo is an agent-first, cloud-hosted motion engine. Any MCP-compatible assista
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · plans for the next items: [docs/PLAN.md](docs/PLAN.md)
 - Decisions: [docs/decisions/](docs/decisions/)
 - Working agreement for AI agents (any tool): [AGENTS.md](AGENTS.md) · review checklist: [docs/REVIEW.md](docs/REVIEW.md)
+
+## Run Kynimo locally
+
+Extract the native bundle for your system and run `kynimo.cmd` on Windows or `./kynimo`
+on macOS or Linux. Point your local MCP client to `http://127.0.0.1:8787/mcp`.
+See the [local server guide](scripts/local/README.md) for stdio setup and data locations.
+
+To build a bundle from this checkout, run `pnpm install --frozen-lockfile` and
+`pnpm local:package` on the target platform. The archive is written to `build/local/`.
 
 ## Development
 

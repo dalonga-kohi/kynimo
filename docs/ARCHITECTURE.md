@@ -4,6 +4,10 @@ Status: scene format, engine, renderer, capture and the MCP server (M1–M3) are
 
 ## System overview
 
+The primary runtime is a local process (ADR-0060). It serves stdio or loopback MCP,
+keeps projects and assets on disk, and runs capture and export in-process.
+The diagram shows the optional hosted topology.
+
 ```mermaid
 flowchart LR
   subgraph Clients
@@ -70,7 +74,8 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 
 ## Agent layer — `apps/mcp`
 
-- Remote MCP server (Streamable HTTP) with OAuth; a local stdio mode for development.
+- Native local bundles use loopback Streamable HTTP or stdio and a per-user file store.
+- The optional remote server serves Streamable HTTP with OAuth.
 - Tool groups (project, read, precise, intent, code, style, feedback, output) and design principles (batched `apply_ops`, selectors, compact reads, motion summaries, optimistic concurrency) are in [CAPABILITIES.md](CAPABILITIES.md#mcp-surface).
 - Every tool: schema-validated input/output, returns the new document version, backward compatible.
 - Scripts (ADR-0036): `run_script` runs agent-written TypeScript once in a QuickJS (WebAssembly) sandbox, one worker thread and one fresh instance per script, with no clock, randomness or host access and counted limits. Its output is a batch of operations the host validates and applies like any other: the sandbox records entries (ops and intent calls), the host replays them with `@kynimo/intent` (ADR-0041).

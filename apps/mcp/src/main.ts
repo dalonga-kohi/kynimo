@@ -194,7 +194,10 @@ if (values.help) {
       : { blobs }),
   });
   let stopHttp: () => Promise<void> = async () => undefined;
+  let stopping = false;
   const release = () => {
+    if (stopping) return;
+    stopping = true;
     void stopHttp()
       .then(() => runtime.close())
       .then(() => Promise.allSettled([renderer.close(), close()]))
@@ -261,5 +264,10 @@ if (values.help) {
     const at = typeof address === "object" && address ? `${values.host}:${address.port}` : "";
     const mode = auth ? `OAuth from ${auth.issuer}` : "no auth: local account";
     process.stderr.write(`kynimo-mcp ready on http://${at}${path} (${mode}; ${ready})\n`);
+  }
+  // An IPC parent can disappear during startup, before the server is ready to close.
+  if (process.send) {
+    if (process.connected) process.once("disconnect", release);
+    else release();
   }
 }
