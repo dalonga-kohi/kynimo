@@ -946,14 +946,14 @@ describe("WebGL2 compositor on SwiftShader", () => {
     };
     const normal = { modes: ["normal"] };
     const { after, deletedPrograms, programs } = await probe([
-      normal, // prepare, place (texel copy), blend normal, final
-      frame, // + blend multiply, place (bilinear)
+      normal, // direct (one pass for a plain layer), final
+      frame, // + prepare, place (texel copy), blend multiply, copy, place (bilinear)
       frame,
       frame,
       { modes: ["screen"] }, // + blend screen
       { modes: ["screen", "normal"] },
     ]);
-    expect(after.map((a) => a.programs)).toEqual([4, 6, 6, 6, 7, 7]);
+    expect(after.map((a) => a.programs)).toEqual([2, 7, 7, 7, 8, 8]);
     expect(deletedPrograms).toBe(programs);
   });
 
@@ -1621,5 +1621,81 @@ describe("WebGL2 compositor: built-in transitions", () => {
       width: TW,
       height: TH,
     });
+  });
+});
+
+describe("layer bounds and reuse", () => {
+  const small = (
+    id: string,
+    x: number,
+    y: number,
+    seed: number,
+    more: Partial<PlannedLayer> = {},
+  ) => solid(id, gradient(20, 14, seed), { matrix: [1, 0, 0, 1, x, y], ...more });
+
+  it("draws layers that cover part of the frame, hang over its edges or miss it", async () => {
+    await expectMatches(
+      plan([
+        small("off", 500, 500, 9),
+        small("corner", -7, -5, 4, { opacity: 0.6 }),
+        small("edge", W - 9, H - 6, 5, { mask: coverage(20, 14) }),
+        small("scaled", 10, 8, 6, { matrix: [1.7, 0.3, -0.4, 1.2, 12.5, 9.25] }),
+        small("multiply", 30, 20, 7, { blendMode: "multiply" }),
+        solid("bg", gradient(W, H, 1)),
+      ]),
+    );
+  });
+
+  it("mattes a small layer by another one placed elsewhere", async () => {
+    for (const mode of ["alpha", "alpha-inverted", "luma", "luma-inverted"] as const)
+      await expectMatches(
+        plan([
+          small("matted", 12, 10, 3, {
+            matte: { layerId: "m", mode, source: small("m", 22, 16, 8) },
+          }),
+          solid("bg", gradient(W, H, 2)),
+        ]),
+      );
+  });
+
+  it("gives the same bytes when the bottom layers are saved and reused", async () => {
+    const top = [
+      small("a", 5, 6, 3, { opacity: 0.8 }),
+      small("b", 30, 20, 4, { blendMode: "screen" }),
+    ];
+    const bottom = [small("c", 18, 11, 5), solid("bg", gradient(W, H, 1))];
+    const whole = plan([...top, ...bottom], { background: { r: 0.1, g: 0.2, b: 0.3, a: 1 } });
+    const upper = { ...whole, layers: top };
+    const plain = await gpu.composite(whole);
+    const saving = await gpu.composite(whole, { save: 1, layers: bottom.length });
+    const reused = await gpu.composite(upper, { use: 1 });
+    const again = await gpu.composite(upper, { use: 1 });
+    expect(Buffer.from(saving.pixels).equals(Buffer.from(plain.pixels))).toBe(true);
+    expect(Buffer.from(reused.pixels).equals(Buffer.from(plain.pixels))).toBe(true);
+    expect(Buffer.from(again.pixels).equals(Buffer.from(plain.pixels))).toBe(true);
+  });
+
+  it("saves every layer, or none, of a plan", async () => {
+    const whole = plan([small("a", 5, 6, 3), solid("bg", gradient(W, H, 1))]);
+    const plain = await gpu.composite(whole);
+    await gpu.composite(whole, { save: 2, layers: 2 });
+    const all = await gpu.composite({ ...whole, layers: [] }, { use: 2 });
+    expect(Buffer.from(all.pixels).equals(Buffer.from(plain.pixels))).toBe(true);
+    await gpu.composite(whole, { save: 3, layers: 0 });
+    const none = await gpu.composite(whole, { use: 3 });
+    expect(Buffer.from(none.pixels).equals(Buffer.from(plain.pixels))).toBe(true);
+  });
+
+  it("drops the saved layers on a plain frame and refuses a token it does not hold", async () => {
+    const whole = plan([small("a", 5, 6, 3), solid("bg", gradient(W, H, 1))]);
+    await gpu.composite(whole, { save: 4, layers: 1 });
+    await gpu.composite(whole);
+    await expect(gpu.composite({ ...whole, layers: [] }, { use: 4 })).rejects.toThrow(
+      /saved bottom layers/,
+    );
+    await gpu.composite(whole, { save: 5, layers: 1 });
+    await expect(gpu.composite({ ...whole, layers: [] }, { use: 6 })).rejects.toThrow(
+      /saved bottom layers/,
+    );
   });
 });

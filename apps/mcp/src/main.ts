@@ -4,6 +4,7 @@ import { createServer as createHttpServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { launchCapture } from "@kynimo/capture";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { type AuthConfig, discoverJwksUri, isLoopback, remoteKeys } from "./auth.js";
 import {
@@ -156,8 +157,18 @@ if (values.help) {
   const mediaWhere = hasMedia
     ? `video via ${await media.version()}`
     : "video upload off: no FFmpeg";
-  // Chromium starts on the first render, not here.
-  const renderer = new CaptureRenderer();
+  // Chromium starts on the first render, not here. KYNIMO_GPU=hardware draws on the host's GPU
+  // instead of SwiftShader: much faster, but the pixels then depend on that GPU (ADR-0059).
+  const gpu = process.env.KYNIMO_GPU || "swiftshader";
+  if (gpu !== "swiftshader" && gpu !== "hardware")
+    fail(new Error(`KYNIMO_GPU must be 'swiftshader' or 'hardware' (got '${gpu}')`));
+  const gpuArgs = process.env.KYNIMO_GPU_ARGS?.split(/\s+/).filter((arg) => arg !== "");
+  const renderer = new CaptureRenderer(() =>
+    launchCapture({
+      gpu: gpu === "hardware" ? "hardware" : "swiftshader",
+      ...(gpuArgs === undefined || gpuArgs.length === 0 ? {} : { gpuArgs }),
+    }),
+  );
   const exportDir = values.dir
     ? resolve(values.dir, "exports")
     : await mkdtemp(join(tmpdir(), "kynimo-exports-")).catch(fail);

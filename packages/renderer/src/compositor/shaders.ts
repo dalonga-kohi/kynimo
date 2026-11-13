@@ -633,9 +633,16 @@ export type MatteMode = 0 | 1 | 2 | 3 | 4;
 /** The matte coverage of one pixel with the matte mode (and an empty matte) known at compile time. */
 function matteFunction(mode: MatteMode, empty: boolean): string {
   if (mode === 0) return "";
+  // The matte covers a rectangle of the composition starting at u_matteOrigin; outside it is transparent.
   return `
+uniform ivec2 u_matteOrigin;
+vec4 matteTexel(sampler2D matte, ivec2 p) {
+  ivec2 q = p - u_matteOrigin;
+  ivec2 size = textureSize(matte, 0);
+  return (q.x < 0 || q.y < 0 || q.x >= size.x || q.y >= size.y) ? vec4(0.0) : texelFetch(matte, q, 0);
+}
 float matteCoverage(sampler2D matte, ivec2 p) {
-  vec4 m = ${empty ? "vec4(0.0)" : "texelFetch(matte, p, 0)"};
+  vec4 m = ${empty ? "vec4(0.0)" : "matteTexel(matte, p)"};
   float v = ${mode <= 2 ? "m.a" : "dot(m.rgb, vec3(0.2126, 0.7152, 0.0722))"};
   return ${mode === 2 || mode === 4 ? "1.0 - v" : "v"};
 }
@@ -699,10 +706,9 @@ ${Array.from(
  * mode is compiled in, as is the texel-copy fast path (`u_shift` is the integer offset).
  */
 export function placeShader({ matte, empty, copy, projective = false }: PlaceVariant): string {
-  const factor =
-    matte === 0 ? "u_opacity" : "u_opacity * matteCoverage(u_matte, ivec2(gl_FragCoord.xy))";
+  const factor = matte === 0 ? "u_opacity" : "u_opacity * matteCoverage(u_matte, ivec2(fc))";
   const sample = projective
-    ? `vec3 h = u_inv * vec3(gl_FragCoord.xy, 1.0);
+    ? `vec3 h = u_inv * vec3(fc, 1.0);
     if (h.z > 0.0 && h.z * u_near < 1.0) {
       vec2 q = h.xy / h.z;
       vec2 dx = (u_inv[0].xy - q * u_inv[0].z) / h.z;
@@ -715,8 +721,8 @@ export function placeShader({ matte, empty, copy, projective = false }: PlaceVar
       if (t > 0.0) c = mix(c, atLevel(min(k + 1, u_maxLevel), q), t);
     }`
     : copy
-      ? `c = texel(u_lo, ivec2(gl_FragCoord.xy) + u_shift, textureSize(u_lo, 0));`
-      : `vec3 p = vec3(gl_FragCoord.xy, 1.0);
+      ? `c = texel(u_lo, ivec2(fc) + u_shift, textureSize(u_lo, 0));`
+      : `vec3 p = vec3(fc, 1.0);
     vec2 q = vec2(dot(u_invX, p), dot(u_invY, p));
     c = bilinear(u_lo, q * u_scale.x);
     if (u_t > 0.0) c = mix(c, bilinear(u_hi, q * u_scale.y), u_t);`;
@@ -732,6 +738,7 @@ uniform ivec2 u_shift; // copy variant: the integer offset of the placement`;
 uniform bool u_visible;
 uniform sampler2D u_matte;
 uniform float u_opacity;
+uniform vec2 u_origin; // composition pixel of the target's first texel
 ${matteFunction(matte, empty)}
 ${
   projective
@@ -759,6 +766,8 @@ vec4 bilinear(sampler2D s, vec2 q) {
 `
 }
 void main() {
+  // The composition pixel's centre: whole numbers plus one half, so the sum is exact.
+  vec2 fc = gl_FragCoord.xy + u_origin;
   vec4 c = vec4(0.0);
   if (u_visible) {
     ${sample}
@@ -918,18 +927,21 @@ ${
 `
 }  outColor = mix(b, s, factor);
 }`;
+  // The source and the target cover one rectangle of the backdrop, starting at u_origin.
   if (mode === 0)
     return `${head}
+uniform ivec2 u_origin;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
-  vec4 b = texelFetch(u_backdrop, p, 0);
+  vec4 b = texelFetch(u_backdrop, p + u_origin, 0);
   vec4 s = texelFetch(u_source, p, 0);
   outColor = s + b * (1.0 - s.a);
 }`;
   return `${head}
+uniform ivec2 u_origin;
 void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
-  vec4 b = texelFetch(u_backdrop, p, 0);
+  vec4 b = texelFetch(u_backdrop, p + u_origin, 0);
   vec4 s = texelFetch(u_source, p, 0);
   if (b.a <= 0.0 || s.a <= 0.0) {
     outColor = s + b * (1.0 - s.a);
@@ -941,6 +953,39 @@ void main() {
   outColor = vec4(s.rgb * (1.0 - b.a) + b.rgb * (1.0 - s.a) + s.a * b.a * mixed, s.a + b.a * (1.0 - s.a));
 }`;
 }
+
+/**
+ * Copies a source into the viewport, whose first pixel is `u_origin` of the target. With
+ * `ONE, ONE_MINUS_SRC_ALPHA` blending on, this is the normal blend mode, `s + b · (1 − s.a)`.
+ */
+export const COPY = `${HEADER}
+uniform sampler2D u_src;
+uniform ivec2 u_origin;
+void main() {
+  outColor = texelFetch(u_src, ivec2(gl_FragCoord.xy) - u_origin, 0);
+}`;
+
+/**
+ * PREPARE, the texel-copy placement and COPY in one pass, for a layer that needs nothing else: the
+ * source texel times mask coverage, then times opacity. The two-pass path stores each of those
+ * products in an RGBA16F target, so `half` rounds them as that store does and the result is the
+ * same bits. Drawn with `ONE, ONE_MINUS_SRC_ALPHA` blending; the viewport stays inside the source.
+ */
+export const DIRECT = `${HEADER}
+uniform sampler2D u_src;
+uniform sampler2D u_mask;
+uniform bool u_hasMask;
+uniform ivec2 u_shift; // composition pixel + u_shift = source texel
+uniform float u_opacity;
+vec4 half16(vec4 v) {
+  return vec4(unpackHalf2x16(packHalf2x16(v.rg)), unpackHalf2x16(packHalf2x16(v.ba)));
+}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy) + u_shift;
+  vec4 c = texelFetch(u_src, p, 0);
+  if (u_hasMask) c *= texelFetch(u_mask, p, 0).r;
+  outColor = half16(half16(c) * u_opacity);
+}`;
 
 /** The root background under the result, quantized to RGBA8 by the framebuffer. */
 export const FINAL = `${HEADER}

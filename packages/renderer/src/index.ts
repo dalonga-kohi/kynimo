@@ -19,6 +19,7 @@ export { transitionSamples } from "./compositor/effects.js";
 export { compositeReference } from "./compositor/reference.js";
 export { VERTEX as FULLSCREEN_VERTEX_SHADER } from "./compositor/shaders.js";
 export {
+  type CompositePrefix,
   type Compositor,
   CompositorError,
   createCompositor,

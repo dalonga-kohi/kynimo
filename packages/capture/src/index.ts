@@ -1,3 +1,4 @@
+export type { PageTimings } from "./protocol.js";
 export {
   type CapturedFrame,
   type CapturedSheet,
@@ -7,6 +8,7 @@ export {
   type ExportFrame,
   type ExportOptions,
   type ExportSession,
+  type GpuBackend,
   type LaunchOptions,
   launchCapture,
   MAX_FRAMES_PER_CALL,

@@ -81,6 +81,34 @@ describe("export sessions: premultiplied frames match captureFrames", () => {
     120_000,
   );
 
+  it.each([
+    ["title-card", 4],
+    ["product-card", 40],
+  ] as const)(
+    "%s over consecutive frames, which reuse their unchanged bottom layers",
+    async (scene, first) => {
+      const { document, assets } = reference(scene);
+      const frames = Array.from({ length: 14 }, (_, i) => first + i);
+      const captured = await capture.captureFrames(document, frames, { assets });
+      const session = await capture.openExport(document, { assets, alpha: "premultiplied" });
+      try {
+        const exported = await exportAll(session, frames);
+        expect(exported.map((f) => sha(f.rgba))).toEqual(captured.map((f) => f.pixelsSha256));
+        expect(exported.map((f) => [f.skipped, f.warnings])).toEqual(
+          captured.map((f) => [f.skipped, f.warnings]),
+        );
+        const timings = await session.timings();
+        expect(timings.frames).toBe(frames.length);
+        expect(timings.reused).toBeGreaterThan(0);
+        // Taking the timings resets them.
+        expect((await session.timings()).frames).toBe(0);
+      } finally {
+        await session.close();
+      }
+    },
+    120_000,
+  );
+
   it("the determinism scene, in a different frame order than captured", async () => {
     const frames = [29, 0, 12, 12];
     const captured = await capture.captureFrames(DETERMINISM_SCENE, frames, {

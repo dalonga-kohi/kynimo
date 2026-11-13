@@ -8,6 +8,7 @@ import { type EvaluateOptions, evaluateFrame, indexShaderDefinitions } from "@ky
 import {
   BUNDLED_FONTS,
   type CanvasKit,
+  type CompositePrefix,
   type Compositor,
   createCompositor,
   FontLibrary,
@@ -28,6 +29,7 @@ import {
   type PageRequest,
   type PageResponse,
   type PageSheet,
+  type PageTimings,
 } from "./protocol.js";
 import { fitSize, sheetSize } from "./size.js";
 
@@ -157,11 +159,77 @@ function drawFrame(
   options: EvaluateOptions,
   libraries: { images: ImageLibrary; fonts: FontLibrary; videos: VideoFrameLibrary },
   evaluated = evaluateFrame(project, frame, compositionId, options),
-): Pixels {
+  reuse?: FrameReuse,
+): Pixels & { below?: Reports } {
+  const t0 = now();
   const plan = rasterizeFrame(ck, evaluated, libraries);
-  const full = compositor.composite(plan);
+  const t1 = now();
+  let prefix: CompositePrefix | undefined;
+  let below: Reports | undefined;
+  if (reuse !== undefined && "use" in reuse) prefix = { use: reuse.use };
+  else if (reuse !== undefined) {
+    // The plan keeps the evaluated order, so the saved layers are its last ones.
+    let layers = 0;
+    for (let i = plan.layers.length - 1; i >= 0 && reuse.ids.has(plan.layers[i]?.id ?? ""); i--)
+      layers++;
+    prefix = { save: reuse.save, layers };
+    below = reports(plan, reuse.ids);
+  }
+  const full = compositor.composite(plan, prefix);
+  const t2 = now();
   const size = fitSize(full.width, full.height, maxSize);
-  return { frame, ...size, pixels: downscale(ck, full, size), ...reports(plan) };
+  const pixels = downscale(ck, full, size);
+  timings.rasterMs += t1 - t0;
+  timings.compositeMs += t2 - t1;
+  timings.downscaleMs += now() - t2;
+  const own = reports(plan);
+  const all =
+    reuse !== undefined && "use" in reuse
+      ? {
+          skipped: [...own.skipped, ...reuse.below.skipped],
+          warnings: [...own.warnings, ...reuse.below.warnings],
+        }
+      : own;
+  return { frame, ...size, pixels, ...all, ...(below === undefined ? {} : { below }) };
+}
+
+interface Reports {
+  skipped: SkippedLayer[];
+  warnings: RenderWarning[];
+}
+
+/**
+ * How an export frame reuses its unchanged bottom layers (`CompositePrefix` in the compositor).
+ * `save`: the frame is whole, and the layers with these ids, its bottom ones, are kept. `use`: the
+ * frame holds only the layers above the kept ones, whose reports are `below`.
+ */
+type FrameReuse = { save: number; ids: ReadonlySet<string> } | { use: number; below: Reports };
+
+/**
+ * Where the page's time went, summed since the last `takeTimings`. Wall-clock, read only to report
+ * how long stages took: nothing here reaches evaluation or the pixels.
+ */
+let timings = emptyTimings();
+const now = () => performance.now();
+
+function emptyTimings(): PageTimings {
+  return {
+    frames: 0,
+    repeated: 0,
+    evaluateMs: 0,
+    rasterMs: 0,
+    compositeMs: 0,
+    downscaleMs: 0,
+    transferMs: 0,
+    reused: 0,
+  };
+}
+
+/** The stage timings since the previous call; resets them. */
+export function takeTimings(): PageTimings {
+  const out = timings;
+  timings = emptyTimings();
+  return out;
 }
 
 const videoAssetOf = (project: PageRequest["project"], key: string) => {
@@ -183,6 +251,14 @@ interface ExportState {
   videos: VideoFrameLibrary;
   loaded: Set<string>;
   previousKey: string | undefined;
+  /** The frame-level key and the layer keys (bottom first) of the frame drawn last. */
+  previousLayers: { frame: string; layers: string[] } | undefined;
+  /** The bottom layers the compositor holds: their keys (bottom first) and reports. */
+  kept: { token: number; frame: string; layers: string[]; below: Reports } | undefined;
+  /** The last token given to the compositor. */
+  tokens: number;
+  /** The output pixels of the frame drawn last, kept for `exportSlice`. */
+  pixels: Uint8Array | undefined;
   previous: { width: number; height: number; skipped: SkippedLayer[]; warnings: RenderWarning[] };
 }
 
@@ -231,6 +307,10 @@ export async function openExport(request: ExportRequest): Promise<{ ok: true } |
       videos,
       loaded: new Set(),
       previousKey: undefined,
+      previousLayers: undefined,
+      kept: undefined,
+      tokens: 0,
+      pixels: undefined,
       previous: { width: 0, height: 0, skipped: [], warnings: [] },
     };
     return { ok: true };
@@ -262,7 +342,7 @@ function frameIndependent(key: string, value: unknown): unknown {
 export async function exportFrame(
   frame: number,
   videoFrameKeys: string[],
-): Promise<(ExportFrameHeader & { rgba: string | null }) | ErrorResponse> {
+): Promise<ExportFrameHeader | ErrorResponse> {
   try {
     const e = exporting;
     if (e === undefined || state === undefined) throw new Error("capture page: no export is open");
@@ -280,6 +360,8 @@ export async function exportFrame(
       e.videos.add(asset, n, await fetchBytes(`assets/${encodeURIComponent(key)}`));
       e.loaded.add(key);
     }
+    const started = now();
+    timings.frames++;
     const evaluated = evaluateFrame(e.project, frame, e.compositionId, e.options);
     // Sound because the evaluated frame carries everything that decides the pixels: effects,
     // grain, generators and video source frames are all resolved into it, and rendering reads
@@ -288,15 +370,57 @@ export async function exportFrame(
     // null, which cannot make two different frames look equal in practice. Only the frame
     // root frame index and the sign of `layerFrame` differ by definition and are neutralized; every
     // nested `frame` (grain, precomps) stays, which can only miss a dedupe, never repeat wrong pixels.
-    const key = JSON.stringify({ ...evaluated, frame: 0 }, (key, value: unknown) => {
+    const replacer = (key: string, value: unknown) => {
       // Shared precomps can reference one definition thousands of times. Keep its immutable pin
       // in the key and leave per-frame values (frame, seed, uniforms) in the resolved instance.
       if (key === "definition" && value !== null && typeof value === "object")
         return e.shaderKeys.get(value) ?? value;
       return frameIndependent(key, value);
-    });
-    if (e.previousKey !== undefined && key === e.previousKey)
-      return { frame, repeated: true, rgba: null, ...e.previous };
+    };
+    // One key per layer, bottom first, and one for the rest of the frame. A layer's key holds its
+    // whole matte chain and nested composition, which the evaluated layer carries. No key holds a
+    // raw line break, so the joined key is equal exactly when every part is.
+    const frameKey = JSON.stringify({ ...evaluated, frame: 0, layers: [] }, replacer);
+    const count = evaluated.layers.length;
+    const layerKeys: string[] = [];
+    for (let i = count - 1; i >= 0; i--)
+      layerKeys.push(JSON.stringify(evaluated.layers[i], replacer));
+    const key = `${frameKey}\n${layerKeys.join("\n")}`;
+    timings.evaluateMs += now() - started;
+    if (e.previousKey !== undefined && key === e.previousKey) {
+      timings.repeated++;
+      return { frame, repeated: true, bytes: 0, ...e.previous };
+    }
+    // Bottom layers that equal the previous frame's are composited once and kept (the same pixels:
+    // the kept frame is what compositing them again would give). `stable` counts them. The kept
+    // ones are reused while they still match and no longer run of layers has become stable.
+    const run = (other: readonly string[]) => {
+      let n = 0;
+      while (n < other.length && n < count && other[n] === layerKeys[n]) n++;
+      return n;
+    };
+    const stable = e.previousLayers?.frame === frameKey ? run(e.previousLayers.layers) : 0;
+    const kept = e.kept;
+    const hit =
+      kept !== undefined &&
+      kept.frame === frameKey &&
+      kept.layers.length >= stable &&
+      run(kept.layers) === kept.layers.length &&
+      compositor.hasPrefix(kept.token);
+    let reuse: FrameReuse | undefined;
+    let drawing = evaluated;
+    if (hit) {
+      reuse = { use: kept.token, below: kept.below };
+      drawing = { ...evaluated, layers: evaluated.layers.slice(0, count - kept.layers.length) };
+      timings.reused++;
+    } else if (stable > 0) {
+      e.tokens++;
+      reuse = {
+        save: e.tokens,
+        ids: new Set(evaluated.layers.slice(count - stable).map((layer) => layer.id)),
+      };
+    }
+    if (!hit) e.kept = undefined;
     const drawn = drawFrame(
       ck,
       compositor,
@@ -306,8 +430,17 @@ export async function exportFrame(
       e.maxSize,
       e.options,
       e,
-      evaluated,
+      drawing,
+      reuse,
     );
+    if (reuse !== undefined && "save" in reuse && drawn.below !== undefined)
+      e.kept = {
+        token: reuse.save,
+        frame: frameKey,
+        layers: layerKeys.slice(0, stable),
+        below: drawn.below,
+      };
+    e.previousLayers = { frame: frameKey, layers: layerKeys };
     const pixels =
       e.alpha === "straight"
         ? unpremultiply(ck, drawn.width, drawn.height, drawn.pixels)
@@ -319,10 +452,24 @@ export async function exportFrame(
       skipped: drawn.skipped,
       warnings: drawn.warnings,
     };
-    return { frame, repeated: false, rgba: toBase64(pixels), ...e.previous };
+    e.pixels = pixels;
+    return { frame, repeated: false, bytes: pixels.byteLength, ...e.previous };
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+/**
+ * Bytes `start` to `end` of the frame `exportFrame` drew last, base64. The host reads a frame as
+ * many small slices: one protocol message holding a whole 1080p frame costs about twice as much.
+ */
+export function exportSlice(start: number, end: number): string {
+  const pixels = exporting?.pixels;
+  if (pixels === undefined) throw new Error("capture page: no export frame to read");
+  const started = now();
+  const out = toBase64(pixels.subarray(start, end));
+  timings.transferMs += now() - started;
+  return out;
 }
 
 type ErrorResponse = { ok: false; name: string; message: string };
@@ -467,15 +614,17 @@ function encodePng(ck: CanvasKit, width: number, height: number, pixels: Uint8Ar
 }
 
 /** Skipped layers and warnings of the frame and every nested precomp plan, each plan once. */
-function reports(root: FramePlan): { skipped: SkippedLayer[]; warnings: RenderWarning[] } {
+function reports(root: FramePlan, only?: ReadonlySet<string>): Reports {
   const skipped: SkippedLayer[] = [];
   const warnings: RenderWarning[] = [];
   const seen = new Set<FramePlan>([root]);
   const stack = [root];
   for (let plan = stack.pop(); plan !== undefined; plan = stack.pop()) {
-    skipped.push(...plan.skipped);
-    warnings.push(...plan.warnings);
-    for (const layer of plan.layers)
+    // With `only`: of the root, just what belongs to those layers; nested plans are whole.
+    const within = (id: string) => only === undefined || plan !== root || only.has(id);
+    skipped.push(...plan.skipped.filter((s) => within(s.id)));
+    warnings.push(...plan.warnings.filter((w) => within(w.id)));
+    for (const layer of plan.layers.filter((l) => within(l.id)))
       for (let l: typeof layer | null = layer; l !== null; l = l.matte?.source ?? null)
         if (l.type === "precomp" && !seen.has(l.frame)) {
           seen.add(l.frame);
