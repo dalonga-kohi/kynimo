@@ -36,6 +36,7 @@ import {
 } from "./pipeline.js";
 import {
   blendShader,
+  COPY,
   DEFORM,
   DEFORM_VERTEX,
   DOWNSAMPLE,
@@ -158,6 +159,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
     gaussian: () => program("gaussian", () => GAUSSIAN),
     downsample: () => program("downsample", () => DOWNSAMPLE),
     final: () => program("final", () => FINAL),
+    copy: () => program("copy", () => COPY),
   };
   let deformGeometry: { array: WebGLVertexArrayObject; buffer: WebGLBuffer } | undefined;
 
@@ -362,10 +364,13 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       into: Target,
       textures: [string, WebGLTexture][],
       set: (u: (name: string) => WebGLUniformLocation | null) => void,
+      /** The pixels of `into` to draw; all of them by default. */
+      view: Bounds = { x: 0, y: 0, width: into.width, height: into.height },
     ) => {
       gl.useProgram(prog.program);
       gl.bindFramebuffer(gl.FRAMEBUFFER, into.framebuffer);
-      gl.viewport(0, 0, into.width, into.height);
+      // The triangle is clipped to the viewport, so only these pixels are shaded.
+      gl.viewport(view.x, view.y, view.width, view.height);
       textures.forEach(([name, texture], unit) => {
         gl.activeTexture(gl.TEXTURE0 + unit);
         gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -689,10 +694,65 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       return effected;
     };
 
-    /** The layer placed in composition space with matte and opacity, before blending. */
-    const placed = (layer: PlannedLayer, width: number, height: number): Target => {
+    /** Copies `region` into the same pixels of `into`; with `over`, composites it there (normal blend). */
+    const copyInto = (into: Target, region: Region, over = false) => {
+      if (over) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      }
+      try {
+        pass(
+          fixed.copy(),
+          into,
+          [["u_src", region.target.texture]],
+          (u) => gl.uniform2i(u("u_origin"), region.x, region.y),
+          { x: region.x, y: region.y, width: region.target.width, height: region.target.height },
+        );
+      } finally {
+        gl.disable(gl.BLEND);
+      }
+    };
+
+    /** A region as a whole `width × height` target; takes ownership of the region's target. */
+    const whole = (region: Region, width: number, height: number): Target => {
+      const t = region.target;
+      if (region.x === 0 && region.y === 0 && t.width === width && t.height === height) return t;
+      const out = target(width, height);
+      clear(gl, out);
+      copyInto(out, region);
+      free(t);
+      return out;
+    };
+
+    /** Composites `region` onto the same pixels of `acc` with a blend mode; `acc` keeps the rest. */
+    const blendInto = (acc: Target, region: Region, blendMode: number) => {
+      if (blendMode === BLEND_MODE_IDS.normal) {
+        copyInto(acc, region, true);
+        return;
+      }
+      // A pass cannot read the target it writes: blend into a spare, then copy that back.
+      const { target: src, x, y } = region;
+      const mixed = target(src.width, src.height);
+      pass(
+        blendProgram(blendMode, false),
+        mixed,
+        [
+          ["u_backdrop", acc.texture],
+          ["u_source", src.texture],
+        ],
+        (u) => gl.uniform2i(u("u_origin"), x, y),
+      );
+      copyInto(acc, { target: mixed, x, y });
+      free(mixed);
+    };
+
+    /**
+     * The layer placed in composition space with matte and opacity, before blending: a target
+     * holding the rectangle of the composition the layer can reach. It draws nothing outside.
+     */
+    const placed = (layer: PlannedLayer, width: number, height: number): Region => {
       const { chain, end } = matteChain(layer);
-      let below: Target | null = null;
+      let below: Region | null = null;
       for (let i = chain.length - 1; i >= 0; i--) {
         const current = chain[i] as PlannedLayer;
         const padding = effectPadding(current.effects ?? []);
@@ -705,7 +765,6 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
             "motion blur samples or number of blurred layers",
           );
         const src = prepare(current, padding);
-        const out = target(width, height);
         const mode = current.matte?.mode;
         const matted = i === chain.length - 1 ? end : "source";
         const matteMode = (
@@ -719,17 +778,33 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
         const plans = projective
           ? []
           : draws.map((sample) => {
-              const inv = invert(
+              const forward =
                 sample === null
                   ? placement(current, padding)
-                  : samplePlacement(current, sample, padding),
-              );
+                  : samplePlacement(current, sample, padding);
+              const inv = invert(forward);
               const lod = inv === null ? 0 : levelOfDetail(inv, src.width, src.height);
               const k = Math.floor(lod);
               // The hi level is only sampled with a positive weight, so an exact level needs no next one.
               const top = lod > k ? Math.min(k + 1, maxLevel(src.width, src.height)) : k;
-              return { sample, inv, lod, k, top };
+              return { sample, forward, inv, lod, k, top };
             });
+        // Only the pixels the layer can reach are drawn. A 3D layer may reach any of them.
+        const bounds = projective
+          ? { x: 0, y: 0, width, height }
+          : enclose(
+              plans.flatMap((p) =>
+                p.inv === null ? [] : [reach(p.forward, src.width, src.height, p.top)],
+              ),
+              width,
+              height,
+            );
+        const out = target(bounds.width, bounds.height);
+        const origins = (u: (name: string) => WebGLUniformLocation | null) => {
+          gl.uniform2f(u("u_origin"), bounds.x, bounds.y);
+          gl.uniform2i(u("u_matteOrigin"), below?.x ?? 0, below?.y ?? 0);
+        };
+        const matteTexture = below?.target.texture ?? empty;
         // One mip chain per source, shared by every sample, built with blending off. A projective
         // layer's levels vary per pixel, so it gets the whole chain.
         const levels = [src];
@@ -766,9 +841,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
                     `u_l${n}`,
                     (levels[n] ?? { texture: empty }).texture,
                   ]),
-                  ["u_matte", below?.texture ?? empty],
+                  ["u_matte", matteTexture],
                 ],
                 (u) => {
+                  origins(u);
                   const m = inv ?? [0, 0, 0, 0, 0, 0, 0, 0, 0];
                   // GLSL matrices are column-major.
                   gl.uniformMatrix3fv(
@@ -805,9 +881,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
                 [
                   ["u_lo", lo.texture],
                   ["u_hi", hi.texture],
-                  ["u_matte", below?.texture ?? empty],
+                  ["u_matte", matteTexture],
                 ],
                 (u) => {
+                  origins(u);
                   gl.uniform2f(u("u_scale"), 2 ** -k, 2 ** -top);
                   gl.uniform1f(u("u_t"), top > k ? lod - k : 0);
                   const [a, b, c, d, e, f] = inv ?? [0, 0, 0, 0, 0, 0];
@@ -827,10 +904,10 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           for (const level of levels.slice(1)) free(level);
         }
         free(src);
-        if (below !== null) free(below);
-        below = out;
+        if (below !== null) free(below.target);
+        below = { target: out, x: bounds.x, y: bounds.y };
       }
-      return below as Target;
+      return below as Region;
     };
 
     const adjust = (layer: PlannedAdjustmentLayer, acc: Target): Target => {
@@ -838,7 +915,7 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       chargeEffects(width, height, layer.effects, layer.id);
       const src = filter(layer.id, acc, layer.effects, [0, 0]);
       const source = layer.matte?.source;
-      const matte = source == null ? null : placed(source, width, height);
+      const matte = source == null ? null : whole(placed(source, width, height), width, height);
       const mask = uploadMask(layer.mask);
       const out = target(width, height);
       pass(
@@ -889,27 +966,19 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
           );
         const src = placed(layer, frame.width, frame.height);
         if (transition !== null && drawn === null) {
-          free(src);
+          free(src.target);
           continue;
         }
-        const next = target(frame.width, frame.height);
-        pass(
-          blendProgram(BLEND_MODE_IDS[layer.blendMode], false),
-          next,
-          [
-            ["u_backdrop", acc.texture],
-            ["u_source", src.texture],
-            ["u_mask", empty],
-            ["u_matte", empty],
-          ],
-          () => {},
-        );
-        free(src);
         if (drawn === null) {
-          free(acc);
-          acc = next;
+          blendInto(acc, src, BLEND_MODE_IDS[layer.blendMode]);
+          free(src.target);
           continue;
         }
+        // A transition reads the frame below the layer (A) and the layer over it (B).
+        const next = target(frame.width, frame.height);
+        copyInto(next, { target: acc, x: 0, y: 0 });
+        blendInto(next, src, BLEND_MODE_IDS[layer.blendMode]);
+        free(src.target);
         const out = target(frame.width, frame.height);
         const uniforms = transitionUniforms(drawn, frame.width, frame.height);
         pass(
@@ -992,6 +1061,86 @@ export function createCompositor(gl: WebGL2RenderingContext): Compositor {
       }
     },
   };
+}
+
+/** A rectangle of whole pixels. */
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A target holding the rectangle of a composition that starts at (`x`, `y`); the rest is transparent. */
+interface Region {
+  target: Target;
+  x: number;
+  y: number;
+}
+
+/** Region sizes are rounded up to this, so animated layers keep reusing pooled targets. */
+const REGION_STEP = 32;
+
+/**
+ * Corners (x0, y0, x1, y1) of the composition rectangle a `width × height` source placed by
+ * `forward` can colour when its deepest sampled mip level is `top`. Bilinear sampling at level L
+ * reads texels up to 2^(L+1) level-0 texels past the source's edges, so the source rectangle
+ * grows by that much before it is mapped.
+ */
+function reach(
+  [a, b, c, d, e, f]: readonly number[],
+  width: number,
+  height: number,
+  top: number,
+): [number, number, number, number] {
+  const m = 2 ** (top + 1);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [
+    [-m, -m],
+    [width + m, -m],
+    [-m, height + m],
+    [width + m, height + m],
+  ] as const) {
+    xs.push((a as number) * x + (c as number) * y + (e as number));
+    ys.push((b as number) * x + (d as number) * y + (f as number));
+  }
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/**
+ * The whole-pixel rectangle inside a `width × height` composition that holds every box, with a
+ * pixel of slack for the float32 inverse on the GPU. Never empty: a layer that reaches nothing
+ * gets one pixel, which the placement pass then leaves transparent. Sizes are rounded up to
+ * `REGION_STEP` (a larger rectangle only draws more transparent pixels).
+ */
+function enclose(
+  boxes: readonly (readonly [number, number, number, number])[],
+  width: number,
+  height: number,
+): Bounds {
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  for (const box of boxes) {
+    // A box that is not finite (a degenerate placement) may reach anything.
+    if (!box.every(Number.isFinite)) return { x: 0, y: 0, width, height };
+    x0 = Math.min(x0, box[0]);
+    y0 = Math.min(y0, box[1]);
+    x1 = Math.max(x1, box[2]);
+    y1 = Math.max(y1, box[3]);
+  }
+  const span = (lo: number, hi: number, limit: number): [number, number] => {
+    const from = Math.max(0, Math.floor(lo) - 1);
+    const to = Math.min(limit, Math.ceil(hi) + 1);
+    if (!(to > from)) return [0, 1];
+    const size = Math.min(limit, Math.ceil((to - from) / REGION_STEP) * REGION_STEP);
+    return [Math.min(from, limit - size), size];
+  };
+  const [x, w] = span(x0, x1, width);
+  const [y, h] = span(y0, y1, height);
+  return { x, y, width: w, height: h };
 }
 
 /**
