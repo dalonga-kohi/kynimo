@@ -1,0 +1,34 @@
+# Keep the build context to what the server is built from.
+.git
+**/node_modules
+**/dist
+**/.turbo
+**/.next
+**/*.tsbuildinfo
+**/coverage
+renders
+design
+spikes
+docs
+apps/web
+.claude
+.agents
+.github
+.vscode
+.idea
+
+# Never send secrets or local output into an image.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/*.mp4
+**/*.webm
+**/*.mov
+
+# Tests and their fixtures are not part of the server.
+**/*.test.ts
+**/*.test-util.ts
+packages/capture/reference
+packages/capture/golden
+packages/capture/bench

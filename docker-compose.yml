@@ -1,0 +1,24 @@
+# Kynimo MCP server for local use: one account, no sign-in.
+#
+#   docker compose up --build
+#
+# Then point an MCP client at http://127.0.0.1:8787/mcp. Projects, assets and exports are kept in
+# the `kynimo-data` volume. To deploy, run the same image with KYNIMO_OAUTH_ISSUER,
+# KYNIMO_PUBLIC_URL, KYNIMO_DATABASE_URL and KYNIMO_S3_* set instead (apps/mcp/.env.example).
+services:
+  mcp:
+    build: .
+    image: kynimo-mcp
+    ports:
+      # Loopback only: without OAuth, anyone who can reach this port is the local account.
+      - "127.0.0.1:${KYNIMO_PORT:-8787}:8787"
+    volumes:
+      - kynimo-data:/data
+    # Chromium keeps its render buffers in shared memory; Docker's 64 MB default is too little.
+    shm_size: 1gb
+    # A running export gets time to finish or cancel cleanly on `docker compose stop`.
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  kynimo-data:
