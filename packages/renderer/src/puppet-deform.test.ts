@@ -131,7 +131,11 @@ describe("deformed vector layers", () => {
     expect(full.raster.pixels.some((value) => value > 0)).toBe(true);
   });
 
-  it("keeps the warped origin under projective placement without deriving scale from the camera", async () => {
+  // Projective parity runs the float64 reference compositor; under a loaded CI runner this
+  // test has exceeded the default 5 s timeout (about 0.5 s when run alone).
+  it("keeps the warped origin under projective placement without deriving scale from the camera", {
+    timeout: 30_000,
+  }, async () => {
     const card = box({
       threeD: true,
       transform: transform({
