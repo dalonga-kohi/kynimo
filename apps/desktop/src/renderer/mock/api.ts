@@ -253,5 +253,6 @@ export function createMockApi(scenario: MockScenario): KynimoApi {
     clipboard: { writeText: (text) => void navigator.clipboard?.writeText(text).catch(noop) },
     openFeedback: async () => undefined,
     openStdioHelp: async () => undefined,
+    openNotices: async () => undefined,
   };
 }

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { StdioServerConfig, StudioStatus } from "../shared/api.js";
 
 const REPO = "https://github.com/dalonga-kohi/kynimo";
@@ -36,6 +37,18 @@ export function feedbackUrl(info: FeedbackInfo): string {
 }
 
 export const isFeedbackUrl = (url: string): boolean => url.startsWith(FEEDBACK_PREFIX);
+
+/**
+ * The stdio bridge entry point: `bridge.mjs` in the resources folder when packaged (the installer
+ * puts it there, outside the asar archive), the build output next to the main bundle in development.
+ */
+export function bridgePath(
+  app: { isPackaged: boolean },
+  resourcesPath: string,
+  mainDir: string,
+): string {
+  return app.isPackaged ? join(resourcesPath, "bridge.mjs") : join(mainDir, "bridge.mjs");
+}
 
 /** The `kynimo` server entry for a client that only starts stdio servers. */
 export function stdioServer(execPath: string, bridgePath: string): StdioServerConfig {

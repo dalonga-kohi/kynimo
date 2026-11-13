@@ -22,6 +22,11 @@ export function HelpMenu({ onAbout, onBuildNotes }: HelpMenuProps) {
       label: "Open projects folder",
       onSelect: () => void studio.openProjectsFolder(),
     },
+    {
+      key: "notices",
+      label: "Third-party notices",
+      onSelect: () => void window.kynimo.openNotices(),
+    },
   ];
   return <Dropdown label="Help" trigger="Help" items={items} triggerClassName="help" />;
 }

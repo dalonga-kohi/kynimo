@@ -10,6 +10,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "local:package": "node scripts/local/package.mjs",
+    "desktop:package": "pnpm --filter @kynimo/desktop package",
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "turbo run typecheck",

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "apps/mcp/**"
+      - "apps/desktop/**"
       - "packages/**"
       - "scripts/local/**"
       - ".github/workflows/local-bundles.yml"
@@ -65,4 +66,26 @@ jobs:
           name: kynimo-${{ matrix.target }}
           path: build/local/kynimo-${{ matrix.target }}.${{ matrix.extension }}
           if-no-files-found: error
+          compression-level: 0
+
+  desktop:
+    name: Windows installer and smoke test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm desktop:package
+      - run: pnpm --filter @kynimo/desktop smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kynimo-desktop-installer
+          path: apps/desktop/dist/Kynimo-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
           compression-level: 0

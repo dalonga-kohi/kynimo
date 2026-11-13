@@ -1,0 +1,4 @@
+<svg role="img" aria-label="Kynimo" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#F5C842" />
+  <path transform="translate(4 4)" fill="#14110A" d="M0 0H2V24H0Z M7 0H12L7 5Z M8 12L12 8V16Z M7 19L12 24H7Z M20 0H24V24H20L14 18V6Z" />
+</svg>

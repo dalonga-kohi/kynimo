@@ -22,6 +22,7 @@ import { MEDIA_SCHEME, parseMediaUrl } from "../shared/media-url.js";
 import { dataDir, desktopDir } from "../shared/paths.js";
 import type { HostInit } from "../shared/protocol.js";
 import {
+  bridgePath as bridgeEntry,
   feedbackUrl,
   isFeedbackUrl,
   sanitizeFileName,
@@ -29,7 +30,7 @@ import {
   stdioServer,
 } from "./external.js";
 import { HostClient } from "./host-client.js";
-import { mediaPaths } from "./media-paths.js";
+import { mediaEnv, mediaPaths, noticesDir } from "./media-paths.js";
 import { type AppLocation, isAppUrl } from "./security.js";
 import { loadWindowState, MIN_SIZE, saveWindowState, type WindowState } from "./window-state.js";
 
@@ -55,15 +56,17 @@ let quitting = false;
 
 /** Starts the utility process that runs the server, and resolves once it is up. */
 async function startHost(): Promise<HostClient> {
+  const media = mediaPaths(app);
   const child = utilityProcess.fork(join(import.meta.dirname, "host.mjs"), [], {
     serviceName: "Kynimo server",
-    env: { ...process.env },
+    // A packaged app's own FFmpeg and Chromium win over the environment it was started from.
+    env: { ...process.env, ...mediaEnv(media) },
   });
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", () => resolve());
     child.once("exit", (code) => reject(new Error(`the server process exited (${code})`)));
   });
-  const init: HostInit = { type: "init", dataDir: DATA_DIR, media: mediaPaths(app) };
+  const init: HostInit = { type: "init", dataDir: DATA_DIR, media };
   child.postMessage(init);
   const client = new HostClient({
     postMessage: (message) => child.postMessage(message),
@@ -85,6 +88,8 @@ function createWindow(state: WindowState): BrowserWindow {
     frame: false,
     backgroundColor: "#0C0B0A",
     show: false,
+    // A packaged app uses the icon embedded in Kynimo.exe.
+    ...(app.isPackaged ? {} : { icon: join(import.meta.dirname, "../../build/icon.png") }),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -143,11 +148,7 @@ function requireHost(): HostClient {
   return host;
 }
 
-/** The stdio bridge entry point: next to the app when packaged, in the build output in development. */
-const bridgePath = (): string =>
-  app.isPackaged
-    ? join(process.resourcesPath, "bridge.mjs")
-    : join(import.meta.dirname, "bridge.mjs");
+const bridgePath = (): string => bridgeEntry(app, process.resourcesPath, import.meta.dirname);
 
 /** Renders the animation, asks where to put it, copies it there. */
 async function exportVideo(win: BrowserWindow, id: string, format: ExportFormat) {
@@ -241,6 +242,15 @@ function registerIpc(): void {
     }),
   );
   ipcMain.handle(
+    CHANNELS.openNotices,
+    trusted(async () => {
+      const folder = noticesDir(app);
+      if (folder === undefined) throw new Error("the notices ship with the installed app");
+      const failure = await shell.openPath(folder);
+      if (failure !== "") throw new Error(failure);
+    }),
+  );
+  ipcMain.handle(
     CHANNELS.markWelcomeSeen,
     trusted(async () => {
       await requireHost().request("markWelcomeSeen");
@@ -313,7 +323,7 @@ function registerMediaProtocol(): void {
 }
 
 async function boot(): Promise<void> {
-  app.setAppUserModelId("app.kynimo.desktop");
+  app.setAppUserModelId("dev.kynimo.desktop");
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
     callback(false),
   );

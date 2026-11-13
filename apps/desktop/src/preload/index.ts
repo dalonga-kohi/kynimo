@@ -40,6 +40,7 @@ const api: KynimoApi = {
   clipboard: { writeText: (text) => ipcRenderer.send(CHANNELS.writeText, text) },
   openFeedback: () => ipcRenderer.invoke(CHANNELS.openFeedback),
   openStdioHelp: () => ipcRenderer.invoke(CHANNELS.openStdioHelp),
+  openNotices: () => ipcRenderer.invoke(CHANNELS.openNotices),
 };
 
 contextBridge.exposeInMainWorld("kynimo", api);

@@ -5,9 +5,9 @@ import { CSP, DEV_CSP } from "./src/shared/csp.js";
 
 const src = (path: string) => resolve(import.meta.dirname, "src", path);
 
-// Main, preload and renderer in one config. The main build has three entries: the app (index),
-// the server host that main starts in a utility process (host) and the stdio bridge that
-// clients launch with ELECTRON_RUN_AS_NODE (bridge). Dependencies (@kynimo/mcp and what it
+// Main, preload and renderer in one config. The main build has two entries: the app (index) and
+// the server host that main starts in a utility process (host). The stdio bridge that clients
+// launch with ELECTRON_RUN_AS_NODE is built on its own (vite.bridge.config.ts). Dependencies (@kynimo/mcp and what it
 // brings: Playwright, the FFmpeg wrappers) stay external, never bundled.
 export default defineConfig({
   main: {
@@ -16,7 +16,6 @@ export default defineConfig({
         input: {
           index: src("main/index.ts"),
           host: src("host/index.ts"),
-          bridge: src("bridge/stdio-bridge.ts"),
         },
         output: {
           format: "es",

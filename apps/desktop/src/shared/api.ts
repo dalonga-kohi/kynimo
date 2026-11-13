@@ -90,6 +90,8 @@ export interface KynimoApi {
   clipboard: { writeText(text: string): void };
   openFeedback(): Promise<void>;
   openStdioHelp(): Promise<void>;
+  /** Opens the folder with the third-party licence notices (installed app only). */
+  openNotices(): Promise<void>;
 }
 
 /** The `kynimo` entry of an MCP client config that starts the stdio bridge. */
@@ -119,5 +121,6 @@ export const CHANNELS = {
   writeText: "clipboard:write-text",
   openFeedback: "app:open-feedback",
   openStdioHelp: "app:open-stdio-help",
+  openNotices: "app:open-notices",
   appInfo: "app:info",
 } as const;

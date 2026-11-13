@@ -423,6 +423,7 @@ describe("Help menu", () => {
       "Send feedback",
       "Use stdio instead",
       "Open projects folder",
+      "Third-party notices",
     ]);
   });
 
@@ -441,6 +442,12 @@ describe("Help menu", () => {
     );
     expect(folder).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    const notices = vi.spyOn(api, "openNotices");
+    fireEvent.click(
+      within(await openHelp()).getByRole("menuitem", { name: "Third-party notices" }),
+    );
+    expect(notices).toHaveBeenCalledTimes(1);
   });
 
   it("shows the Welcome screen again and opens the build notes", async () => {
@@ -463,7 +470,7 @@ describe("Help menu", () => {
     expect(items[1]).toHaveFocus();
     fireEvent.keyDown(menu, { key: "ArrowUp" });
     fireEvent.keyDown(menu, { key: "ArrowUp" });
-    expect(items[4]).toHaveFocus();
+    expect(items.at(-1)).toHaveFocus();
     fireEvent.keyDown(menu, { key: "Home" });
     expect(items[0]).toHaveFocus();
     fireEvent.keyDown(menu, { key: "Escape" });
