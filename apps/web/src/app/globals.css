@@ -811,104 +811,195 @@ button {
   grid-area: 1 / 1;
 }
 
-/* How: a contact sheet of the loop */
+/* How: the loop as a player. Steps on the left, the stage they drive on the right. */
 
-.sheet {
+.loop {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: clamp(28px, 4.5vw, 72px);
+  align-items: start;
+}
+.loop-steps {
   border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
 }
-.sheet-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 260px;
-  padding: clamp(22px, 2.4vw, 32px);
-  border-right: 1px solid var(--line);
+.loop-step {
   border-bottom: 1px solid var(--line);
-  transition: background-color 300ms ease-out;
 }
-.sheet-cell:hover {
-  background: var(--surface);
+.loop-button {
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: 18px 8px 18px 26px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.sheet-cell h3 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: clamp(28px, 4vw, 56px);
-  font-size: clamp(1.5rem, 2.2vw, 2rem);
+/* The rail is the step's own playhead: it fills while the step is on the stage. */
+.loop-rail {
+  position: absolute;
+  inset: -1px auto -1px 0;
+  width: 2px;
+  background: var(--line);
+}
+.loop-rail-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: 50% 0;
+  transform: scaleY(var(--t, 0));
+}
+.loop-name {
+  font-size: clamp(1.375rem, 2vw, 1.75rem);
   font-weight: 800;
   font-stretch: 125%;
   letter-spacing: -0.02em;
-  line-height: 1.1;
+  line-height: 1.15;
+  color: var(--faint);
+  transition: color 200ms ease-out;
 }
-.sheet-cell p {
+.loop-button:hover .loop-name,
+.loop-step[data-active="true"] .loop-name {
+  color: var(--text);
+}
+.loop-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 420ms var(--ease-out),
+    opacity 300ms ease-out;
+}
+.loop-body > span {
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.9375rem;
   line-height: 1.5;
-  max-width: 36ch;
+  max-width: 40ch;
 }
-.sheet-tools {
-  display: flex;
-  margin-top: auto;
+.loop-step[data-active="true"] .loop-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
   padding-top: 8px;
+}
+.loop-stage {
+  position: sticky;
+  top: 96px;
+}
+.loop-screen {
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ground);
+  overflow: hidden;
+}
+.loop-caption {
+  display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  align-items: baseline;
+  gap: 6px 20px;
+  min-height: 44px;
+  padding-top: 14px;
+  color: var(--faint);
+  font-size: 0.8125rem;
 }
-.sheet-tools code {
+.loop-caption ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.loop-caption code {
   color: var(--text);
-  font-size: 0.75rem;
 }
-/* Features */
 
-.packs {
+/* Features: six studies, each drawn live */
+
+.features {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(28px, 3.4vw, 48px) clamp(20px, 2.4vw, 32px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(32px, 3.6vw, 52px) clamp(18px, 2vw, 28px);
 }
-.pack-screen {
+.feature-screen {
   aspect-ratio: 16 / 9;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
 }
-.pack figcaption {
+.feature figcaption {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 6px 16px;
+  gap: 6px;
   padding-top: 16px;
 }
-.pack-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.feature h3 {
+  font-size: 1.125rem;
   font-weight: 650;
+  letter-spacing: -0.005em;
 }
-.pack-name i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--pack-accent);
-}
-.pack code {
-  color: var(--faint);
-  font-size: 0.75rem;
-  text-align: right;
-}
-.pack p {
-  grid-column: 1 / -1;
+.feature p {
   color: var(--muted);
   font-size: 0.9375rem;
-  max-width: 52ch;
+  line-height: 1.5;
+  max-width: 38ch;
 }
 
 /* Desktop app */
 
-/* Empty on purpose: the app screenshots mount here. */
 .desktop-tour {
-  display: block;
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  margin-bottom: clamp(36px, 4.5vw, 64px);
+}
+.tour-tabs {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.tour-tab {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+.tour-tab:hover {
+  color: var(--text);
+}
+.tour-tab[aria-selected="true"] {
+  background: var(--raised);
+  color: var(--text);
+}
+.tour-window {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2560 / 1600;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--ground);
+  overflow: hidden;
+  box-shadow: 0 48px 120px -48px rgb(0 0 0 / 0.9);
+}
+.tour-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 320ms ease-out;
+}
+.tour-shot[data-current="true"] {
+  opacity: 1;
 }
 .facts {
   display: grid;
@@ -1155,16 +1246,7 @@ button {
   width: 100%;
   height: auto;
 }
-.exposure span {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  color: var(--faint);
-}
-.exposure[data-sharp="true"],
-.exposure[data-sharp="true"] span {
+.exposure[data-sharp="true"] {
   color: var(--accent);
 }
 
@@ -1204,7 +1286,7 @@ button {
 /* Smaller screens */
 
 @media (max-width: 960px) {
-  .sheet {
+  .features {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .faq {
@@ -1219,8 +1301,14 @@ button {
   .nav-inner {
     justify-content: space-between;
   }
-  .layers-grid {
+  .layers-grid,
+  .loop {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* The stage leads on narrow screens, and stops pinning. */
+  .loop-stage {
+    position: static;
+    order: -1;
   }
 }
 
@@ -1263,17 +1351,11 @@ button {
   .player-meta {
     display: none;
   }
-  .sheet {
+  .features {
     grid-template-columns: minmax(0, 1fr);
   }
-  .sheet-cell {
-    min-height: 0;
-  }
-  .sheet-cell h3 {
-    padding-top: 8px;
-  }
-  .packs {
-    grid-template-columns: minmax(0, 1fr);
+  .tour-tab {
+    padding: 0 14px;
   }
   .facts,
   .beta-grid {
@@ -1310,6 +1392,11 @@ button {
   .hero-stage,
   [data-echoed] {
     animation: none;
+  }
+  .loop-body,
+  .loop-name,
+  .tour-shot {
+    transition: none;
   }
   .btn:active,
   .play:active {

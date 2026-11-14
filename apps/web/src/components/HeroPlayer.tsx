@@ -56,8 +56,7 @@ export function HeroPlayer() {
       el.setAttribute("aria-valuetext", valueText(frame));
     }
     if (playhead.current) playhead.current.style.left = pct(frame);
-    if (readout.current)
-      readout.current.textContent = `${timecode(frame)}  f${String(Math.round(frame)).padStart(3, "0")}`;
+    if (readout.current) readout.current.textContent = timecode(frame);
   }, []);
 
   const pause = (value: boolean) => {
@@ -143,7 +142,7 @@ export function HeroPlayer() {
           <span className="player-name">launch-teaser</span>
           <span className="player-meta">1920 × 1080 · 30 fps · 4 layers</span>
           <output ref={readout} className="player-time" aria-live="off">
-            00:03:10 f100
+            00:03:10
           </output>
         </div>
 

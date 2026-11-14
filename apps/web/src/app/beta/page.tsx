@@ -107,7 +107,7 @@ export default function Beta() {
             <ol className="beta-steps">
               {STEPS.map(([name, body], i) => (
                 <li key={name} className="beta-step">
-                  <span className="beta-num">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="beta-num">{i + 1}</span>
                   <div>
                     <h3>{name}</h3>
                     <p>{body}</p>

@@ -1,14 +1,16 @@
 import Link from "next/link";
+import { DesktopTour } from "@/components/DesktopTour";
 import { EchoOnView } from "@/components/EchoOnView";
 import { ExposureStudy } from "@/components/ExposureStudy";
+import { Features } from "@/components/Features";
 import { Footer } from "@/components/Footer";
 import { HeroField } from "@/components/HeroField";
 import { HeroPlayer } from "@/components/HeroPlayer";
 import { LayerStack } from "@/components/LayerStack";
+import { LoopPlayer } from "@/components/LoopPlayer";
 import { ArrowRightIcon } from "@/components/Mark";
 import { Nav } from "@/components/Nav";
-import { Packs } from "@/components/Packs";
-import { BETA_PATH, DOWNLOAD_URL, FAQ, LOOP, REPO_URL, SITE, SITE_URL } from "@/lib/site";
+import { BETA_PATH, DOWNLOAD_URL, FAQ, REPO_URL, SITE, SITE_URL } from "@/lib/site";
 
 const LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0";
 
@@ -161,23 +163,7 @@ export default function Home() {
                 step is a tool call you can read.
               </p>
             </header>
-            <ol className="sheet">
-              {LOOP.map((item) => (
-                <li key={item.step} className="sheet-cell">
-                  <h3>{item.step}</h3>
-                  <p>{item.body}</p>
-                  {item.tools.length > 0 && (
-                    <ul className="sheet-tools">
-                      {item.tools.map((tool) => (
-                        <li key={tool}>
-                          <code>{tool}</code>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ol>
+            <LoopPlayer />
           </div>
         </section>
 
@@ -192,7 +178,7 @@ export default function Home() {
                 render queue. Your projects and exports stay in a folder you own.
               </p>
             </header>
-            <div className="desktop-tour" />
+            <DesktopTour />
             <ul className="facts">
               {DESKTOP_FACTS.map(([title, body]) => (
                 <li key={title} className="fact">
@@ -219,7 +205,7 @@ export default function Home() {
                 of a professional tool, and your agent can use all of it.
               </p>
             </header>
-            <Packs />
+            <Features />
           </div>
         </section>
 
