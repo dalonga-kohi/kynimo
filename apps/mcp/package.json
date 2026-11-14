@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./local": {
+      "types": "./dist/local-server.d.ts",
+      "default": "./dist/local-server.js"
     }
   },
   "files": [

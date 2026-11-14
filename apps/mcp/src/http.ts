@@ -15,6 +15,7 @@ import {
   resourceMetadata,
 } from "./auth.js";
 import { EXPORT_CONTENT_TYPES, type ExportFiles } from "./export-files.js";
+import { describeRequest, MAX_DESCRIBED_CHARS, type McpRequestEvent } from "./request-events.js";
 import { LOCAL_ACCOUNT } from "./store.js";
 
 /** Who a request acts for: whose projects it sees, and whose undo stack and keys it uses. */
@@ -43,6 +44,11 @@ export interface HttpOptions {
   maxBodyBytes?: number;
   /** Where unexpected errors are reported; never given tokens or bodies. */
   onError?: (e: unknown) => void;
+  /**
+   * Told about each MCP request once its body parsed and the caller is authenticated, before it
+   * is handled. Errors it throws are ignored.
+   */
+  onRequest?: (event: McpRequestEvent) => void;
 }
 
 /** Room for an 8 MB `upload_asset` as base64 inside its JSON-RPC envelope. */
@@ -234,6 +240,19 @@ export function createHttpHandler(options: HttpOptions): RequestListener {
         // Stop reading; the client gets its answer without uploading the rest.
         return refuse(res, 413, rpcError(-32000, `the request is larger than ${maxBody} bytes`));
       return send(res, 400, rpcError(-32700, "the request body is not valid JSON"));
+    }
+
+    if (options.onRequest) {
+      try {
+        const userAgent = req.headers["user-agent"];
+        options.onRequest({
+          at: Date.now(),
+          userAgent: userAgent?.slice(0, MAX_DESCRIBED_CHARS),
+          messages: describeRequest(body),
+        });
+      } catch {
+        // An observer never affects the response.
+      }
     }
 
     const server = options.serve(caller);

@@ -2,7 +2,7 @@
 
 ## One-liner
 
-**Motion graphics that agents create and humans finish.** An agent-first, cloud-hosted motion engine: any AI assistant connects over MCP, builds motion videos from components, keyframes **or code** on top of style guidelines, checks its own work, and exports a finished, fully editable video.
+**Motion graphics that agents create and humans finish.** An agent-first motion engine that runs on the user's machine. An assistant connects over MCP, builds motion videos from components, keyframes **or code** on top of style guidelines, checks its own work, and exports a finished, fully editable video.
 
 ## The problem
 
@@ -29,7 +29,7 @@ Developers, indie founders and marketers who need **product launch videos, UI pr
 ## The core loop
 
 ```
-Agent ──MCP──▶ Kynimo Cloud
+Agent ──local MCP──▶ Kynimo
   1. Pick a style      → guideline pack: brand, motion personality, typography
   2. Build             → scenes, components, text, keyframes, your media,
                          or code (custom components + shaders), all in the scene graph
@@ -57,7 +57,7 @@ Targets for the private beta:
 1. **Scene format** — a versioned JSON scene graph: compositions, scenes, layers, component instances, keyframes, style reference. The single source of truth and the reason everything stays editable.
 2. **Guidelines** — complete motion design systems: visual tokens (color, type, spacing, grid, safe areas), motion tokens (durations, springs, easings, stagger rhythms), choreography rules, and automated quality checks (readability time, simultaneous motion, contrast, safe areas, token-only easing). Shipped as style packs ("Keynote", "Playful SaaS", "Editorial", "Brutalist" exist as drafts, ADR-0037; custom brand packs follow).
 3. **Components and code** — reusable, typed building blocks (kinetic type, logo reveals, device mockups, charts, lower thirds, transitions, backgrounds) that read the active guideline. **Agents and users write their own in code:** custom components in TypeScript and custom shaders in GLSL, sandboxed, with declared, animatable props. Code enters the document only as component or shader nodes with editable props, so it stays editable and quality-checked (ADR-0012).
-4. **Render cloud** — deterministic rendering: fast preview frames for the agent's check step, background export jobs, preview links.
+4. **Local rendering** — deterministic preview frames, background export jobs and playback links on the machine running Kynimo.
 
 ## v1 scope
 
@@ -67,7 +67,7 @@ Targets for the private beta:
 - **Scripts** (ADR-0036): the agent writes one TypeScript program against a typed SDK; it runs once in a sandbox and leaves ordinary, editable layers and keyframes behind. The main way to build anything larger than a few edits.
 - **Code authoring:** agents define custom components (TypeScript) and shaders (GLSL) over MCP (`define_component`, `define_shader`); built-in shader library for 2D effects, backgrounds and transitions (ADR-0012).
 - **Your own media:** photos, video (screen recordings, footage), SVG vectors and custom fonts (ADR-0013).
-- Remote MCP server usable from any MCP client, with OAuth sign-in.
+- Downloadable local MCP server with persistent projects and assets, loopback HTTP and stdio.
 - Built-in guideline packs + component library v1.
 - Preview frames, quality report, MP4 / WebM / GIF export, shareable preview links.
 - Music track with beat markers (motion timed to the beat).
@@ -82,7 +82,7 @@ Targets for the private beta:
 - Long-form "motion movies" (the format supports chaining scenes; we prove quality on short pieces first).
 - Voiceover generation, live/interactive runtime output.
 - Not in v1, planned for v1.x (ADR-0013): 3D compositing (3D layers, cameras, lights), glTF 3D models with shader materials, Lottie import.
-- Not in v1, direction only (ADR-0012): a code panel in the editor, a local CLI.
+- Not in v1, direction only (ADR-0012): a code panel in the editor.
 
 ## Business model (direction)
 
@@ -90,7 +90,7 @@ Open core, decided before public launch: the scene format and component SDK may 
 
 ## Assumptions to confirm
 
-- "Universal" means: works with any MCP-compatible client through one remote, cloud-hosted server.
+- Clients that support a local MCP transport can use the engine with their choice of model.
 - Short-form first; longer motion movies in a later phase.
 - ~~A professional motion designer will help author the first guideline packs.~~ No designer is lined up. We author the first packs ourselves from published motion systems and analysis of reference videos, tested on the brief suite; an outside motion designer's critique is a gate before public launch, not a dependency for starting (ADR-0035).
 

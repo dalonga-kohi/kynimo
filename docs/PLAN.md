@@ -2,18 +2,15 @@
 
 How the next roadmap items are meant to be built. [ROADMAP.md](ROADMAP.md) owns the order; this file owns the approach. A plan here is a starting point for the "Shape" step of the feature loop, not a decision: decisions land as ADRs. Delete a section when its item merges.
 
-## Deploy (M3, last item)
+## Local distribution (M3, last item)
 
-Goal: a stranger's Claude or ChatGPT connects to a URL, signs in and rebuilds a reference scene.
+Goal: a user downloads an archive, runs the local server and rebuilds a reference scene
+from their MCP client (ADR-0060).
 
-1. Hosting ADR. The server needs the pinned Chromium, FFmpeg and long-lived processes, so it is a container host, not serverless functions. Managed Postgres and R2 are already decided (ADR-0029, ADR-0031).
-2. One Dockerfile for `apps/mcp` with the pinned Chromium and FFmpeg; `/healthz`; graceful shutdown that lets a running render finish.
-3. Observability before users: one structured log line per tool call (tool, account, duration, error kind, bytes returned). The brief suite and pricing both read this later.
-4. Per-account limits: projects, stored bytes, render seconds per day. Rejections say the limit and the current use.
-5. Measure render seconds per frame at 1080p on the host and write it into the ADR. Export pricing and M7 worker sizing depend on that number. `node packages/capture/bench/export.mjs` gives it per stage; run it once as is and once with `KYNIMO_GPU=hardware` if the host has a GPU, and choose the backend by cost per exported frame (ADR-0059).
-6. Connect from Claude and ChatGPT by hand; record each client's quirks (image results, resource support, listing limits) in `apps/mcp/README.md`.
-
-Open: region, and whether renders share the server process until M7 (recommended: yes, with a concurrency cap).
+1. Build and smoke-test each native archive, including rendering and export from a fresh extraction.
+2. Decide usage terms and verify third-party notices and corresponding sources before public distribution.
+3. Verify the public package launch on clean Windows, macOS and Linux machines and document local client setup.
+4. Use the same server process as the backend for a desktop shell.
 
 ## Per-glyph text cost (M4 follow-up to ADR-0038)
 

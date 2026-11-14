@@ -1,0 +1,91 @@
+name: Local bundles
+
+on:
+  pull_request:
+    paths:
+      - "apps/mcp/**"
+      - "apps/desktop/**"
+      - "packages/**"
+      - "scripts/local/**"
+      - ".github/workflows/local-bundles.yml"
+      - ".nvmrc"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "turbo.json"
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload the tested archives as downloadable workflow artifacts
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Bundle and smoke test (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: win32-x64
+            extension: zip
+          - runner: macos-15
+            target: darwin-arm64
+            extension: tar.gz
+          - runner: macos-15-intel
+            target: darwin-x64
+            extension: tar.gz
+          - runner: ubuntu-24.04
+            target: linux-x64
+            extension: tar.gz
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            extension: tar.gz
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - if: runner.os == 'Linux'
+        run: pnpm --filter @kynimo/capture exec playwright install-deps chromium
+      - run: pnpm local:package
+      - run: node scripts/local/smoke.mjs build/local/kynimo-${{ matrix.target }}.${{ matrix.extension }}
+      - if: github.event_name == 'workflow_dispatch' && inputs.upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: kynimo-${{ matrix.target }}
+          path: build/local/kynimo-${{ matrix.target }}.${{ matrix.extension }}
+          if-no-files-found: error
+          compression-level: 0
+
+  desktop:
+    name: Windows installer and smoke test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm desktop:package
+      - run: pnpm --filter @kynimo/desktop smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kynimo-desktop-installer
+          path: apps/desktop/dist/Kynimo-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

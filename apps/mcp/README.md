@@ -145,6 +145,12 @@ Where uploaded assets live (ADR-0031). `upload_asset` takes PNG, JPEG, TTF or OT
 - **`<dir>/blobs`** with `--dir`.
 - **An S3-compatible bucket** (Cloudflare R2, AWS S3, MinIO). Set `KYNIMO_S3_ENDPOINT` (e.g. `https://<account>.r2.cloudflarestorage.com`), `KYNIMO_S3_BUCKET`, `KYNIMO_S3_ACCESS_KEY_ID` and `KYNIMO_S3_SECRET_ACCESS_KEY`, plus `KYNIMO_S3_REGION` if it isn't `auto`. This setting takes precedence over the other two. With Postgres projects, uploads are off until a bucket is set.
 
+## Native local server
+
+The [native bundle](../../scripts/local/README.md) packages this server with Node.js,
+pinned Chromium and FFmpeg. It starts on loopback with persistent per-user storage,
+and supports stdio for clients that launch their own process.
+
 ## Remote server (Streamable HTTP + OAuth)
 
 `--http` serves the same tools over stateless Streamable HTTP (ADR-0033). Kynimo is an OAuth resource server: an external authorization server (WorkOS AuthKit first; any issuer of JWT access tokens with a JWKS works) signs users in and registers clients, and Kynimo checks each token. Every signed-in user is their own account: they see only their own projects.

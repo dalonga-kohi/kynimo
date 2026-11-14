@@ -753,6 +753,11 @@ export class ServiceRuntime {
     this.jobs = options.jobs ?? new JobQueue({ describeError: describeJobError });
   }
 
+  /** Queued and running jobs of every account, for an in-process host (not part of any tool). */
+  activeJobs(): JobRecord<ExportResult>[] {
+    return this.jobs.active();
+  }
+
   /** Stops the job queue: queued jobs are cancelled, running ones aborted and awaited. */
   close(): Promise<void> {
     return this.jobs.close();

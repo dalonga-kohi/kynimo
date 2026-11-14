@@ -1,27 +1,9 @@
 #!/usr/bin/env node
-import { mkdtemp, rm } from "node:fs/promises";
-import { createServer as createHttpServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { launchCapture } from "@kynimo/capture";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { type AuthConfig, discoverJwksUri, isLoopback, remoteKeys } from "./auth.js";
-import {
-  type BlobStore,
-  DirBlobStore,
-  MemoryBlobStore,
-  S3BlobStore,
-  s3ConfigFromEnv,
-} from "./blobs.js";
-import { ExportFiles } from "./export-files.js";
-import { createHttpHandler, remoteEnv } from "./http.js";
-import { Ffmpeg } from "./media.js";
-import { CaptureRenderer } from "./render.js";
-import { createServer } from "./server.js";
-import { KynimoService, ServiceRuntime } from "./service.js";
-import { type AccountStore, FileStore, MemoryStore, type ProjectStore } from "./store.js";
-import { connectPostgres, type Database, PostgresStore } from "./store-postgres.js";
+import { isLoopback } from "./auth.js";
+import { remoteEnv } from "./http.js";
+import { type RunningServer, startServer } from "./local-server.js";
 
 const USAGE = `kynimo-mcp — Kynimo MCP server (stdio, or Streamable HTTP with --http)
 
@@ -96,170 +78,39 @@ if (values.help) {
   const port = Number(values.port ?? process.env.PORT ?? 8787);
   if (!Number.isInteger(port) || port < 0 || port > 65535) fail("--port must be 0 to 65535");
   // The remote settings are checked before anything starts, so a typo fails fast.
-  const remote =
-    values.http && !noAuth
-      ? (() => {
-          try {
-            return remoteEnv(process.env);
-          } catch (e) {
-            return fail(e);
-          }
-        })()
-      : undefined;
-  let store: ProjectStore;
-  let accounts: AccountStore | undefined;
-  let where: string;
-  let close: () => Promise<void> = async () => undefined;
-  if (databaseUrl) {
-    // The URL holds the password: never echo it, and report pool errors by message only.
-    const db: Database = connectPostgres(databaseUrl, (e) =>
-      process.stderr.write(`kynimo-mcp: database connection error: ${e.message}\n`),
-    );
-    const postgres = await PostgresStore.open(db).catch(fail);
-    store = accounts = postgres;
-    close = () => db.close();
-    where = "projects in Postgres";
-  } else if (values.dir) {
-    const fileStore = await FileStore.open(resolve(values.dir)).catch(fail);
-    store = fileStore;
-    close = () => fileStore.close();
-    where = `projects in ${resolve(values.dir)}`;
-  } else {
-    store = accounts = new MemoryStore();
-    where = "in-memory projects";
-  }
-  let blobs: BlobStore | undefined;
-  let assetsWhere: string;
-  const s3 = (() => {
+  if (values.http && !noAuth) {
     try {
-      return s3ConfigFromEnv(process.env);
+      remoteEnv(process.env);
     } catch (e) {
-      return fail(e);
+      fail(e);
     }
-  })();
-  if (s3) {
-    blobs = new S3BlobStore(s3);
-    assetsWhere = `assets in bucket ${s3.bucket}`;
-  } else if (values.dir) {
-    blobs = new DirBlobStore(resolve(values.dir, "blobs"));
-    assetsWhere = `assets in ${resolve(values.dir, "blobs")}`;
-  } else if (databaseUrl) {
-    assetsWhere = "asset upload off: set KYNIMO_S3_* to keep assets with Postgres projects";
-  } else {
-    blobs = new MemoryBlobStore();
-    assetsWhere = "in-memory assets";
   }
-  const media = new Ffmpeg({
-    ffmpeg: process.env.KYNIMO_FFMPEG || "ffmpeg",
-    ffprobe: process.env.KYNIMO_FFPROBE || "ffprobe",
-  });
-  const hasMedia = await media.available();
-  const mediaWhere = hasMedia
-    ? `video via ${await media.version()}`
-    : "video upload off: no FFmpeg";
-  // Chromium starts on the first render, not here. KYNIMO_GPU=hardware draws on the host's GPU
-  // instead of SwiftShader: much faster, but the pixels then depend on that GPU (ADR-0059).
-  const gpu = process.env.KYNIMO_GPU || "swiftshader";
-  if (gpu !== "swiftshader" && gpu !== "hardware")
-    fail(new Error(`KYNIMO_GPU must be 'swiftshader' or 'hardware' (got '${gpu}')`));
-  const gpuArgs = process.env.KYNIMO_GPU_ARGS?.split(/\s+/).filter((arg) => arg !== "");
-  const renderer = new CaptureRenderer(() =>
-    launchCapture({
-      gpu: gpu === "hardware" ? "hardware" : "swiftshader",
-      ...(gpuArgs === undefined || gpuArgs.length === 0 ? {} : { gpuArgs }),
-    }),
-  );
-  const exportDir = values.dir
-    ? resolve(values.dir, "exports")
-    : await mkdtemp(join(tmpdir(), "kynimo-exports-")).catch(fail);
-  const exportFiles = await ExportFiles.open(exportDir).catch(fail);
-  // The media links' origin: set once the server is listening (--no-auth) or from the public URL.
-  let mediaOrigin: string | undefined;
-  const runtime = new ServiceRuntime({
-    renderer,
-    exportFiles,
-    localExportPaths: !values.http,
-    ...(values.http
-      ? {
-          downloadUrl: (token: string) => `${mediaOrigin}/exports/${token}`,
-          previewUrl: (token: string) => `${mediaOrigin}/previews/${token}`,
-        }
-      : {}),
-    ...(hasMedia ? { media } : {}),
-    ...(blobs === undefined
-      ? {
-          blobsUnavailable:
-            "this server keeps projects in Postgres but has no asset bucket (KYNIMO_S3_*)",
-        }
-      : { blobs }),
-  });
-  let stopHttp: () => Promise<void> = async () => undefined;
+
+  // Signals and a vanished stdin or IPC parent can arrive while the server is still starting.
+  let running: RunningServer | undefined;
+  let stopRequested = false;
   const release = () => {
-    void stopHttp()
-      .then(() => runtime.close())
-      .then(() => Promise.allSettled([renderer.close(), close()]))
-      // A temporary exports folder (no --dir) goes with the server; <dir>/exports is never removed.
-      .then(() =>
-        values.dir ? undefined : rm(exportDir, { recursive: true, force: true }).catch(() => {}),
-      )
-      .finally(() => process.exit(0));
+    stopRequested = true;
+    if (running) void running.close().finally(() => process.exit(0));
   };
   process.once("SIGINT", release);
   process.once("SIGTERM", release);
-  const ready = `${where}; ${assetsWhere}; ${mediaWhere}; exports in ${exportDir}`;
+  if (!values.http) process.stdin.once("end", release);
 
-  if (!values.http) {
-    process.stdin.once("end", release);
-    const server = createServer(new KynimoService(store, values.actor, runtime));
-    await server.connect(new StdioServerTransport());
-    // Logs go to stderr: stdout carries the protocol.
-    process.stderr.write(`kynimo-mcp ready (${ready})\n`);
-  } else {
-    let auth: AuthConfig | undefined;
-    if (remote) {
-      const jwksUri = remote.jwksUri ?? (await discoverJwksUri(remote.issuer).catch(fail));
-      auth = { ...remote, keys: remoteKeys(jwksUri) };
-    }
-    const path = remote?.resource.pathname ?? "/mcp";
-    const scoped = accounts;
-    const accountView = (account: string) => {
-      // Never fall back to one shared store when users are signed in.
-      if (!scoped) throw new Error("a server with OAuth needs a store with accounts");
-      return scoped.forAccount(account);
-    };
-    const handler = createHttpHandler({
-      path,
-      auth,
-      allowedOrigins: remote?.allowedOrigins ?? [],
-      exports: exportFiles,
-      serve: (caller) =>
-        createServer(
-          new KynimoService(
-            // Without auth every caller is the local account: the plain store serves it.
-            auth ? accountView(caller.account) : store,
-            caller.actor,
-            runtime,
-          ),
-        ),
-      onError: (e) => {
-        const text = (x: unknown) => (x instanceof Error ? x.message : String(x));
-        const cause = e instanceof Error && e.cause !== undefined ? ` (${text(e.cause)})` : "";
-        process.stderr.write(`kynimo-mcp: request failed: ${text(e)}${cause}\n`);
-      },
+  try {
+    running = await startServer({
+      ...(values.dir ? { dir: resolve(values.dir) } : {}),
+      actor: values.actor,
+      ...(values.http ? { http: { host: values.host, port, noAuth } } : {}),
     });
-    const http = createHttpServer(handler);
-    stopHttp = () => new Promise((r) => http.close(() => r()));
-    await new Promise<void>((r, j) => {
-      http.once("error", j);
-      http.listen(port, values.host, () => r());
-    }).catch(fail);
-    const address = http.address();
-    // OAuth: links are on the public origin; otherwise on the address the server bound.
-    mediaOrigin = remote
-      ? remote.resource.origin
-      : `http://${values.host.includes(":") ? `[${values.host}]` : values.host}:${typeof address === "object" && address ? address.port : port}`;
-    const at = typeof address === "object" && address ? `${values.host}:${address.port}` : "";
-    const mode = auth ? `OAuth from ${auth.issuer}` : "no auth: local account";
-    process.stderr.write(`kynimo-mcp ready on http://${at}${path} (${mode}; ${ready})\n`);
+  } catch (e) {
+    fail(e);
+  }
+  process.stderr.write(`kynimo-mcp ready ${running?.readyLine}\n`);
+  if (stopRequested) release();
+  // An IPC parent can disappear during startup, before the server is ready to close.
+  if (process.send) {
+    if (process.connected) process.once("disconnect", release);
+    else release();
   }
 }

@@ -1,6 +1,6 @@
 # Kynimo — working agreement for AI agents
 
-Kynimo is an **agent-first, cloud-hosted motion graphics engine**. Any MCP client connects, builds motion videos from components, keyframes or code (custom components and shaders) on top of style guidelines, checks its own work (rendered frames + quality report), and exports a finished, still-editable video. It is a startup: we build **one core product**, feature by feature.
+Kynimo is an **agent-first motion graphics engine that runs locally**. An MCP client connects, builds motion videos from components, keyframes or code (custom components and shaders) on top of style guidelines, checks its own work (rendered frames + quality report), and exports a finished, still-editable video. It is a startup: we build **one core product**, feature by feature.
 
 This file is the single source of truth for every coding agent (Claude Code, Codex, ChatGPT, Cursor, Copilot, …). Tool-specific notes live in separate files that import this one (`CLAUDE.md`).
 

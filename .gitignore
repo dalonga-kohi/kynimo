@@ -10,6 +10,12 @@ build/
 next-env.d.ts
 .vercel/
 
+# The desktop app keeps its icon sources and outputs in build/
+!apps/desktop/build/
+apps/desktop/build/stage/
+apps/desktop/build/cache/
+apps/desktop/dist/
+
 # Tests
 coverage/
 
