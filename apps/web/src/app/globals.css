@@ -26,6 +26,14 @@
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.25, 1, 0.5, 1);
+  /* Small viewport height: the pinned layers stay clear of mobile browser chrome. */
+  --screen-h: 100vh;
+}
+
+@supports (height: 100svh) {
+  :root {
+    --screen-h: 100svh;
+  }
 }
 
 *,
@@ -295,6 +303,34 @@ button {
 .nav-links a:hover {
   color: var(--text);
 }
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.nav-links + .nav-actions {
+  margin-left: 0;
+}
+.nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--muted);
+  transition: color 160ms ease-out;
+}
+.nav-icon:hover {
+  color: var(--text);
+}
+.nav-icon .icon {
+  width: 20px;
+  height: 20px;
+}
+.btn-compact {
+  min-height: 40px;
+  padding: 0 16px;
+}
 
 /* Hero */
 
@@ -314,6 +350,22 @@ button {
     ellipse 62% 58% at 50% 34%,
     #000 0%,
     rgb(0 0 0 / 0.5) 48%,
+    transparent 100%
+  );
+}
+.field-layer {
+  width: 100%;
+  height: 100%;
+}
+/* Same dither in marquee yellow, shown only where the pointer is (HeroField). */
+.field-lit {
+  position: absolute;
+  inset: 0;
+  opacity: var(--lit, 0);
+  mask-image: radial-gradient(
+    circle 280px at var(--mx, 50%) var(--my, 50%),
+    #000 0%,
+    rgb(0 0 0 / 0.35) 45%,
     transparent 100%
   );
 }
@@ -639,12 +691,16 @@ button {
   gap: clamp(32px, 5vw, 80px);
   align-items: start;
 }
+/* Both columns pin to the full viewport and centre their content below the 68px nav,
+   so the copy and the stack share one vertical centre. */
 .layers-copy {
   position: sticky;
-  top: 32vh;
+  top: 0;
+  height: var(--screen-h);
   display: grid;
+  align-content: center;
   gap: 20px;
-  padding-top: 8vh;
+  padding: 68px 0 56px;
 }
 .layers-copy h2 {
   margin-bottom: 8px;
@@ -655,26 +711,28 @@ button {
 }
 .stack-stage {
   position: sticky;
-  top: 14vh;
-  height: 72vh;
+  top: 0;
+  height: var(--screen-h);
+  padding: 68px 0 56px;
   display: grid;
   place-items: center;
   perspective: 1600px;
 }
 .stack-frame {
   position: relative;
-  width: min(100%, 660px);
+  width: min(100%, 600px);
+  max-width: calc((var(--screen-h) - 68px) * 0.9);
   aspect-ratio: 16 / 9;
   container-type: inline-size;
   transform-style: preserve-3d;
-  transform: rotateX(calc(var(--p, 0) * 54deg)) rotateZ(calc(var(--p, 0) * -34deg))
-    scale(calc(1 - var(--p, 0) * 0.2));
+  transform: translateY(calc(var(--p, 0) * 14%)) rotateX(calc(var(--p, 0) * 54deg))
+    rotateZ(calc(var(--p, 0) * -34deg)) scale(calc(1 - var(--p, 0) * 0.2));
 }
 .plane {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  transform: translateZ(calc(var(--i) * var(--p, 0) * 9cqw));
+  transform: translateZ(calc(var(--i) * var(--p, 0) * 6.5cqw));
   border: 1px solid color-mix(in srgb, var(--accent) calc(var(--p, 0) * 55%), transparent);
   background: color-mix(in srgb, var(--accent) calc(var(--p, 0) * 3%), transparent);
 }
@@ -774,15 +832,6 @@ button {
 .sheet-cell:hover {
   background: var(--surface);
 }
-.sheet-frame {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--faint);
-  transition: color 300ms ease-out;
-}
-.sheet-cell:hover .sheet-frame {
-  color: var(--accent);
-}
 .sheet-cell h3 {
   display: flex;
   align-items: center;
@@ -793,17 +842,6 @@ button {
   font-stretch: 125%;
   letter-spacing: -0.02em;
   line-height: 1.1;
-}
-.soon {
-  padding: 3px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  font-stretch: 100%;
-  letter-spacing: 0;
-  color: var(--muted);
 }
 .sheet-cell p {
   color: var(--muted);
@@ -822,122 +860,7 @@ button {
   color: var(--text);
   font-size: 0.75rem;
 }
-.sheet-cell[data-next="true"] .sheet-tools code {
-  color: var(--faint);
-}
-
-/* Connect */
-
-.connect-wrap {
-  display: grid;
-  justify-items: center;
-}
-.connect {
-  display: grid;
-  justify-items: center;
-  gap: 16px;
-  width: 100%;
-  max-width: 780px;
-}
-.clients {
-  display: inline-flex;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.client {
-  position: relative;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--muted);
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 160ms ease-out;
-}
-.client span {
-  position: relative;
-}
-.client:hover,
-.client[aria-selected="true"] {
-  color: var(--text);
-}
-.client-pill {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: var(--raised);
-}
-.command {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
-  width: 100%;
-  padding: 8px 8px 8px 20px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface);
-  text-align: left;
-}
-.command-where {
-  grid-column: 1 / -1;
-  padding-top: 4px;
-  font-size: 0.75rem;
-  color: var(--faint);
-}
-.command pre {
-  overflow-x: auto;
-  padding: 6px 0 8px;
-  color: var(--text);
-  line-height: 1.6;
-  scrollbar-width: thin;
-}
-.command pre code {
-  font-size: 0.875rem;
-}
-.copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--raised);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease-out,
-    color 160ms ease-out,
-    transform 100ms ease-out;
-}
-.copy:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.copy:active {
-  transform: scale(0.96);
-}
-.copy[data-copied="true"] {
-  color: var(--success);
-  border-color: var(--success);
-}
-.connect-note {
-  color: var(--faint);
-  font-size: 0.8125rem;
-  text-align: center;
-}
-
-/* Styles */
+/* Features */
 
 .packs {
   display: grid;
@@ -981,120 +904,149 @@ button {
   max-width: 52ch;
 }
 
-/* Roadmap: every milestone is a track; the Today line runs down through all of them. */
+/* Desktop app */
 
-.roadmap {
-  --text-col: minmax(0, 0.95fr);
-  --lane-col: minmax(0, 1.25fr);
+/* Empty on purpose: the app screenshots mount here. */
+.desktop-tour {
+  display: block;
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid var(--line-strong);
 }
-.roadmap > li {
+.fact {
   display: grid;
-  grid-template-columns: var(--text-col) var(--lane-col);
-  align-items: center;
-  gap: 0 clamp(24px, 4vw, 64px);
+  align-content: start;
+  gap: 8px;
+  padding: clamp(20px, 2.4vw, 32px) clamp(16px, 2.4vw, 32px) 4px 0;
 }
-.roadmap-head {
-  padding: 14px 0 10px;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--faint);
+.fact + .fact {
+  padding-left: clamp(16px, 2.4vw, 32px);
+  border-left: 1px solid var(--line);
 }
-.roadmap-head .roadmap-lane b {
-  position: absolute;
-  left: calc(var(--today) * 100%);
-  bottom: 0;
-  padding-left: 10px;
-  font-weight: 400;
-  color: var(--accent);
-}
-.roadmap-head .roadmap-lane span {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-}
-.roadmap-lane {
-  position: relative;
-  align-self: stretch;
-  min-height: 20px;
-}
-/* The Today line: one segment per row, so the rows draw it as one continuous line. */
-.roadmap-lane::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: -1px;
-  left: calc(var(--today) * 100%);
-  width: 1px;
-  background: var(--accent);
-}
-.roadmap-head .roadmap-lane::before {
-  content: "";
-  position: absolute;
-  bottom: -10px;
-  left: calc(var(--today) * 100% - 4px);
-  width: 9px;
-  height: 7px;
-  background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-  z-index: 1;
-}
-.milestone {
-  border-bottom: 1px solid var(--line);
-  transition: background-color 240ms ease-out;
-}
-.milestone:hover {
-  background: var(--surface);
-}
-.milestone-text {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  align-items: baseline;
-  gap: 4px 20px;
-  padding: 16px 0;
-}
-.milestone h3 {
-  font-size: 1rem;
+.facts h3 {
+  font-size: 1.125rem;
   font-weight: 650;
   letter-spacing: -0.005em;
 }
-.milestone p {
+.facts p {
   color: var(--muted);
   font-size: 0.9375rem;
-  line-height: 1.45;
+  line-height: 1.5;
+  max-width: 34ch;
 }
-.milestone-clip {
-  position: absolute;
-  top: calc(50% - 5px);
-  left: calc(var(--at) * 100%);
-  width: calc(100% / var(--n) - 6px);
-  height: 10px;
-  border-radius: 3px;
-  background: var(--muted);
+.desktop-cta {
+  margin-top: clamp(28px, 3vw, 40px);
 }
-.milestone[data-done="false"] .milestone-clip {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px var(--faint);
+
+/* Beta page */
+
+.beta {
+  padding-top: clamp(128px, 14vw, 184px);
+  padding-bottom: clamp(72px, 9vw, 128px);
 }
-.milestone:hover .milestone-clip {
-  background: var(--text);
+.beta > * {
+  max-width: 760px;
 }
-.milestone[data-done="false"]:hover .milestone-clip {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+.beta-head {
+  display: grid;
+  justify-items: start;
+  gap: clamp(16px, 2vw, 24px);
 }
-.milestone-clip i {
-  position: absolute;
-  top: 2px;
-  left: -3px;
-  width: 6px;
-  height: 6px;
-  background: var(--text);
-  transform: rotate(45deg);
+.beta-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--muted);
 }
-.milestone[data-done="false"] .milestone-clip i {
-  background: var(--ground);
-  box-shadow: inset 0 0 0 1px var(--muted);
+.beta-title {
+  font-size: clamp(2.4rem, 5.4vw, 4.5rem);
+}
+.beta-download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 8px;
+}
+.beta-meta {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+.beta-section {
+  margin-top: clamp(64px, 8vw, 104px);
+}
+.beta-section h2 {
+  margin-bottom: 24px;
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.beta-steps,
+.beta-grid,
+.beta-list {
+  border-top: 1px solid var(--line-strong);
+}
+.beta-step {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.beta-num {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.9;
+  color: var(--faint);
+}
+.beta-steps h3,
+.beta-grid h3 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.beta-steps p,
+.beta-grid p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  max-width: 56ch;
+}
+.beta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.beta-item {
+  padding: 22px 24px 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.beta-item:nth-child(even) {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+.beta-line {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.beta-foot {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.beta-section + .beta-foot {
+  margin-top: clamp(40px, 5vw, 64px);
+}
+.beta-foot a {
+  color: var(--text);
+}
+.beta-foot a:hover {
+  color: var(--accent);
 }
 
 /* FAQ */
@@ -1167,8 +1119,24 @@ button {
   gap: clamp(18px, 2.2vw, 28px);
   text-align: center;
 }
-.close .btn {
+.close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 28px;
   margin-top: 10px;
+}
+.link-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  transition: color 160ms ease-out;
+}
+.link-quiet:hover {
+  color: var(--text);
 }
 .study {
   position: relative;
@@ -1254,14 +1222,15 @@ button {
   .layers-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .layers-copy {
-    position: static;
-    padding-top: 0;
-  }
 }
 
 /* Touch screens: no pinned scroll track. The stack opens by itself and has a toggle. */
 @media (max-width: 900px), (pointer: coarse) {
+  .layers-copy {
+    position: static;
+    height: auto;
+    padding: 0;
+  }
   .stack {
     height: auto;
     display: grid;
@@ -1273,6 +1242,7 @@ button {
     top: auto;
     width: 100%;
     height: clamp(300px, 78vw, 520px);
+    padding: 0;
   }
   .stack-toggle {
     min-height: 44px;
@@ -1305,21 +1275,25 @@ button {
   .packs {
     grid-template-columns: minmax(0, 1fr);
   }
-  .roadmap > li {
+  .facts,
+  .beta-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .roadmap-head > span:first-child {
-    display: none;
+  .fact + .fact {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    margin-top: 20px;
   }
-  .roadmap-head .roadmap-lane {
-    min-height: 16px;
+  .beta-item:nth-child(even) {
+    padding-left: 0;
+    border-left: 0;
   }
-  .milestone {
-    padding-bottom: 14px;
+  .beta-step {
+    grid-template-columns: 36px minmax(0, 1fr);
   }
-  .milestone-text {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 14px 0 10px;
+  .nav-inner {
+    gap: 12px;
   }
 }
 
@@ -1338,9 +1312,13 @@ button {
     animation: none;
   }
   .btn:active,
-  .copy:active,
   .play:active {
     transform: none;
+  }
+  .layers-copy {
+    position: static;
+    height: auto;
+    padding: 0;
   }
   .stack {
     height: auto;
@@ -1349,6 +1327,7 @@ button {
     position: relative;
     top: auto;
     height: clamp(320px, 60vh, 560px);
+    padding: 0;
   }
 }
 

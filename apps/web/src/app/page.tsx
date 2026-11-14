@@ -1,13 +1,16 @@
-import { Connect } from "@/components/Connect";
+import Link from "next/link";
 import { EchoOnView } from "@/components/EchoOnView";
 import { ExposureStudy } from "@/components/ExposureStudy";
+import { Footer } from "@/components/Footer";
 import { HeroField } from "@/components/HeroField";
 import { HeroPlayer } from "@/components/HeroPlayer";
 import { LayerStack } from "@/components/LayerStack";
-import { GitHubIcon, Mark } from "@/components/Mark";
+import { ArrowRightIcon } from "@/components/Mark";
 import { Nav } from "@/components/Nav";
 import { Packs } from "@/components/Packs";
-import { FAQ, LOOP, REPO_URL, SITE, SITE_URL, STATUS } from "@/lib/site";
+import { BETA_PATH, DOWNLOAD_URL, FAQ, LOOP, REPO_URL, SITE, SITE_URL } from "@/lib/site";
+
+const LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -21,6 +24,14 @@ const jsonLd = {
       inLanguage: "en",
     },
     {
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: SITE.name,
+      url: SITE_URL,
+      logo: `${SITE_URL}/icon.svg`,
+      sameAs: [REPO_URL],
+    },
+    {
       "@type": "SoftwareApplication",
       "@id": `${SITE_URL}/#software`,
       name: SITE.name,
@@ -28,14 +39,17 @@ const jsonLd = {
       description: SITE.description,
       applicationCategory: "MultimediaApplication",
       applicationSubCategory: "Motion graphics",
-      operatingSystem: "Web",
-      creativeWorkStatus: "In development",
+      operatingSystem: "Windows",
+      creativeWorkStatus: "Beta",
+      downloadUrl: DOWNLOAD_URL,
+      license: LICENSE_URL,
       codeRepository: REPO_URL,
       featureList: [
-        "Remote MCP server for any MCP client",
+        "Local MCP server for any MCP client",
         "Editable scene document: layers, keyframes, components",
-        "Style packs, with automatic quality checks planned",
+        "Text animators, shape operators, masks, effects and shaders",
         "Deterministic rendering",
+        "MP4, WebM and GIF export",
       ],
     },
     {
@@ -50,6 +64,15 @@ const jsonLd = {
   ],
 };
 
+const DESKTOP_FACTS = [
+  [
+    "Connect in one paste",
+    "The Connect screen has ready setup for Claude Code, Codex, Cursor and Claude Desktop.",
+  ],
+  ["Watch it work", "Every animation your agent makes shows up in the app, ready to play back."],
+  ["Export locally", "MP4, WebM and GIF, encoded on your machine with the bundled FFmpeg."],
+] as const;
+
 function Arrow() {
   return (
     <svg className="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
@@ -62,13 +85,6 @@ function Arrow() {
     </svg>
   );
 }
-
-const ROADMAP = [
-  ...STATUS.built.map(([name, body]) => ({ name, body, done: true })),
-  ...STATUS.next.map(([name, body]) => ({ name, body, done: false })),
-];
-/** Where the Today line sits on every track: after the last built milestone. */
-const TODAY = STATUS.built.length / ROADMAP.length;
 
 export default function Home() {
   return (
@@ -92,17 +108,17 @@ export default function Home() {
               <span className="echo">Motion graphics</span> <span>for your AI agent.</span>
             </h1>
             <p className="hero-sub">
-              Kynimo is an MCP server that gives Claude, Cursor or any assistant a real motion
-              engine. It builds the video from layers and keyframes, looks at the frames it made,
-              and hands you a project you can still change.
+              Kynimo is a desktop app that gives Claude, Cursor or any MCP agent a real motion
+              engine. Your agent builds the video from layers and keyframes, looks at the frames it
+              made, and leaves you a project you can still change.
             </p>
             <div className="hero-actions">
-              <a className="btn btn-primary" href={REPO_URL} rel="noopener">
-                <GitHubIcon />
-                Follow on GitHub
-              </a>
-              <a className="link-down" href="#connect">
-                Connect your assistant
+              <Link className="btn btn-primary" href={BETA_PATH}>
+                Try the beta
+                <ArrowRightIcon />
+              </Link>
+              <a className="link-down" href="#how">
+                See how it works
                 <Arrow />
               </a>
             </div>
@@ -127,7 +143,7 @@ export default function Home() {
               </p>
               <p className="lede">
                 Kynimo builds a scene: every layer, keyframe, colour and timing has a name. Your
-                assistant changes one of them, and every other frame stays exactly as it was.
+                agent changes one of them, and every other frame stays exactly as it was.
               </p>
             </header>
             <LayerStack />
@@ -138,7 +154,7 @@ export default function Home() {
           <div className="wrap">
             <header className="section-head">
               <h2 id="how-title" data-echo>
-                What your assistant does with it.
+                What your agent does with it.
               </h2>
               <p className="lede">
                 It works like a motion designer with a checklist: build, look, check, fix. Every
@@ -146,13 +162,9 @@ export default function Home() {
               </p>
             </header>
             <ol className="sheet">
-              {LOOP.map((item, i) => (
-                <li key={item.step} className="sheet-cell" data-next={item.next}>
-                  <span className="sheet-frame">f{String(i * 30).padStart(3, "0")}</span>
-                  <h3>
-                    {item.step}
-                    {item.next && <span className="soon">Next</span>}
-                  </h3>
+              {LOOP.map((item) => (
+                <li key={item.step} className="sheet-cell">
+                  <h3>{item.step}</h3>
                   <p>{item.body}</p>
                   {item.tools.length > 0 && (
                     <ul className="sheet-tools">
@@ -169,75 +181,45 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="section" id="connect" aria-labelledby="connect-title">
-          <div className="wrap connect-wrap">
-            <header className="section-head center">
-              <h2 id="connect-title" data-echo>
-                One line to connect.
+        <section className="section" id="desktop" aria-labelledby="desktop-title">
+          <div className="wrap">
+            <header className="section-head">
+              <h2 id="desktop-title" data-echo>
+                It runs on your machine.
               </h2>
               <p className="lede">
-                Kynimo runs in the cloud. Add the server, sign in once in your browser, and ask for
-                a video. No install, no API keys to paste.
+                Kynimo for Windows hosts the engine on your computer. No account, no upload, no
+                render queue. Your projects and exports stay in a folder you own.
               </p>
             </header>
-            <Connect />
+            <div className="desktop-tour" />
+            <ul className="facts">
+              {DESKTOP_FACTS.map(([title, body]) => (
+                <li key={title} className="fact">
+                  <h3>{title}</h3>
+                  <p>{body}</p>
+                </li>
+              ))}
+            </ul>
+            <Link className="btn btn-quiet desktop-cta" href={BETA_PATH}>
+              Get the Windows beta
+              <ArrowRightIcon />
+            </Link>
           </div>
         </section>
 
-        <section className="section" id="styles" aria-labelledby="styles-title">
+        <section className="section" id="features" aria-labelledby="features-title">
           <div className="wrap">
             <header className="section-head">
-              <h2 id="styles-title" data-echo>
-                Four styles. Four different films.
+              <h2 id="features-title" data-echo>
+                Everything a motion designer reaches for.
               </h2>
               <p className="lede">
-                A style pack is a motion design system: palette, springs, staggers and timing. Each
-                one gets a ten-second study here, drawn to show how differently the packs move.
+                Text animators, shape operators, masks, shaders, cameras. The engine has the depth
+                of a professional tool, and your agent can use all of it.
               </p>
             </header>
             <Packs />
-          </div>
-        </section>
-
-        <section className="section" id="roadmap" aria-labelledby="roadmap-title">
-          <div className="wrap">
-            <header className="section-head">
-              <h2 id="roadmap-title" data-echo>
-                Built in the open.
-              </h2>
-              <p className="lede">
-                No launch countdown. Here is what runs today and what comes next, in order.
-              </p>
-            </header>
-            <ol
-              className="roadmap"
-              style={{ "--today": TODAY, "--n": ROADMAP.length } as React.CSSProperties}
-            >
-              <li className="roadmap-head" aria-hidden="true">
-                <span>Milestone</span>
-                <span className="roadmap-lane">
-                  <b>Today</b>
-                  <span>Next</span>
-                </span>
-              </li>
-              {ROADMAP.map((item, i) => (
-                <li key={item.name} className="milestone" data-done={item.done}>
-                  <div className="milestone-text">
-                    <h3>{item.name}</h3>
-                    <p>{item.body}</p>
-                    <span className="sr-only">{item.done ? "Built." : "Planned."}</span>
-                  </div>
-                  <span className="roadmap-lane" aria-hidden="true">
-                    <span
-                      className="milestone-clip"
-                      style={{ "--at": i / ROADMAP.length } as React.CSSProperties}
-                    >
-                      <i />
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ol>
           </div>
         </section>
 
@@ -267,32 +249,22 @@ export default function Home() {
               Every frame, on purpose.
             </h2>
             <p className="lede">
-              Every decision is written down. Every milestone lands in the repository.
+              A project you can open, read and change. Built by your agent, finished by you.
             </p>
-            <a className="btn btn-primary" href={REPO_URL} rel="noopener">
-              <GitHubIcon />
-              Follow on GitHub
-            </a>
+            <div className="close-actions">
+              <Link className="btn btn-primary" href={BETA_PATH}>
+                Try the beta
+                <ArrowRightIcon />
+              </Link>
+              <a className="link-quiet" href={REPO_URL} rel="noopener">
+                View the source on GitHub
+              </a>
+            </div>
           </div>
         </section>
       </main>
 
-      <footer className="footer">
-        <div className="wrap footer-inner">
-          <a className="lockup" href="#top" aria-label="Kynimo, back to top">
-            <Mark className="lockup-mark" />
-            <span>Kynimo</span>
-          </a>
-          <p>Every scene on this page is illustrative and drawn live in your browser.</p>
-          <nav aria-label="Footer">
-            <a href={REPO_URL} rel="noopener">
-              GitHub
-            </a>
-            <a href="/llms.txt">llms.txt</a>
-            <span>© 2026 Kynimo</span>
-          </nav>
-        </div>
-      </footer>
+      <Footer />
     </>
   );
 }

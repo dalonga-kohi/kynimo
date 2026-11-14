@@ -9,135 +9,139 @@ function trimSlash(url: string): string {
 /** Canonical origin. Override with NEXT_PUBLIC_SITE_URL. */
 export const SITE_URL = trimSlash(process.env.NEXT_PUBLIC_SITE_URL || DEFAULT_SITE_URL);
 
-/**
- * The hosted MCP endpoint. Unset until the server is deployed: the page then shows a
- * reserved `.example` host, which can never resolve, with a note that it is a placeholder.
- */
-export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL
-  ? trimSlash(process.env.NEXT_PUBLIC_MCP_URL)
-  : null;
-export const MCP_URL_PLACEHOLDER = "https://mcp.kynimo.example/mcp";
-
 export const REPO_URL = "https://github.com/dalonga-kohi/kynimo";
+export const ISSUES_URL = `${REPO_URL}/issues`;
+
+/** Where the Windows installer comes from. Override with NEXT_PUBLIC_DOWNLOAD_URL. */
+export const DOWNLOAD_URL = trimSlash(
+  process.env.NEXT_PUBLIC_DOWNLOAD_URL || `${REPO_URL}/releases/latest`,
+);
+
+export const BETA_PATH = "/beta";
 
 export const SITE = {
   name: "Kynimo",
   tagline: "Motion graphics for your AI agent.",
   description:
-    "Kynimo is a motion graphics engine for AI assistants. Connect it over MCP, describe a video, and get back editable layers and keyframes, checked against motion guidelines.",
+    "Kynimo is a desktop motion graphics engine for AI agents. Connect Claude, Cursor or any MCP client, describe a video, and get editable layers and keyframes.",
 } as const;
 
-/** Tools the MCP server registers today (apps/mcp). Keep in step with the server. */
+/** Tools the MCP server registers today (apps/mcp/src/server.ts). Keep in step with the server. */
 export const MCP_TOOLS = [
   "create_project",
-  "get_project",
   "list_projects",
+  "get_project",
+  "upload_asset",
+  "list_assets",
   "get_scene",
   "find_layers",
   "get_layer",
+  "describe_motion",
   "get_layer_schema",
+  "get_capabilities",
+  "get_write_outcome",
+  "render_frames",
+  "render_contact_sheet",
+  "export",
+  "render_preview_clip",
+  "get_export_status",
+  "cancel_export",
+  "get_preview_link",
+  "apply_ops",
   "add_layer",
   "update_layer",
   "set_keyframes",
-  "apply_ops",
   "add_mask",
   "set_matte",
   "precompose",
+  "animate",
+  "apply_preset",
+  "stagger",
+  "retime",
+  "mark_beats",
+  "sync_to_beats",
+  "add_component",
+  "build_from_brief",
+  "add_effect",
+  "add_transition",
+  "import_svg",
+  "add_behavior",
+  "run_script",
+  "get_script",
+  "define_shader",
+  "define_component",
+  "list_definitions",
+  "list_components",
+  "list_presets",
   "undo",
   "redo",
-  "upload_asset",
-  "list_assets",
-  "render_frames",
-  "render_contact_sheet",
-  "describe_motion",
-  "get_capabilities",
-  "get_write_outcome",
 ] as const;
 
-/** What the assistant does with Kynimo, in order. `next` marks tools that are not built yet. */
+/** What the agent does with Kynimo, in order. */
 export const LOOP = [
   {
     step: "Brief",
-    body: "You say what the video is for, in plain words. A launch teaser, a feature promo, a 10 second social clip.",
+    body: "Say what the video is for, in plain words. A launch teaser, a feature promo, a ten second social clip.",
     tools: [],
-    next: false,
   },
   {
     step: "Build",
-    body: "It lays out shapes, text, images and your footage, then animates them with spring and bezier keyframes.",
-    tools: ["add_layer", "set_keyframes", "apply_ops"],
-    next: false,
+    body: "Your agent lays out shapes, text, images and your footage, then animates them with spring and bezier keyframes.",
+    tools: ["add_layer", "set_keyframes", "animate", "run_script"],
   },
   {
     step: "Look",
-    body: "Rendered frames come back into the chat as images. Your assistant sees what it made, not what it meant.",
+    body: "Rendered frames come back into the chat as images. The agent sees what it made, not what it meant.",
     tools: ["render_frames", "render_contact_sheet"],
-    next: false,
   },
   {
     step: "Check",
-    body: "The frames are graded against the style's rules. Each finding names the frame, the layer and the fix.",
-    tools: ["check_quality"],
-    next: true,
+    body: "It reads the motion back as a timeline: what moves, when, and for how long.",
+    tools: ["describe_motion"],
   },
   {
     step: "Fix",
-    body: "Small typed edits to the scene. One layer changes, every other frame stays exactly as it was.",
+    body: "Small typed edits to the scene. One layer changes, and every other frame stays exactly as it was.",
     tools: ["apply_ops", "undo"],
-    next: false,
   },
   {
     step: "Export",
-    body: "MP4, WebM or GIF, and a link your team can scrub and comment on. The project stays editable.",
-    tools: ["export"],
-    next: true,
+    body: "MP4, WebM or GIF, rendered on your machine. The project stays editable.",
+    tools: ["export", "get_export_status"],
   },
 ] as const;
 
 export const FAQ = [
   {
     q: "What is Kynimo?",
-    a: "A cloud-hosted motion graphics engine built for AI assistants. Your assistant connects over MCP and builds a video out of layers, keyframes and components. You get a project you can keep editing, not a flat render.",
+    a: "A motion graphics engine built for AI agents. It runs on your computer as a desktop app. Your agent connects over MCP and builds a video out of layers, keyframes and components. You get a project you can keep editing, not a flat render.",
   },
   {
-    q: "Which assistants does it work with?",
-    a: "Any client that speaks the Model Context Protocol over HTTP. Kynimo is one remote server with OAuth sign-in, so there is nothing to install.",
+    q: "Can I use it today?",
+    a: "Yes, on Windows. Kynimo is in private beta and the installer is on the beta page. It is early, so expect rough edges and tell us what breaks.",
+  },
+  {
+    q: "Which agents does it work with?",
+    a: "Any MCP client. The app has copy and paste setup for Claude Code, Codex, Cursor and Claude Desktop, and a stdio option for clients that only start local servers.",
   },
   {
     q: "How is this different from AI video generators?",
     a: "Generators return pixels. To change a word you generate again and hope. Kynimo returns a scene document, so a word, a colour or a timing is one small edit and every other frame stays the same.",
   },
   {
-    q: "What is a style pack?",
-    a: "A motion design system written as tokens and rules: type, colour, springs, durations, safe areas, reading time. Four draft packs exist today. Kynimo is being built to grade every render against the pack and tell the assistant exactly what to fix.",
+    q: "Does my work leave my machine?",
+    a: "Not through Kynimo. The engine, the renderer and the export all run locally, and your projects live in a folder on your disk. There is no account. Your agent's model provider still sees what the agent sends it, as in any chat.",
   },
   {
-    q: "Can I use it today?",
-    a: "Not yet. The scene format, engine, renderer and MCP server are built and tested. The hosted endpoint, quality report and video export come next. The repository is public, so you can follow each step.",
-  },
-  {
-    q: "What will it make?",
+    q: "What can it make?",
     a: "Short motion pieces, 5 to 60 seconds: product launch videos, UI promos, social clips and explainers.",
   },
+  {
+    q: "Is it open source?",
+    a: "Yes. The code is on GitHub under the Apache 2.0 license.",
+  },
+  {
+    q: "What about macOS and Linux?",
+    a: "Windows comes first. macOS and Linux builds are in the works.",
+  },
 ] as const;
-
-/** What exists in the repository today versus what is planned (docs/ROADMAP.md, 2026-11-10). */
-export const STATUS = {
-  built: [
-    ["Scene format", "A versioned JSON document. Every change is a typed operation."],
-    ["Engine", "Bezier and spring keyframes, parenting, precomps. Integer frames."],
-    ["Renderer", "Shapes, text, images, video. Masks, mattes and blend modes."],
-    ["Shape operators", "Trim paths, repeater, round corners, path morphing."],
-    ["Text animators", "Per character, word and line, with range selectors."],
-    ["MCP server", "Streamable HTTP with OAuth. Frames come back as images."],
-    ["Style packs", "Four drafts: Keynote, Playful SaaS, Editorial, Brutalist."],
-  ],
-  next: [
-    ["Hosted endpoint", "One URL for every client."],
-    ["Intent tools", "Animate, stagger, retime. Your assistant says what, not how."],
-    ["Scripts", "Your assistant writes TypeScript. The scene gets ordinary layers."],
-    ["Quality report", "Every finding names the frame and the fix."],
-    ["Components and shaders", "TypeScript and GLSL, with typed props."],
-    ["Export", "MP4, WebM, GIF and a link your team can scrub."],
-  ],
-} as const;
