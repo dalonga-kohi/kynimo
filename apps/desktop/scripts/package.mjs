@@ -111,10 +111,12 @@ async function packageDesktop() {
   const browsers = cachedBrowsers(playwrightCli);
   await cp(media, join(stage, "resources", "media"), { recursive: true });
   await cp(browsers, join(stage, "resources", "browsers"), { recursive: true });
-  const electronDist = join(
-    dirname(createRequire(join(desktop, "package.json")).resolve("electron/package.json")),
-    "dist",
+  const electronPackage = dirname(
+    createRequire(join(desktop, "package.json")).resolve("electron/package.json"),
   );
+  // Electron 45+ has no postinstall: install.js fetches the binary on demand (a no-op once present).
+  run(process.execPath, [join(electronPackage, "install.js")]);
+  const electronDist = join(electronPackage, "dist");
   await copyNotices(app, media, electronDist, browsers);
 
   await build({
