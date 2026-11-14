@@ -45,15 +45,16 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
 
   it("is repeatable and exposes __SEED and __DATA", async () => {
     const source = "rec.push({ seed: rec.seed(), data: rec.data(), sum: rec.data().n * 2 });";
+    const sample = `x '\`\${}`;
     // Each run starts a worker and a WebAssembly instance, so a few seeds keep this well inside the
     // timeout on a loaded CI runner; they cover zero and the uint32 boundaries (`seed >>> 0`).
     for (const seed of [0, 1, 2 ** 31, 2 ** 32 - 1]) {
-      const a = await run(source, seed, { n: seed, s: "x '`${}" });
-      const b = await run(source, seed, { n: seed, s: "x '`${}" });
+      const a = await run(source, seed, { n: seed, s: sample });
+      const b = await run(source, seed, { n: seed, s: sample });
       expect(a.ok && b.ok).toBe(true);
       if (a.ok && b.ok) {
         expect(JSON.stringify(a.output)).toBe(JSON.stringify(b.output));
-        expect(a.output).toEqual([{ seed, data: { n: seed, s: "x '`${}" }, sum: seed * 2 }]);
+        expect(a.output).toEqual([{ seed, data: { n: seed, s: sample }, sum: seed * 2 }]);
       }
     }
   });
@@ -109,12 +110,10 @@ for (const c of chips as Chip[]) rec.push(c satisfies Chip);
   it("stops memory blowups and runaway recursion, and later runs are unaffected", async () => {
     const source = "rec.push(rec.data().n);";
     const before = await run(source, 1, { n: 5 });
-    const mem = await run(
-      "const a = []; for (;;) a.push(new Array(1e5).fill(1));",
-      1,
-      null,
-      COUNTED,
-    );
+    const mem = await run("const a = []; for (;;) a.push(new Array(1e5).fill(1));", 1, null, {
+      ...COUNTED,
+      memoryBytes: 8 * 1024 * 1024,
+    });
     expect(errorOf(mem).kind).toBe("memory_limit");
     const deep = await run("const f = () => f(); f();", 1, null, COUNTED);
     expect(errorOf(deep).kind).toBe("stack_limit");
