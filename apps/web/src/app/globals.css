@@ -662,8 +662,7 @@ button {
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .section-head > :not(h2),
-    .layers-copy > :not(h2) {
+    .section-head > :not(h2) {
       animation: head-in linear both;
       animation-timeline: view();
       animation-range: entry 15% entry 70%;
@@ -683,49 +682,92 @@ button {
   }
 }
 
-/* Layers: one frame comes apart */
+/* Layers: one frame comes apart as it enters the screen; its layers panel drives it. */
 
 .layers-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
   gap: clamp(32px, 5vw, 80px);
-  align-items: start;
+  align-items: center;
 }
-/* Both columns pin to the full viewport and centre their content below the 68px nav,
-   so the copy and the stack share one vertical centre. */
 .layers-copy {
-  position: sticky;
-  top: 0;
-  height: var(--screen-h);
   display: grid;
-  align-content: center;
   gap: 20px;
-  padding: 68px 0 56px;
 }
 .layers-copy h2 {
   margin-bottom: 8px;
 }
-.stack {
-  position: relative;
-  height: 210vh;
+.layers-copy h2 span {
+  display: block;
 }
+/* The second line is the answer: it lights up as the frame comes apart. */
+.layers-then {
+  color: color-mix(in srgb, var(--text) calc(var(--p, 0) * 100%), var(--line-strong));
+}
+
+/* The scene's layers panel: top layer first. */
+.layer-panel {
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  margin-top: clamp(12px, 2vw, 24px);
+  max-width: 440px;
+}
+.layer-list {
+  width: 100%;
+  border-top: 1px solid var(--line);
+}
+.layer-row {
+  display: grid;
+  grid-template-columns: 8.5em minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease-out;
+}
+.layer-name {
+  color: var(--text);
+  transition: color 160ms ease-out;
+}
+.layer-kind {
+  color: var(--faint);
+}
+.layer-row[data-picked="true"] {
+  background: var(--surface);
+}
+.layer-row[data-picked="true"] .layer-name {
+  color: var(--accent);
+}
+.layer-edit[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .stack-stage {
-  position: sticky;
-  top: 0;
-  height: var(--screen-h);
-  padding: 68px 0 56px;
+  position: relative;
   display: grid;
   place-items: center;
+  min-height: clamp(360px, 44vw, 600px);
+  padding-bottom: 44px;
   perspective: 1600px;
 }
 .stack-frame {
   position: relative;
-  width: min(100%, 600px);
-  max-width: calc((var(--screen-h) - 68px) * 0.9);
+  width: min(100%, 640px);
   aspect-ratio: 16 / 9;
   container-type: inline-size;
   transform-style: preserve-3d;
-  transform: translateY(calc(var(--p, 0) * 14%)) rotateX(calc(var(--p, 0) * 54deg))
+  transform: translateY(calc(var(--p, 0) * 12%)) rotateX(calc(var(--p, 0) * 54deg))
     rotateZ(calc(var(--p, 0) * -34deg)) scale(calc(1 - var(--p, 0) * 0.2));
 }
 .plane {
@@ -735,11 +777,31 @@ button {
   transform: translateZ(calc(var(--i) * var(--p, 0) * 6.5cqw));
   border: 1px solid color-mix(in srgb, var(--accent) calc(var(--p, 0) * 55%), transparent);
   background: color-mix(in srgb, var(--accent) calc(var(--p, 0) * 3%), transparent);
+  /* The lift is its own property, so it eases while the opening spring drives transform. */
+  translate: 0 0 0;
+  transition:
+    translate 420ms var(--ease-out),
+    opacity 260ms ease-out,
+    border-color 260ms ease-out,
+    background-color 260ms ease-out;
 }
 .plane[data-layer="background"] {
   background: var(--ground);
   border-color: var(--line-strong);
   box-shadow: 0 calc(var(--p, 0) * 40px) 80px -30px rgb(0 0 0 / 0.9);
+}
+/* While one layer is picked, the others step back and it lifts out of the stack. */
+.stack-frame[data-picking="true"] .plane:not([data-layer="background"]) {
+  opacity: 0.32;
+}
+.stack-frame[data-picking="true"] .plane[data-picked="true"] {
+  opacity: 1;
+  translate: 0 0 5cqw;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.stack-frame[data-picking="true"] .plane[data-layer="background"][data-picked="true"] {
+  background: var(--surface);
 }
 .plane-mark {
   position: absolute;
@@ -760,6 +822,18 @@ button {
   line-height: 1.06;
   letter-spacing: -0.01em;
   color: var(--text);
+  transition: opacity 260ms ease-out;
+}
+.plane-title-now,
+.stack-frame[data-edited="true"] .plane-title-was {
+  opacity: 0;
+}
+.stack-frame[data-edited="true"] .plane-title-now {
+  opacity: 1;
+}
+.plane-title em {
+  font-style: normal;
+  color: var(--accent);
 }
 .plane-rule {
   position: absolute;
@@ -777,115 +851,81 @@ button {
   font-weight: 500;
   color: var(--muted);
 }
-.plane-tag {
-  position: absolute;
-  left: 0;
-  bottom: 100%;
-  padding-bottom: 6px;
-  font-family: var(--mono);
-  font-size: clamp(11px, 2.4cqw, 15px);
-  color: var(--text);
-  white-space: nowrap;
-  opacity: clamp(0, calc(var(--p, 0) * 3 - 1.6), 1);
-}
-.plane-tag b {
-  font-weight: 500;
-  color: var(--accent);
-}
-.plane:not([data-layer="background"]) .plane-tag {
-  left: auto;
-  right: 0;
-}
 .stack-readout {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  display: grid;
-  justify-items: center;
-  font-family: var(--mono);
   font-size: 0.8125rem;
   color: var(--faint);
-}
-.stack-readout > * {
-  grid-area: 1 / 1;
+  text-align: center;
 }
 
-/* How: the loop as a player. Steps on the left, the stage they drive on the right. */
+/* How: the loop as a player. Text and stage side by side, the loop's own timeline underneath. */
 
-.loop {
+.loop-main {
   display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.5fr);
   gap: clamp(28px, 4.5vw, 72px);
-  align-items: start;
+  align-items: center;
 }
-.loop-steps {
-  border-top: 1px solid var(--line);
-}
-.loop-step {
-  border-bottom: 1px solid var(--line);
-}
-.loop-button {
-  position: relative;
+/* All six texts share one cell, so the block keeps the height of the longest. */
+.loop-texts {
   display: grid;
-  width: 100%;
-  padding: 18px 8px 18px 26px;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
-/* The rail is the step's own playhead: it fills while the step is on the stage. */
-.loop-rail {
-  position: absolute;
-  inset: -1px auto -1px 0;
-  width: 2px;
-  background: var(--line);
+.loop-text {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 14px, 0);
+  transition:
+    opacity 260ms ease-out,
+    transform 260ms ease-out,
+    visibility 0s linear 260ms;
 }
-.loop-rail-fill {
-  position: absolute;
-  inset: 0;
-  background: var(--accent);
-  transform-origin: 50% 0;
-  transform: scaleY(var(--t, 0));
+.loop-text[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 520ms var(--ease-out) 120ms,
+    transform 620ms var(--ease-out) 120ms,
+    visibility 0s;
 }
 .loop-name {
-  font-size: clamp(1.375rem, 2vw, 1.75rem);
+  font-size: clamp(2.5rem, 5vw, 4.25rem);
   font-weight: 800;
   font-stretch: 125%;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  color: var(--faint);
-  transition: color 200ms ease-out;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
-.loop-button:hover .loop-name,
-.loop-step[data-active="true"] .loop-name {
+/* Each step's name arrives with the page's motion-study echo. */
+.loop-text[data-active="true"] .loop-name {
+  animation: echo 1100ms var(--ease-out) 120ms both;
+}
+.loop-text > p {
+  color: var(--muted);
+  font-size: clamp(1rem, 1.3vw, 1.125rem);
+  line-height: 1.5;
+  max-width: 34ch;
+  text-wrap: pretty;
+}
+.loop-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.loop-tools code {
   color: var(--text);
 }
-.loop-body {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 420ms var(--ease-out),
-    opacity 300ms ease-out;
-}
-.loop-body > span {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.9375rem;
-  line-height: 1.5;
-  max-width: 40ch;
-}
-.loop-step[data-active="true"] .loop-body {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  padding-top: 8px;
-}
-.loop-stage {
-  position: sticky;
-  top: 96px;
+.loop-text > .loop-tools-none {
+  color: var(--faint);
+  font-size: 0.8125rem;
 }
 .loop-screen {
   aspect-ratio: 16 / 9;
@@ -894,22 +934,58 @@ button {
   background: var(--ground);
   overflow: hidden;
 }
-.loop-caption {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 20px;
-  min-height: 44px;
-  padding-top: 14px;
+
+/* The track: six clips on one lane. The clip being played fills like a playhead crossing it. */
+.loop-track {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: clamp(28px, 3.6vw, 52px);
+}
+.loop-clip {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 0 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.loop-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  transition: background-color 200ms ease-out;
+}
+.loop-clip[data-state="done"] .loop-bar {
+  background: var(--faint);
+}
+.loop-clip:hover .loop-bar {
+  background: var(--line-strong);
+}
+.loop-clip[data-state="done"]:hover .loop-bar {
+  background: var(--muted);
+}
+.loop-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--t, 0));
+}
+.loop-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
   color: var(--faint);
-  font-size: 0.8125rem;
+  transition: color 200ms ease-out;
 }
-.loop-caption ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-}
-.loop-caption code {
+.loop-clip:hover .loop-label,
+.loop-clip[data-state="now"] .loop-label {
   color: var(--text);
 }
 
@@ -925,6 +1001,10 @@ button {
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
+  transition: border-color 240ms ease-out;
+}
+.feature:hover .feature-screen {
+  border-color: var(--faint);
 }
 .feature figcaption {
   display: grid;
@@ -1044,11 +1124,6 @@ button {
   display: grid;
   justify-items: start;
   gap: clamp(16px, 2vw, 24px);
-}
-.beta-eyebrow {
-  font-family: var(--mono);
-  font-size: 0.8125rem;
-  color: var(--muted);
 }
 .beta-title {
   font-size: clamp(2.4rem, 5.4vw, 4.5rem);
@@ -1302,43 +1377,18 @@ button {
     justify-content: space-between;
   }
   .layers-grid,
-  .loop {
+  .loop-main {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* The stage leads on narrow screens, and stops pinning. */
-  .loop-stage {
-    position: static;
+  /* The stage leads on narrow screens. */
+  .loop-screen {
     order: -1;
   }
-}
-
-/* Touch screens: no pinned scroll track. The stack opens by itself and has a toggle. */
-@media (max-width: 900px), (pointer: coarse) {
-  .layers-copy {
-    position: static;
-    height: auto;
-    padding: 0;
+  .loop-text {
+    align-content: start;
   }
-  .stack {
-    height: auto;
-    display: grid;
-    justify-items: center;
-    gap: 8px;
-  }
-  .stack-stage {
-    position: relative;
-    top: auto;
-    width: 100%;
-    height: clamp(300px, 78vw, 520px);
-    padding: 0;
-  }
-  .stack-toggle {
-    min-height: 44px;
-  }
-  .stack-toggle[aria-pressed="true"] {
-    border-color: var(--accent);
-    background: var(--raised);
-    color: var(--accent);
+  .loop-label {
+    font-size: 0.8125rem;
   }
 }
 
@@ -1393,28 +1443,22 @@ button {
   [data-echoed] {
     animation: none;
   }
-  .loop-body,
-  .loop-name,
+  .loop-text,
+  .loop-label,
+  .loop-bar,
   .tour-shot {
     transition: none;
+  }
+  .loop-text[data-active="true"] .loop-name {
+    animation: none;
   }
   .btn:active,
   .play:active {
     transform: none;
   }
-  .layers-copy {
-    position: static;
-    height: auto;
-    padding: 0;
-  }
-  .stack {
-    height: auto;
-  }
-  .stack-stage {
-    position: relative;
-    top: auto;
-    height: clamp(320px, 60vh, 560px);
-    padding: 0;
+  .plane,
+  .plane-title {
+    transition: none;
   }
 }
 

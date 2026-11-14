@@ -168,30 +168,47 @@ function fix(ctx: Ctx, width: number, height: number, t: number) {
   ctx.globalAlpha = 1;
 }
 
-function exportStep(ctx: Ctx, width: number, height: number, t: number) {
-  drawScene(ctx, width, height, REST, STATE);
-  ctx.globalAlpha = 0.86;
-  ctx.fillStyle = LOOK.bg;
-  ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 1;
+function exportStep(ctx: Ctx, t: number, scratch: Scratch | null) {
   const done = easeOut(span(t, 0.05, 0.6));
-  const x = 460;
-  const w = W - 2 * x;
-  ctx.fillStyle = "#2e2a26";
-  ctx.fillRect(x, 560, w, 10);
-  ctx.fillStyle = LOOK.accent;
-  ctx.fillRect(x, 560, w * done, 10);
+  // The finished frame on the left, the file it becomes on the right.
+  const tw = 720;
+  const th = (tw * H) / W;
+  const ty = (H - th) / 2;
+  const inner = scratch?.getContext("2d");
+  if (scratch && inner) {
+    drawScene(inner, scratch.width, scratch.height, REST, STATE);
+    ctx.drawImage(scratch as unknown as CanvasImageSource, 150, ty, tw, th);
+  }
+  ctx.strokeStyle = "#3d3832";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(150, ty, tw, th);
+  // The render's own playhead crossing the frame.
+  if (done < 1) {
+    ctx.fillStyle = LOOK.accent;
+    ctx.fillRect(150 + tw * done - 2, ty, 4, th);
+  }
+  const x = 970;
+  const w = W - 150 - x;
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = LOOK.text;
-  ctx.font = sans(800, 92, true);
-  ctx.fillText("launch-teaser.mp4", x, 500);
+  ctx.font = sans(800, 66, true);
+  ctx.fillText("launch-teaser.mp4", x, ty + 86);
+  ctx.fillStyle = "#2e2a26";
+  ctx.fillRect(x, ty + 138, w, 10);
+  ctx.fillStyle = LOOK.accent;
+  ctx.fillRect(x, ty + 138, w * done, 10);
   ctx.fillStyle = LOOK.muted;
-  ctx.font = mono(36);
-  ctx.fillText("1920 × 1080 · 30 fps · 5 s", x, 640);
+  ctx.font = mono(34);
+  ctx.fillText("1920 × 1080 · 30 fps · 5 s", x, ty + 214);
   ctx.textAlign = "right";
   ctx.fillStyle = done >= 1 ? LOOK.accent : LOOK.muted;
-  ctx.fillText(done >= 1 ? "saved" : `${Math.round(done * 100)}%`, x + w, 640);
+  ctx.fillText(done >= 1 ? "saved" : `${Math.round(done * 100)}%`, x + w, ty + 214);
   ctx.textAlign = "left";
+  // The three formats; the one being written is lit.
+  ["MP4", "WebM", "GIF"].forEach((format, i) => {
+    ctx.fillStyle = i === 0 ? LOOK.text : "#8a8276";
+    ctx.fillText(format, x + i * 170, ty + th - 14);
+  });
 }
 
 /**
@@ -222,13 +239,7 @@ export function drawLoop(
   if (step === 0) brief(ctx, time);
   else if (step === 2) look(ctx, time, scratch);
   else if (step === 3) check(ctx, time);
+  else if (step === 4) fix(ctx, width, height, time);
+  else if (step === 5) exportStep(ctx, time, scratch);
   ctx.restore();
-  if (step === 4 || step === 5) {
-    // drawScene resets the transform, so these two set it again for their overlays.
-    const overlay = step === 4 ? fix : exportStep;
-    ctx.save();
-    ctx.setTransform(k, 0, 0, k, 0, 0);
-    overlay(ctx, width, height, time);
-    ctx.restore();
-  }
 }

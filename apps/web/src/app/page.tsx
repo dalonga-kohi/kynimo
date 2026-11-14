@@ -134,22 +134,7 @@ export default function Home() {
         </section>
 
         <section className="section layers" id="layers" aria-labelledby="layers-title">
-          <div className="wrap layers-grid">
-            <header className="layers-copy">
-              <h2 id="layers-title" data-echo>
-                Not a clip. A project.
-              </h2>
-              <p className="lede">
-                Video generators hand you finished pixels. Want a different word? Generate again and
-                hope.
-              </p>
-              <p className="lede">
-                Kynimo builds a scene: every layer, keyframe, colour and timing has a name. Your
-                agent changes one of them, and every other frame stays exactly as it was.
-              </p>
-            </header>
-            <LayerStack />
-          </div>
+          <LayerStack />
         </section>
 
         <section className="section" id="how" aria-labelledby="how-title">

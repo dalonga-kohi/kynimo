@@ -10,15 +10,16 @@ import { usePlayback } from "./usePlayback";
 const DWELL = 5200;
 
 /**
- * The loop as one player: the six steps on the left, and a stage that draws what the active
- * step does to the same small scene. It advances by itself while it is on screen; choosing a
- * step by hand stops the auto-advance and replays that step.
+ * The loop as a player. The stage draws what the active step does to one small scene, the
+ * text beside it says what the agent is doing, and the track underneath is the loop's own
+ * timeline: six clips and a playhead. It plays by itself while it is on screen; choosing a
+ * clip by hand stops the auto-advance and replays that step.
  */
 export function LoopPlayer() {
   const root = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scratch = useRef<HTMLCanvasElement | null>(null);
-  const rail = useRef<HTMLSpanElement>(null);
+  const fill = useRef<HTMLSpanElement>(null);
   const elapsed = useRef(0);
   const stepRef = useRef(0);
   const manual = useRef(false);
@@ -30,11 +31,11 @@ export function LoopPlayer() {
     if (!canvas || !ctx || canvas.width === 0) return;
     if (!scratch.current) {
       scratch.current = document.createElement("canvas");
-      scratch.current.width = 640;
-      scratch.current.height = 360;
+      scratch.current.width = 960;
+      scratch.current.height = 540;
     }
     drawLoop(ctx, canvas.width, canvas.height, index, t, scratch.current);
-    rail.current?.style.setProperty("--t", String(Math.min(1, Math.max(0, t))));
+    fill.current?.style.setProperty("--t", String(Math.min(1, Math.max(0, t))));
   }, []);
 
   const moving = usePlayback(root, (delta) => {
@@ -89,31 +90,33 @@ export function LoopPlayer() {
     };
   }, [paint, moving]);
 
-  const active = LOOP[step] ?? LOOP[0];
-
   return (
     <div className="loop" ref={root}>
-      <ol className="loop-steps">
-        {LOOP.map((item, i) => (
-          <li key={item.step} className="loop-step" data-active={i === step}>
-            <button
-              type="button"
-              className="loop-button"
-              aria-current={i === step ? "step" : undefined}
-              onClick={() => choose(i)}
+      <div className="loop-main">
+        <div className="loop-texts">
+          {LOOP.map((item, i) => (
+            <div
+              key={item.step}
+              className="loop-text"
+              data-active={i === step}
+              aria-hidden={i === step ? undefined : true}
             >
-              <span className="loop-rail" aria-hidden="true">
-                {i === step && <span ref={rail} className="loop-rail-fill" />}
-              </span>
-              <span className="loop-name">{item.step}</span>
-              <span className="loop-body">
-                <span>{item.body}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-      <figure className="loop-stage">
+              <h3 className="loop-name">{item.step}</h3>
+              <p>{item.body}</p>
+              {item.tools.length > 0 ? (
+                <ul className="loop-tools" aria-label="Tools the agent calls">
+                  {item.tools.map((tool) => (
+                    <li key={tool}>
+                      <code>{tool}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="loop-tools loop-tools-none">No tools yet. Only your words.</p>
+              )}
+            </div>
+          ))}
+        </div>
         <div className="loop-screen">
           <canvas
             ref={canvasRef}
@@ -122,21 +125,26 @@ export function LoopPlayer() {
             aria-label={LOOP_LABELS[step]}
           />
         </div>
-        <figcaption className="loop-caption">
-          <span>
-            {active.tools.length > 0 ? "Tools it calls" : "No tools yet, only your words"}
-          </span>
-          {active.tools.length > 0 && (
-            <ul>
-              {active.tools.map((tool) => (
-                <li key={tool}>
-                  <code>{tool}</code>
-                </li>
-              ))}
-            </ul>
-          )}
-        </figcaption>
-      </figure>
+      </div>
+
+      <ol className="loop-track">
+        {LOOP.map((item, i) => (
+          <li key={item.step}>
+            <button
+              type="button"
+              className="loop-clip"
+              data-state={i === step ? "now" : i < step ? "done" : "next"}
+              aria-current={i === step ? "step" : undefined}
+              onClick={() => choose(i)}
+            >
+              <span className="loop-bar" aria-hidden="true">
+                {i === step && <span ref={fill} className="loop-bar-fill" />}
+              </span>
+              <span className="loop-label">{item.step}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

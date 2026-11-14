@@ -87,7 +87,6 @@ export default function Beta() {
       <main id="main">
         <div className="wrap beta">
           <header className="beta-head">
-            <p className="beta-eyebrow">Private beta · Windows</p>
             <h1 className="display beta-title">Kynimo for Windows.</h1>
             <p className="lede">
               The desktop app that hosts Kynimo's motion engine on your computer and shows what your
@@ -98,7 +97,9 @@ export default function Beta() {
                 <DownloadIcon />
                 Download for Windows
               </a>
-              <p className="beta-meta">64-bit · about 270 MB · installer is not code signed yet</p>
+              <p className="beta-meta">
+                Private beta · 64-bit · about 270 MB · installer is not code signed yet
+              </p>
             </div>
           </header>
 
