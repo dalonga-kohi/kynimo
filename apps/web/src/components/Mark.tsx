@@ -10,6 +10,32 @@ export function Mark({ className }: { className?: string }) {
   );
 }
 
+export function ArrowRightIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
+      <path
+        d="M3 8h10M8.5 3.5 13 8l-4.5 4.5"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function DownloadIcon() {
+  return (
+    <svg className="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
+      <path
+        d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function GitHubIcon() {
   return (
     <svg className="icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

@@ -26,6 +26,14 @@
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.25, 1, 0.5, 1);
+  /* Small viewport height: the pinned layers stay clear of mobile browser chrome. */
+  --screen-h: 100vh;
+}
+
+@supports (height: 100svh) {
+  :root {
+    --screen-h: 100svh;
+  }
 }
 
 *,
@@ -295,6 +303,34 @@ button {
 .nav-links a:hover {
   color: var(--text);
 }
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.nav-links + .nav-actions {
+  margin-left: 0;
+}
+.nav-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--muted);
+  transition: color 160ms ease-out;
+}
+.nav-icon:hover {
+  color: var(--text);
+}
+.nav-icon .icon {
+  width: 20px;
+  height: 20px;
+}
+.btn-compact {
+  min-height: 40px;
+  padding: 0 16px;
+}
 
 /* Hero */
 
@@ -314,6 +350,22 @@ button {
     ellipse 62% 58% at 50% 34%,
     #000 0%,
     rgb(0 0 0 / 0.5) 48%,
+    transparent 100%
+  );
+}
+.field-layer {
+  width: 100%;
+  height: 100%;
+}
+/* Same dither in marquee yellow, shown only where the pointer is (HeroField). */
+.field-lit {
+  position: absolute;
+  inset: 0;
+  opacity: var(--lit, 0);
+  mask-image: radial-gradient(
+    circle 280px at var(--mx, 50%) var(--my, 50%),
+    #000 0%,
+    rgb(0 0 0 / 0.35) 45%,
     transparent 100%
   );
 }
@@ -610,8 +662,7 @@ button {
 
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .section-head > :not(h2),
-    .layers-copy > :not(h2) {
+    .section-head > :not(h2) {
       animation: head-in linear both;
       animation-timeline: view();
       animation-range: entry 15% entry 70%;
@@ -631,57 +682,126 @@ button {
   }
 }
 
-/* Layers: one frame comes apart */
+/* Layers: one frame comes apart as it enters the screen; its layers panel drives it. */
 
 .layers-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
   gap: clamp(32px, 5vw, 80px);
-  align-items: start;
+  align-items: center;
 }
 .layers-copy {
-  position: sticky;
-  top: 32vh;
   display: grid;
   gap: 20px;
-  padding-top: 8vh;
 }
 .layers-copy h2 {
   margin-bottom: 8px;
 }
-.stack {
-  position: relative;
-  height: 210vh;
+.layers-copy h2 span {
+  display: block;
 }
+/* The second line is the answer: it lights up as the frame comes apart. */
+.layers-then {
+  color: color-mix(in srgb, var(--text) calc(var(--p, 0) * 100%), var(--line-strong));
+}
+
+/* The scene's layers panel: top layer first. */
+.layer-panel {
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  margin-top: clamp(12px, 2vw, 24px);
+  max-width: 440px;
+}
+.layer-list {
+  width: 100%;
+  border-top: 1px solid var(--line);
+}
+.layer-row {
+  display: grid;
+  grid-template-columns: 8.5em minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease-out;
+}
+.layer-name {
+  color: var(--text);
+  transition: color 160ms ease-out;
+}
+.layer-kind {
+  color: var(--faint);
+}
+.layer-row[data-picked="true"] {
+  background: var(--surface);
+}
+.layer-row[data-picked="true"] .layer-name {
+  color: var(--accent);
+}
+.layer-edit[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .stack-stage {
-  position: sticky;
-  top: 14vh;
-  height: 72vh;
+  position: relative;
   display: grid;
   place-items: center;
+  min-height: clamp(360px, 44vw, 600px);
+  padding-bottom: 44px;
   perspective: 1600px;
 }
 .stack-frame {
   position: relative;
-  width: min(100%, 660px);
+  width: min(100%, 640px);
   aspect-ratio: 16 / 9;
   container-type: inline-size;
   transform-style: preserve-3d;
-  transform: rotateX(calc(var(--p, 0) * 54deg)) rotateZ(calc(var(--p, 0) * -34deg))
-    scale(calc(1 - var(--p, 0) * 0.2));
+  transform: translateY(calc(var(--p, 0) * 12%)) rotateX(calc(var(--p, 0) * 54deg))
+    rotateZ(calc(var(--p, 0) * -34deg)) scale(calc(1 - var(--p, 0) * 0.2));
 }
 .plane {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  transform: translateZ(calc(var(--i) * var(--p, 0) * 9cqw));
+  transform: translateZ(calc(var(--i) * var(--p, 0) * 6.5cqw));
   border: 1px solid color-mix(in srgb, var(--accent) calc(var(--p, 0) * 55%), transparent);
   background: color-mix(in srgb, var(--accent) calc(var(--p, 0) * 3%), transparent);
+  /* The lift is its own property, so it eases while the opening spring drives transform. */
+  translate: 0 0 0;
+  transition:
+    translate 420ms var(--ease-out),
+    opacity 260ms ease-out,
+    border-color 260ms ease-out,
+    background-color 260ms ease-out;
 }
 .plane[data-layer="background"] {
   background: var(--ground);
   border-color: var(--line-strong);
   box-shadow: 0 calc(var(--p, 0) * 40px) 80px -30px rgb(0 0 0 / 0.9);
+}
+/* While one layer is picked, the others step back and it lifts out of the stack. */
+.stack-frame[data-picking="true"] .plane:not([data-layer="background"]) {
+  opacity: 0.32;
+}
+.stack-frame[data-picking="true"] .plane[data-picked="true"] {
+  opacity: 1;
+  translate: 0 0 5cqw;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.stack-frame[data-picking="true"] .plane[data-layer="background"][data-picked="true"] {
+  background: var(--surface);
 }
 .plane-mark {
   position: absolute;
@@ -702,6 +822,18 @@ button {
   line-height: 1.06;
   letter-spacing: -0.01em;
   color: var(--text);
+  transition: opacity 260ms ease-out;
+}
+.plane-title-now,
+.stack-frame[data-edited="true"] .plane-title-was {
+  opacity: 0;
+}
+.stack-frame[data-edited="true"] .plane-title-now {
+  opacity: 1;
+}
+.plane-title em {
+  font-style: normal;
+  color: var(--accent);
 }
 .plane-rule {
   position: absolute;
@@ -719,139 +851,196 @@ button {
   font-weight: 500;
   color: var(--muted);
 }
-.plane-tag {
-  position: absolute;
-  left: 0;
-  bottom: 100%;
-  padding-bottom: 6px;
-  font-family: var(--mono);
-  font-size: clamp(11px, 2.4cqw, 15px);
-  color: var(--text);
-  white-space: nowrap;
-  opacity: clamp(0, calc(var(--p, 0) * 3 - 1.6), 1);
-}
-.plane-tag b {
-  font-weight: 500;
-  color: var(--accent);
-}
-.plane:not([data-layer="background"]) .plane-tag {
-  left: auto;
-  right: 0;
-}
 .stack-readout {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  display: grid;
-  justify-items: center;
-  font-family: var(--mono);
   font-size: 0.8125rem;
   color: var(--faint);
-}
-.stack-readout > * {
-  grid-area: 1 / 1;
+  text-align: center;
 }
 
-/* How: a contact sheet of the loop */
+/* How: the loop as a player. Text and stage side by side, the loop's own timeline underneath. */
 
-.sheet {
+.loop-main {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-.sheet-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 260px;
-  padding: clamp(22px, 2.4vw, 32px);
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  transition: background-color 300ms ease-out;
-}
-.sheet-cell:hover {
-  background: var(--surface);
-}
-.sheet-frame {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--faint);
-  transition: color 300ms ease-out;
-}
-.sheet-cell:hover .sheet-frame {
-  color: var(--accent);
-}
-.sheet-cell h3 {
-  display: flex;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.5fr);
+  gap: clamp(28px, 4.5vw, 72px);
   align-items: center;
-  gap: 12px;
-  padding-top: clamp(28px, 4vw, 56px);
-  font-size: clamp(1.5rem, 2.2vw, 2rem);
+}
+/* All six texts share one cell, so the block keeps the height of the longest. */
+.loop-texts {
+  display: grid;
+}
+.loop-text {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 14px, 0);
+  transition:
+    opacity 260ms ease-out,
+    transform 260ms ease-out,
+    visibility 0s linear 260ms;
+}
+.loop-text[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 520ms var(--ease-out) 120ms,
+    transform 620ms var(--ease-out) 120ms,
+    visibility 0s;
+}
+.loop-name {
+  font-size: clamp(2.5rem, 5vw, 4.25rem);
   font-weight: 800;
   font-stretch: 125%;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
-.soon {
-  padding: 3px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  font-stretch: 100%;
-  letter-spacing: 0;
+/* Each step's name arrives with the page's motion-study echo. */
+.loop-text[data-active="true"] .loop-name {
+  animation: echo 1100ms var(--ease-out) 120ms both;
+}
+.loop-text > p {
   color: var(--muted);
+  font-size: clamp(1rem, 1.3vw, 1.125rem);
+  line-height: 1.5;
+  max-width: 34ch;
+  text-wrap: pretty;
 }
-.sheet-cell p {
+.loop-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.loop-tools code {
+  color: var(--text);
+}
+.loop-text > .loop-tools-none {
+  color: var(--faint);
+  font-size: 0.8125rem;
+}
+.loop-screen {
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ground);
+  overflow: hidden;
+}
+
+/* The track: six clips on one lane. The clip being played fills like a playhead crossing it. */
+.loop-track {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: clamp(28px, 3.6vw, 52px);
+}
+.loop-clip {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 0 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.loop-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  transition: background-color 200ms ease-out;
+}
+.loop-clip[data-state="done"] .loop-bar {
+  background: var(--faint);
+}
+.loop-clip:hover .loop-bar {
+  background: var(--line-strong);
+}
+.loop-clip[data-state="done"]:hover .loop-bar {
+  background: var(--muted);
+}
+.loop-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--t, 0));
+}
+.loop-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--faint);
+  transition: color 200ms ease-out;
+}
+.loop-clip:hover .loop-label,
+.loop-clip[data-state="now"] .loop-label {
+  color: var(--text);
+}
+
+/* Features: six studies, each drawn live */
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(32px, 3.6vw, 52px) clamp(18px, 2vw, 28px);
+}
+.feature-screen {
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 240ms ease-out;
+}
+.feature:hover .feature-screen {
+  border-color: var(--faint);
+}
+.feature figcaption {
+  display: grid;
+  gap: 6px;
+  padding-top: 16px;
+}
+.feature h3 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.feature p {
   color: var(--muted);
   font-size: 0.9375rem;
   line-height: 1.5;
-  max-width: 36ch;
-}
-.sheet-tools {
-  display: flex;
-  margin-top: auto;
-  padding-top: 8px;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-}
-.sheet-tools code {
-  color: var(--text);
-  font-size: 0.75rem;
-}
-.sheet-cell[data-next="true"] .sheet-tools code {
-  color: var(--faint);
+  max-width: 38ch;
 }
 
-/* Connect */
+/* Desktop app */
 
-.connect-wrap {
+.desktop-tour {
   display: grid;
-  justify-items: center;
+  justify-items: start;
+  gap: 18px;
+  margin-bottom: clamp(36px, 4.5vw, 64px);
 }
-.connect {
-  display: grid;
-  justify-items: center;
-  gap: 16px;
-  width: 100%;
-  max-width: 780px;
-}
-.clients {
+.tour-tabs {
   display: inline-flex;
+  max-width: 100%;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.client {
-  position: relative;
+.tour-tab {
   min-height: 40px;
-  padding: 0 16px;
+  padding: 0 18px;
   border: 0;
   border-radius: 999px;
   background: none;
@@ -860,241 +1049,170 @@ button {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 160ms ease-out;
+  transition:
+    color 160ms ease-out,
+    background-color 160ms ease-out;
 }
-.client span {
-  position: relative;
-}
-.client:hover,
-.client[aria-selected="true"] {
+.tour-tab:hover {
   color: var(--text);
 }
-.client-pill {
+.tour-tab[aria-selected="true"] {
+  background: var(--raised);
+  color: var(--text);
+}
+.tour-window {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2560 / 1600;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--ground);
+  overflow: hidden;
+  box-shadow: 0 48px 120px -48px rgb(0 0 0 / 0.9);
+}
+.tour-shot {
   position: absolute;
   inset: 0;
-  border-radius: 999px;
-  background: var(--raised);
-}
-.command {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 12px;
   width: 100%;
-  padding: 8px 8px 8px 20px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface);
-  text-align: left;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 320ms ease-out;
 }
-.command-where {
-  grid-column: 1 / -1;
-  padding-top: 4px;
-  font-size: 0.75rem;
-  color: var(--faint);
+.tour-shot[data-current="true"] {
+  opacity: 1;
 }
-.command pre {
-  overflow-x: auto;
-  padding: 6px 0 8px;
-  color: var(--text);
-  line-height: 1.6;
-  scrollbar-width: thin;
-}
-.command pre code {
-  font-size: 0.875rem;
-}
-.copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--raised);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease-out,
-    color 160ms ease-out,
-    transform 100ms ease-out;
-}
-.copy:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.copy:active {
-  transform: scale(0.96);
-}
-.copy[data-copied="true"] {
-  color: var(--success);
-  border-color: var(--success);
-}
-.connect-note {
-  color: var(--faint);
-  font-size: 0.8125rem;
-  text-align: center;
-}
-
-/* Styles */
-
-.packs {
+.facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(28px, 3.4vw, 48px) clamp(20px, 2.4vw, 32px);
-}
-.pack-screen {
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.pack figcaption {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 6px 16px;
-  padding-top: 16px;
-}
-.pack-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 650;
-}
-.pack-name i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--pack-accent);
-}
-.pack code {
-  color: var(--faint);
-  font-size: 0.75rem;
-  text-align: right;
-}
-.pack p {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 0.9375rem;
-  max-width: 52ch;
-}
-
-/* Roadmap: every milestone is a track; the Today line runs down through all of them. */
-
-.roadmap {
-  --text-col: minmax(0, 0.95fr);
-  --lane-col: minmax(0, 1.25fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid var(--line-strong);
 }
-.roadmap > li {
+.fact {
   display: grid;
-  grid-template-columns: var(--text-col) var(--lane-col);
-  align-items: center;
-  gap: 0 clamp(24px, 4vw, 64px);
+  align-content: start;
+  gap: 8px;
+  padding: clamp(20px, 2.4vw, 32px) clamp(16px, 2.4vw, 32px) 4px 0;
 }
-.roadmap-head {
-  padding: 14px 0 10px;
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--faint);
+.fact + .fact {
+  padding-left: clamp(16px, 2.4vw, 32px);
+  border-left: 1px solid var(--line);
 }
-.roadmap-head .roadmap-lane b {
-  position: absolute;
-  left: calc(var(--today) * 100%);
-  bottom: 0;
-  padding-left: 10px;
-  font-weight: 400;
-  color: var(--accent);
-}
-.roadmap-head .roadmap-lane span {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-}
-.roadmap-lane {
-  position: relative;
-  align-self: stretch;
-  min-height: 20px;
-}
-/* The Today line: one segment per row, so the rows draw it as one continuous line. */
-.roadmap-lane::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: -1px;
-  left: calc(var(--today) * 100%);
-  width: 1px;
-  background: var(--accent);
-}
-.roadmap-head .roadmap-lane::before {
-  content: "";
-  position: absolute;
-  bottom: -10px;
-  left: calc(var(--today) * 100% - 4px);
-  width: 9px;
-  height: 7px;
-  background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-  z-index: 1;
-}
-.milestone {
-  border-bottom: 1px solid var(--line);
-  transition: background-color 240ms ease-out;
-}
-.milestone:hover {
-  background: var(--surface);
-}
-.milestone-text {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  align-items: baseline;
-  gap: 4px 20px;
-  padding: 16px 0;
-}
-.milestone h3 {
-  font-size: 1rem;
+.facts h3 {
+  font-size: 1.125rem;
   font-weight: 650;
   letter-spacing: -0.005em;
 }
-.milestone p {
+.facts p {
   color: var(--muted);
   font-size: 0.9375rem;
-  line-height: 1.45;
+  line-height: 1.5;
+  max-width: 34ch;
 }
-.milestone-clip {
-  position: absolute;
-  top: calc(50% - 5px);
-  left: calc(var(--at) * 100%);
-  width: calc(100% / var(--n) - 6px);
-  height: 10px;
-  border-radius: 3px;
-  background: var(--muted);
+.desktop-cta {
+  margin-top: clamp(28px, 3vw, 40px);
 }
-.milestone[data-done="false"] .milestone-clip {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px var(--faint);
+
+/* Beta page */
+
+.beta {
+  padding-top: clamp(128px, 14vw, 184px);
+  padding-bottom: clamp(72px, 9vw, 128px);
 }
-.milestone:hover .milestone-clip {
-  background: var(--text);
+.beta > * {
+  max-width: 760px;
 }
-.milestone[data-done="false"]:hover .milestone-clip {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+.beta-head {
+  display: grid;
+  justify-items: start;
+  gap: clamp(16px, 2vw, 24px);
 }
-.milestone-clip i {
-  position: absolute;
-  top: 2px;
-  left: -3px;
-  width: 6px;
-  height: 6px;
-  background: var(--text);
-  transform: rotate(45deg);
+.beta-title {
+  font-size: clamp(2.4rem, 5.4vw, 4.5rem);
 }
-.milestone[data-done="false"] .milestone-clip i {
-  background: var(--ground);
-  box-shadow: inset 0 0 0 1px var(--muted);
+.beta-download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 8px;
+}
+.beta-meta {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+}
+.beta-section {
+  margin-top: clamp(64px, 8vw, 104px);
+}
+.beta-section h2 {
+  margin-bottom: 24px;
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+  font-weight: 800;
+  font-stretch: 125%;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.beta-steps,
+.beta-grid,
+.beta-list {
+  border-top: 1px solid var(--line-strong);
+}
+.beta-step {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.beta-num {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.9;
+  color: var(--faint);
+}
+.beta-steps h3,
+.beta-grid h3 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+.beta-steps p,
+.beta-grid p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  max-width: 56ch;
+}
+.beta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.beta-item {
+  padding: 22px 24px 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.beta-item:nth-child(even) {
+  padding-left: 24px;
+  border-left: 1px solid var(--line);
+}
+.beta-line {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.beta-foot {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.beta-section + .beta-foot {
+  margin-top: clamp(40px, 5vw, 64px);
+}
+.beta-foot a {
+  color: var(--text);
+}
+.beta-foot a:hover {
+  color: var(--accent);
 }
 
 /* FAQ */
@@ -1167,8 +1285,24 @@ button {
   gap: clamp(18px, 2.2vw, 28px);
   text-align: center;
 }
-.close .btn {
+.close-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px 28px;
   margin-top: 10px;
+}
+.link-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  transition: color 160ms ease-out;
+}
+.link-quiet:hover {
+  color: var(--text);
 }
 .study {
   position: relative;
@@ -1187,16 +1321,7 @@ button {
   width: 100%;
   height: auto;
 }
-.exposure span {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
-  font-family: var(--mono);
-  font-size: 0.6875rem;
-  color: var(--faint);
-}
-.exposure[data-sharp="true"],
-.exposure[data-sharp="true"] span {
+.exposure[data-sharp="true"] {
   color: var(--accent);
 }
 
@@ -1236,7 +1361,7 @@ button {
 /* Smaller screens */
 
 @media (max-width: 960px) {
-  .sheet {
+  .features {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .faq {
@@ -1251,36 +1376,19 @@ button {
   .nav-inner {
     justify-content: space-between;
   }
-  .layers-grid {
+  .layers-grid,
+  .loop-main {
     grid-template-columns: minmax(0, 1fr);
   }
-  .layers-copy {
-    position: static;
-    padding-top: 0;
+  /* The stage leads on narrow screens. */
+  .loop-screen {
+    order: -1;
   }
-}
-
-/* Touch screens: no pinned scroll track. The stack opens by itself and has a toggle. */
-@media (max-width: 900px), (pointer: coarse) {
-  .stack {
-    height: auto;
-    display: grid;
-    justify-items: center;
-    gap: 8px;
+  .loop-text {
+    align-content: start;
   }
-  .stack-stage {
-    position: relative;
-    top: auto;
-    width: 100%;
-    height: clamp(300px, 78vw, 520px);
-  }
-  .stack-toggle {
-    min-height: 44px;
-  }
-  .stack-toggle[aria-pressed="true"] {
-    border-color: var(--accent);
-    background: var(--raised);
-    color: var(--accent);
+  .loop-label {
+    font-size: 0.8125rem;
   }
 }
 
@@ -1293,33 +1401,31 @@ button {
   .player-meta {
     display: none;
   }
-  .sheet {
+  .features {
     grid-template-columns: minmax(0, 1fr);
   }
-  .sheet-cell {
-    min-height: 0;
+  .tour-tab {
+    padding: 0 14px;
   }
-  .sheet-cell h3 {
-    padding-top: 8px;
-  }
-  .packs {
+  .facts,
+  .beta-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  .roadmap > li {
-    grid-template-columns: minmax(0, 1fr);
+  .fact + .fact {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    margin-top: 20px;
   }
-  .roadmap-head > span:first-child {
-    display: none;
+  .beta-item:nth-child(even) {
+    padding-left: 0;
+    border-left: 0;
   }
-  .roadmap-head .roadmap-lane {
-    min-height: 16px;
+  .beta-step {
+    grid-template-columns: 36px minmax(0, 1fr);
   }
-  .milestone {
-    padding-bottom: 14px;
-  }
-  .milestone-text {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 14px 0 10px;
+  .nav-inner {
+    gap: 12px;
   }
 }
 
@@ -1337,18 +1443,22 @@ button {
   [data-echoed] {
     animation: none;
   }
+  .loop-text,
+  .loop-label,
+  .loop-bar,
+  .tour-shot {
+    transition: none;
+  }
+  .loop-text[data-active="true"] .loop-name {
+    animation: none;
+  }
   .btn:active,
-  .copy:active,
   .play:active {
     transform: none;
   }
-  .stack {
-    height: auto;
-  }
-  .stack-stage {
-    position: relative;
-    top: auto;
-    height: clamp(320px, 60vh, 560px);
+  .plane,
+  .plane-title {
+    transition: none;
   }
 }
 

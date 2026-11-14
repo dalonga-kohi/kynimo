@@ -1,18 +1,11 @@
 "use client";
 
-import {
-  animate,
-  type MotionStyle,
-  motion,
-  useInView,
-  useMotionValue,
-  useScroll,
-  useTransform,
-} from "motion/react";
+import { animate, type MotionStyle, motion, useInView, useMotionValue } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Mark } from "./Mark";
-import { useMediaQuery, usePrefersReducedMotion } from "./usePlayback";
+import { usePrefersReducedMotion } from "./usePlayback";
 
+/** Bottom to top, the order the planes stack in. */
 const LAYERS = [
   { id: "background", kind: "solid" },
   { id: "mark", kind: "shape · 6 paths" },
@@ -21,92 +14,125 @@ const LAYERS = [
   { id: "caption", kind: "text" },
 ] as const;
 
-/** Same query as the CSS that turns the pinned scroll track off. */
-const TOUCH = "(max-width: 900px), (pointer: coarse)";
+type LayerId = (typeof LAYERS)[number]["id"];
+
+/** Top layer first, the way a layers panel lists them. */
+const PANEL = [...LAYERS].reverse();
 
 /**
- * One frame, flat, that comes apart into the layers it is made of. With a mouse the page's
- * scroll drives it. On touch screens a long pinned scroll fights the finger, so it opens by
- * itself once it is in view, and a toggle button flattens or opens it again.
+ * The "Not a clip. A project." scene. One frame comes apart into the layers it is made of as
+ * it enters the screen, with no pinned scroll. Beside it sits the scene's layers panel: point
+ * at a layer and it lifts out of the stack; one button makes an edit, and only the title moves.
  */
 export function LayerStack() {
-  const ref = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const reduced = usePrefersReducedMotion();
-  const touch = useMediaQuery(TOUCH);
-
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.3", "end end"] });
+  const inView = useInView(stage, { amount: 0.5, once: true });
   const opened = useMotionValue(0);
-  const [open, setOpen] = useState(false);
-  const inView = useInView(ref, { amount: 0.6, once: true });
+  const [picked, setPicked] = useState<LayerId | null>(null);
+  const [edited, setEdited] = useState(false);
 
   useEffect(() => {
-    if (touch && inView) setOpen(true);
-  }, [touch, inView]);
-
-  useEffect(() => {
-    if (!touch) return;
+    if (!inView) return;
     const controls = animate(
       opened,
-      open ? 1 : 0,
-      reduced ? { duration: 0 } : { type: "spring", bounce: 0, duration: 1.2 },
+      1,
+      reduced ? { duration: 0 } : { type: "spring", bounce: 0, duration: 1.5 },
     );
     return () => controls.stop();
-  }, [touch, open, reduced, opened]);
+  }, [inView, reduced, opened]);
 
-  const p = useTransform([scrollYProgress, opened], ([scroll, tapped]) => {
-    if (touch) return tapped as number;
-    if (reduced) return 1;
-    // Ease the scroll into a settle: fast at first, slow as the layers land.
-    return 1 - (1 - Math.min(1, Math.max(0, (scroll as number) / 0.85))) ** 3;
-  });
-  const flatLabel = useTransform(p, (v) => Math.max(0, 1 - v * 4));
-  const openLabel = useTransform(p, (v) => Math.min(1, Math.max(0, v * 4 - 2.6)));
+  const shown = picked ?? (edited ? "title" : null);
+  const layer = LAYERS.find((item) => item.id === shown);
+  const readout = layer
+    ? edited && layer.id === "title"
+      ? "title changed · 4 layers untouched"
+      : `${layer.id} · ${layer.kind}`
+    : "launch-teaser · 5 layers, all editable";
 
   return (
-    <div className="stack" ref={ref}>
-      <motion.div className="stack-stage" style={{ "--p": p } as unknown as MotionStyle}>
-        <div className="stack-frame" aria-hidden="true">
-          {LAYERS.map((layer, i) => (
+    <motion.div className="wrap layers-grid" style={{ "--p": opened } as unknown as MotionStyle}>
+      <div className="layers-copy">
+        <h2 id="layers-title" data-echo>
+          <span>Not a clip.</span> <span className="layers-then">A project.</span>
+        </h2>
+        <p className="lede">
+          Video generators hand you finished pixels. Want a different word? Generate again and hope.
+        </p>
+        <p className="lede">
+          Kynimo builds a scene: every layer, keyframe, colour and timing has a name. Your agent
+          changes one of them, and every other frame stays exactly as it was.
+        </p>
+
+        <div className="layer-panel">
+          <ul className="layer-list" aria-label="Layers in this scene">
+            {PANEL.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className="layer-row"
+                  data-picked={shown === item.id}
+                  aria-pressed={picked === item.id}
+                  onPointerEnter={(event) => {
+                    if (event.pointerType === "mouse") setPicked(item.id);
+                  }}
+                  onPointerLeave={(event) => {
+                    if (event.pointerType === "mouse") setPicked(null);
+                  }}
+                  onFocus={() => setPicked(item.id)}
+                  onBlur={() => setPicked(null)}
+                  onClick={() => setPicked(picked === item.id ? null : item.id)}
+                >
+                  <span className="layer-name">{item.id}</span>
+                  <span className="layer-kind">{item.kind}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="btn btn-quiet layer-edit"
+            aria-pressed={edited}
+            onClick={() => setEdited(!edited)}
+          >
+            {edited ? "Change it back" : "Change the title"}
+          </button>
+        </div>
+      </div>
+
+      <div className="stack-stage" ref={stage}>
+        <div
+          className="stack-frame"
+          data-picking={shown !== null}
+          data-edited={edited}
+          aria-hidden="true"
+        >
+          {LAYERS.map((item, i) => (
             <div
-              key={layer.id}
+              key={item.id}
               className="plane"
-              data-layer={layer.id}
+              data-layer={item.id}
+              data-picked={shown === item.id}
               style={{ "--i": i } as React.CSSProperties}
             >
-              {layer.id === "mark" && <Mark className="plane-mark" />}
-              {layer.id === "title" && <p className="plane-title">Every frame, on purpose.</p>}
-              {layer.id === "rule" && <span className="plane-rule" />}
-              {layer.id === "caption" && <p className="plane-caption">Made over MCP</p>}
-              <span className="plane-tag">
-                <b>{layer.id}</b> {layer.kind}
-              </span>
+              {item.id === "mark" && <Mark className="plane-mark" />}
+              {item.id === "title" && (
+                <>
+                  <p className="plane-title plane-title-was">Every frame, on purpose.</p>
+                  <p className="plane-title plane-title-now">
+                    Every frame, <em>by design.</em>
+                  </p>
+                </>
+              )}
+              {item.id === "rule" && <span className="plane-rule" />}
+              {item.id === "caption" && <p className="plane-caption">Made over MCP</p>}
             </div>
           ))}
         </div>
-        <div className="stack-readout" aria-hidden="true">
-          <motion.span style={{ opacity: flatLabel }}>launch-teaser.mp4 · 1 flat file</motion.span>
-          <motion.span style={{ opacity: openLabel }}>
-            launch-teaser · 4 layers on a background, all editable
-          </motion.span>
-        </div>
-      </motion.div>
-      {touch && (
-        <button
-          type="button"
-          className="btn btn-quiet stack-toggle"
-          aria-pressed={open}
-          onClick={() => setOpen(!open)}
-        >
-          Show the layers
-        </button>
-      )}
-      <ul className="sr-only">
-        {LAYERS.map((layer) => (
-          <li key={layer.id}>
-            {layer.id}: {layer.kind}
-          </li>
-        ))}
-      </ul>
-    </div>
+        <output className="stack-readout" aria-live="polite">
+          {readout}
+        </output>
+      </div>
+    </motion.div>
   );
 }

@@ -5,7 +5,7 @@ import "@fontsource-variable/geist-mono";
 import "./globals.css";
 import { SITE, SITE_URL } from "@/lib/site";
 
-const title = "Kynimo: editable motion graphics, built by your AI assistant";
+const title = "Kynimo: motion graphics engine for AI agents";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -14,15 +14,21 @@ export const metadata: Metadata = {
   applicationName: SITE.name,
   keywords: [
     "motion graphics",
+    "AI motion graphics",
     "MCP server",
     "Model Context Protocol",
-    "AI video",
-    "AI motion design",
-    "editable video",
+    "AI agent video",
+    "editable AI video",
+    "motion design software",
     "product launch video",
-    "motion design guidelines",
     "After Effects alternative",
+    "desktop app",
   ],
+  authors: [{ name: SITE.name }],
+  creator: SITE.name,
+  publisher: SITE.name,
+  category: "technology",
+  formatDetection: { telephone: false },
   alternates: {
     canonical: "/",
     types: { "text/plain": [{ url: "/llms.txt", title: "Kynimo for language models" }] },

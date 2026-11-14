@@ -18,7 +18,6 @@ function Exposure({ index, progress }: { index: number; progress: MotionValue<nu
   return (
     <motion.div className="exposure" data-sharp={sharp} style={{ x, opacity }}>
       <Mark />
-      <span>f{String(index * 3).padStart(2, "0")}</span>
     </motion.div>
   );
 }

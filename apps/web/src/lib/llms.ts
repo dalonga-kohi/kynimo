@@ -1,11 +1,7 @@
-import { FAQ, MCP_TOOLS, MCP_URL, REPO_URL, SITE, SITE_URL, STATUS } from "./site";
+import { BETA_PATH, FAQ, LOOP, MCP_TOOLS, REPO_URL, SITE, SITE_URL } from "./site";
 
-const list = (items: readonly (readonly [string, string])[]) =>
-  items.map(([name, body]) => `- **${name}**: ${body}`).join("\n");
-
-const endpoint = MCP_URL
-  ? `MCP endpoint: ${MCP_URL} (Streamable HTTP, OAuth).`
-  : "The hosted MCP endpoint is not public yet. It opens with the private beta.";
+const STATUS_LINE =
+  "Private beta on Windows. The engine, MCP server, frame rendering, video export and desktop app are built. Style packs and the automatic quality report are in progress.";
 
 /** llms.txt: the short index, in the llmstxt.org shape. */
 export function llmsTxt(): string {
@@ -13,16 +9,17 @@ export function llmsTxt(): string {
 
 > ${SITE.tagline} ${SITE.description}
 
-Status: in development. The scene format, engine, renderer and MCP server are built. The hosted endpoint, quality report and video export are not available yet. ${endpoint}
+Status: ${STATUS_LINE}
 
 ## Start here
 
-- [Landing page](${SITE_URL}/): what Kynimo is, what an assistant does with it, how it connects, the style packs and the roadmap
-- [Full description for language models](${SITE_URL}/llms-full.txt): the whole page as plain text, with the tool list and FAQ
+- [Landing page](${SITE_URL}/): what Kynimo is, what an agent does with it, the desktop app and the features
+- [Windows beta](${SITE_URL}${BETA_PATH}): download the installer, set up your agent, what is in the beta and what is not
+- [Full description for language models](${SITE_URL}/llms-full.txt): the whole site as plain text, with the tool list and FAQ
 
 ## Source and docs
 
-- [Repository](${REPO_URL}): source code, public
+- [Repository](${REPO_URL}): source code, public, Apache 2.0
 - [Product](${REPO_URL}/blob/main/PRODUCT.md): what it is and who it is for
 - [Architecture](${REPO_URL}/blob/main/docs/ARCHITECTURE.md): scene graph, engine, renderer, MCP server
 - [Capabilities](${REPO_URL}/blob/main/docs/CAPABILITIES.md): what the engine can express
@@ -34,7 +31,7 @@ Status: in development. The scene format, engine, renderer and MCP server are bu
 `;
 }
 
-/** llms-full.txt: everything on the page, as text a model can quote. */
+/** llms-full.txt: everything on the site, as text a model can quote. */
 export function llmsFullTxt(): string {
   return `# ${SITE.name}
 
@@ -43,12 +40,13 @@ export function llmsFullTxt(): string {
 ${SITE.description}
 
 Website: ${SITE_URL}/
+Windows beta: ${SITE_URL}${BETA_PATH}
 Repository: ${REPO_URL}
-Status: in development, not yet usable by the public. ${endpoint}
+Status: ${STATUS_LINE}
 
 ## What it is
 
-Kynimo is an agent-first, cloud-hosted motion graphics engine. An AI assistant connects over the Model Context Protocol (MCP), builds a motion video from layers, keyframes and components, and looks at rendered frames. A quality report that tells it what to fix is planned. The result is a scene document a person can keep editing, not a flat video file.
+Kynimo is a motion graphics engine built for AI agents. It runs on your computer as a desktop app for Windows. An AI agent connects over the Model Context Protocol (MCP), builds a motion video from layers, keyframes and components, and looks at the frames it rendered. The result is a scene document a person can keep editing, not a flat video file.
 
 It is for developers, founders and marketers who need short motion pieces (5 to 60 seconds): product launch videos, UI promos, social clips and explainers.
 
@@ -56,32 +54,37 @@ It is for developers, founders and marketers who need short motion pieces (5 to 
 
 - AI video generators return pixels. Changing one word means generating again. Kynimo returns an editable scene: a word, a colour or a timing is one small operation, and every other frame stays the same.
 - Rendering is deterministic. The same document and the same frame always give the same pixels.
-- Quality is meant to be enforced by rules, not left to the model. Style packs encode type, colour, springs, durations, safe areas and reading time.
-- It is designed to be hosted: the assistant connects with one URL and OAuth, with nothing to install. The hosted endpoint is not public yet.
+- It runs locally. The engine, the renderer and the export run on your machine, projects live in a folder on your disk, and there is no account.
 
-## How an assistant connects
+## How an agent connects
 
-Kynimo is a remote MCP server (Streamable HTTP, OAuth sign-in). ${endpoint}
+The desktop app starts a local MCP server. The Connect screen shows the local address and copy and paste setup for Claude Code, Codex, Cursor and Claude Desktop. Clients that only start local servers can use a stdio option.
 
-1. Add the server to an MCP client such as Claude Code or Cursor.
-2. Sign in with OAuth in the browser. There are no API keys to paste.
-3. Ask for a video. Preview frames come back into the same chat.
+1. Install the Windows beta from ${SITE_URL}${BETA_PATH}.
+2. Open the Connect screen and paste the setup into your MCP client.
+3. Ask for a video. The animation appears in the app, ready to play back and export.
+
+## What an agent does with it
+
+${LOOP.map((item, i) => `${i + 1}. **${item.step}**: ${item.body}${item.tools.length > 0 ? ` Tools: ${item.tools.map((t) => `\`${t}\``).join(", ")}.` : ""}`).join("\n")}
 
 ## Tools on the MCP server today
 
 ${MCP_TOOLS.map((tool) => `- \`${tool}\``).join("\n")}
 
-## Style packs
+## In the beta
 
-A style pack is a motion design system written as tokens and rules. Four draft packs (version 0.1.0) exist: Keynote, Playful SaaS, Editorial and Brutalist. Rules include \`readable-hold\`, \`safe-area\`, \`text-contrast\`, \`token-easing\`, \`concurrent-motion\`, \`min-text-size\` and \`flash-rate\`. The engine that grades a render against a pack and reports findings with suggested fixes is planned, not built.
+- The full engine: layers, bezier and spring keyframes, text animators, shape operators, masks, effects, cameras and shaders.
+- A local MCP server that starts with the app, over HTTP or stdio.
+- Playback of every animation in your projects, with a player and a timeline.
+- Export to MP4, WebM and GIF, rendered on your machine.
 
-## What runs today
+## Not there yet
 
-${list(STATUS.built)}
-
-## What comes next
-
-${list(STATUS.next)}
+- Editing in the app. For now the agent makes the changes.
+- Style packs and the automatic quality report.
+- Signed installers and automatic updates.
+- macOS and Linux builds.
 
 ## Questions
 
