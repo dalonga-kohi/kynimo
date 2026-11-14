@@ -81,6 +81,10 @@ Capability target: the 2D core of After Effects, all of it reachable over MCP; t
 - Scripts (ADR-0036): `run_script` runs agent-written TypeScript once in a QuickJS (WebAssembly) sandbox, one worker thread and one fresh instance per script, with no clock, randomness or host access and counted limits. Its output is a batch of operations the host validates and applies like any other: the sandbox records entries (ops and intent calls), the host replays them with `@kynimo/intent` (ADR-0041).
 - Reliability contracts (ADR-0018): a capability manifest generated from code, idempotency keys and outcome lookup on writes, declared limits and a content-addressed cache on renders, cancellable jobs, fidelity reports on every import and export.
 
+## Desktop app — `apps/desktop`
+
+The Windows beta (ADR-0061) is an Electron app. Main owns the window and starts the **host** in a utility process; the host runs the local server (`startServer`, ADR-0060) on loopback, keeps an activity log beside the projects, and answers the studio API the renderer needs (list, detail, thumbnails, previews, export, status). The renderer is a sandboxed React page that sees only the typed `window.kynimo` API; main relays its calls to the host and serves media through the `kynimo-media:` protocol. A stdio client launches `bridge.mjs` through Electron's Node mode; the bridge forwards to the running app's HTTP endpoint (written to `<dataDir>/desktop/endpoint.json`), so the data directory keeps one writer. Capture uses the pinned Playwright Chromium in `resources/browsers`, never Electron's.
+
 ## Web app — `apps/web`
 
 Player first, editor second (ADR-0035).
@@ -106,6 +110,7 @@ A fixed set of briefs run by a real model against the MCP server, with a report 
 | `packages/script`     | `@kynimo/script` — sandbox runner and SDK for `run_script` (ADR-0036, ADR-0041)                                                                 | M4         |
 | `packages/svg`        | `@kynimo/svg` — pure SVG-to-shape-layer converter with a fidelity report, behind `import_svg`                                                   | M4         |
 | `packages/components` | `@kynimo/components` — component model (typed props, style-aware host over the engine hook, ADR-0012), built-in library                         | M6         |
+| `apps/desktop`        | `@kynimo/desktop` — Windows desktop beta: Electron shell around the local server, studio screens, NSIS installer (ADR-0061)                     | M3         |
 | `apps/worker`         | render/export workers (exports run in-process in `apps/mcp` until deploy, ADR-0048)                                                             | M7         |
 | `apps/evals`          | brief suite: briefs, runner, reports (ADR-0035)                                                                                                 | M4         |
 | `apps/web`            | web app (Next.js on Vercel, ADR-0007): player and share page, then the editor — placeholder exists                                              | M8 / M9    |

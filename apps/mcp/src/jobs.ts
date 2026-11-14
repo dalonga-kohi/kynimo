@@ -195,6 +195,16 @@ export class JobQueue<R> {
     return entry && this.copy(entry.record);
   }
 
+  /**
+   * Queued and running jobs of every account, oldest first. For an in-process host that shows
+   * activity; tools never see it (they read jobs through their own account).
+   */
+  active(): JobRecord<R>[] {
+    return [...this.entries.values()]
+      .filter((e) => !isFinished(e.record.state))
+      .map((e) => this.copy(e.record));
+  }
+
   wait(account: string, id: string, ms: number): Promise<JobRecord<R> | undefined> {
     const entry = this.owned(account, id);
     if (entry === undefined) return Promise.resolve(undefined);
