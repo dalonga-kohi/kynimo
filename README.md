@@ -1,5 +1,7 @@
 # Kynimo
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/dalonga-kohi-kynimo-aq88p4?v=ed19ae65f7654ae62c8c57e755615253)](https://m8ven.ai/mcp/dalonga-kohi-kynimo-aq88p4?s=readme)
+
 **Motion graphics for your AI agent.**
 
 Kynimo is a motion graphics engine that an AI agent drives over [MCP](https://modelcontextprotocol.io). It runs on your machine as a desktop app. The agent builds a video from layers, keyframes, components, TypeScript or GLSL, looks at the frames it rendered, and exports MP4, WebM or GIF. What you get back is a project you can keep changing, not a flat render.
